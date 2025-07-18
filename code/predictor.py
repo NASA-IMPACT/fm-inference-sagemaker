@@ -8,8 +8,7 @@ import time
 import torch
 import yaml
 
-from fastapi import FastAPI, Request, APIRouter
-from fastapi import FastAPI, status, Request, Response
+from fastapi import FastAPI, Request, APIRouter, status, Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
