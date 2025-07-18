@@ -17,7 +17,8 @@ from lib.downloader import DOWNLOAD_FOLDER, Downloader
 from lib.infer import Infer
 from lib.infer_generation import InferGeneration
 from lib.post_process import PostProcess
-from lib.consts import BUCKET_NAME, LAYERS
+from lib.consts import BUCKET_NAME, LAYERS, CONFIG_FILENAME, CHECKPOINT_FILE, USECASE
+
 from lib.utils import assumed_role_session
 
 from rasterio.io import MemoryFile
@@ -30,12 +31,18 @@ from skimage.morphology import disk, binary_closing
 
 from starlette.middleware.cors import CORSMiddleware
 
+# This will be served by the FastAPI as a container
+# So no need for docs or redoc
+app = FastAPI(docs_url=None, redoc_url=None)
+# Todo Provide a better title
+v1_api = FastAPI(
+    title="Predictor API - V1",
+    description="Predictor API for NASA IMPACT",
+    version="1.0.0"
+)
 
-app = FastAPI()
-
-CONFIG_FILENAME = os.environ.get('S3_CONFIG_FILENAME')
-CHECKPOINT_FILE = os.environ.get('CHECKPOINT_FILENAME')
-USECASE = os.environ.get('USECASE')
+# 3. Use an APIRouter as normal for organization within the v1 app.
+router = APIRouter()
 
 def download_from_s3(s3_path, download_path='config'):
     session = assumed_role_session()
@@ -58,7 +65,6 @@ def load_model():
     infer = Infer(config_file_path, model_weights_path)
     return { USECASE: infer }
 
-MODELS = load_model()
 
 
 def download_files(infer_date, layer, bounding_box):
@@ -137,10 +143,11 @@ def batch(tiles, spacing=60):
 
 
 def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
-    if model_id not in MODELS:
+    models_id = load_model()
+    if model_id not in models_id:
         response = {'statusCode': 422}
         return JSONResponse(content=jsonable_encoder(response))
-    inference = MODELS[model_id]
+    inference = models_id[model_id]
     all_tiles = list()
     geojson_list = list()
     geojson = {'type': 'FeatureCollection', 'features': []}
@@ -157,12 +164,12 @@ def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
 
     start_time = time.time()
     mosaic = []
+    results = list()
+    profiles = list()
     s3_link = ''
     if all_tiles:
         try:
             torch.cuda.synchronize()
-            results = list()
-            profiles = list()
             with torch.no_grad():
                 for tiles in batch(all_tiles):
                     print(tiles)
@@ -207,7 +214,7 @@ def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
         model_id: {'s3_link': s3_link, 'predictions': geojson}
     }
 
-@app.post('/invocations')
+@router.post('/invocations')
 async def infer_from_model(request: Request):
     instances = await request.json()
     if instances.get('generation'):
@@ -223,6 +230,9 @@ async def infer_from_model(request: Request):
     final_geojson = infer(model_id, infer_date, bounding_box, terramind=terramind, file_links=file_links)
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
-@app.get('/ping')
+@router.get('/ping')
 async def ping(request: Request):
     return { 'successCode': 200, 'message': 'pong'}
+
+# Todo add better route name
+app.mount("/predict/api", v1_api)

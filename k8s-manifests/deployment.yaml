@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prediction-app
+  labels:
+    app: prediction-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prediction-app
+  template:
+    metadata:
+      labels:
+        app: prediction-app
+    spec:
+      containers:
+        - name: prediction-container
+          image: 244822573120.dkr.ecr.us-west-2.amazonaws.com/prediction:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+          env:
+          - name: BUCKET_NAME
+            value: "r2o-models"
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: prediction-cache-pvc
