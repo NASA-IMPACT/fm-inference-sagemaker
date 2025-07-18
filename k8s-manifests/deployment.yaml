@@ -29,7 +29,7 @@ spec:
           - name: CHECKPOINT_FILENAME 
             value: "s3://r2o-models/mr01eo-workshop.ckpt"
           - name: S3_CONFIG_FILENAME
-            value: f"s3://r2o-models/mr01eo2-burn_scars_Prithvi-EO.yaml"
+            value: "s3://r2o-models/mr01eo2-burn_scars_Prithvi-EO.yaml"
           - name: USECASE
             value: "burn_scars"
           envFrom:
