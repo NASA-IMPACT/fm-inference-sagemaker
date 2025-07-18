@@ -234,5 +234,7 @@ async def infer_from_model(request: Request):
 async def ping(request: Request):
     return { 'successCode': 200, 'message': 'pong'}
 
+v1_api.include_router(router)
+
 # Todo add better route name
 app.mount("/predict/api", v1_api)
