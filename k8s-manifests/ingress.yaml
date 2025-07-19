@@ -14,7 +14,7 @@ spec:
   - host: kind.neo.nsstc.uah.edu
     http:
       paths:
-      - path: /predict/api
+      - path: /api/predict
         pathType: Prefix
         backend:
           service:
