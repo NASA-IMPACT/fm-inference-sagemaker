@@ -31,7 +31,7 @@ from skimage.morphology import disk, binary_closing
 from starlette.middleware.cors import CORSMiddleware
 
 from pydantic import BaseModel
-
+from typing import Optional
 # This will be served by the FastAPI as a container
 # So no need for docs or redoc
 app = FastAPI(docs_url=None, redoc_url=None)
@@ -220,7 +220,7 @@ class InvocationData(BaseModel):
     date: str
     model_id: str
     terramind: Optional[bool] = False
-    file_links: Optional[List[str]] = []
+    file_links: Optional[list[str]] = []
 
 @router.post('/invocations')
 async def infer_from_model( invocation_data: InvocationData = Body(...)):
