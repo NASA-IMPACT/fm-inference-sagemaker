@@ -12,7 +12,7 @@ RUN apt-get update && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
     apt-get update
 
-RUN apt-get install -y libgl1 python3-pip python3-dev git libgdal-dev --fix-missing
+RUN apt-get update && apt-get install -y libgl1 python3-pip python3-dev git libgdal-dev --fix-missing
 RUN rm -rf /var/lib/apt/lists/*
 
 WORKDIR /
