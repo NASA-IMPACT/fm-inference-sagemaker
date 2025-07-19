@@ -17,7 +17,6 @@ spec:
       containers:
         - name: prediction-container
           image: 244822573120.dkr.ecr.us-west-2.amazonaws.com/prediction:latest
-          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           volumeMounts:
