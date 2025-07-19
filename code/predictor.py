@@ -8,7 +8,7 @@ import time
 import torch
 import yaml
 
-from fastapi import FastAPI, Request, APIRouter, status, Response
+from fastapi import FastAPI, Request, APIRouter, status, Response, Body
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
@@ -29,6 +29,8 @@ from shapely.geometry import shape
 from skimage.morphology import disk, binary_closing
 
 from starlette.middleware.cors import CORSMiddleware
+
+from pydantic import BaseModel
 
 # This will be served by the FastAPI as a container
 # So no need for docs or redoc
@@ -212,20 +214,22 @@ def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
     return {
         model_id: {'s3_link': s3_link, 'predictions': geojson}
     }
+# Define a model for the POST request body
+class InvocationData(BaseModel):
+    bounding_box: list[float]
+    date: str
+    model_id: str
+    terramind: Optional[bool] = False
+    file_links: Optional[List[str]] = []
 
 @router.post('/invocations')
-async def infer_from_model(request: Request):
-    instances = await request.json()
-    if instances.get('generation'):
-        inferance = InferGeneration(instances['input_file'])
-        pred = inferance.tiled_infer(reduce=instances.get('reduce', True))
-        return JSONResponse(content=jsonable_encoder(pred))
-    model_id = USECASE
-    infer_date = instances.get('date')
-    bounding_box = instances.get('bounding_box')
-    terramind = instances.get('terramind', False)
-    file_links = instances.get('file_urls', [])
-    print(instances)
+async def infer_from_model( invocation_data: InvocationData = Body(...)):
+
+    model_id = invocation_data.model_id
+    infer_date = invocation_data.date
+    bounding_box = invocation_data.bounding_box
+    terramind = invocation_data.terramind
+    file_links = invocation_data.file_links
     final_geojson = infer(model_id, infer_date, bounding_box, terramind=terramind, file_links=file_links)
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
@@ -233,7 +237,11 @@ async def infer_from_model(request: Request):
 async def ping(request: Request):
     return { 'successCode': 200, 'message': 'pong'}
 
+@router.get("/health")
+async def health():
+    return {"status": "healthy"}
+
 v1_api.include_router(router)
 
 # Todo add better route name
-app.mount("/predict/api", v1_api)
+app.mount("/api/predict", v1_api)
