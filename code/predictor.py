@@ -213,7 +213,7 @@ def batch(tiles, spacing=60):
         yield tiles[tile : min(tile + spacing, length)]
 
 
-def infer(model_id, infer_date, bounding_box,config_filename,checkpoint_file,  terramind=False, file_links=[]):
+def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, terramind=False, file_links=[]):
     models_id = load_model(config_filename=config_filename, checkpoint_file=checkpoint_file)
     if model_id not in models_id:
         response = {'statusCode': 422}
@@ -303,7 +303,9 @@ async def infer_from_model( invocation_data: InvocationData = Body(...)):
     bounding_box = invocation_data.bounding_box
     terramind = invocation_data.terramind
     file_links = invocation_data.file_links
-    final_geojson = infer(model_id, infer_date, bounding_box, terramind=terramind, file_links=file_links)
+    config_filename = invocation_data.config_filename
+    checkpoint_file = invocation_data.checkpoint_file
+    final_geojson = infer(model_id, infer_date, bounding_box, config_filename=config_filename, checkpoint_file=checkpoint_file, terramind=terramind, file_links=file_links)
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
 @router.get('/ping')
