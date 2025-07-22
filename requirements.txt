@@ -15,5 +15,5 @@ shapely
 boto3
 geojson
 Pillow==9.4.0
-starlette
 sagemaker-training
+httpx

@@ -18,7 +18,7 @@ spec:
         - name: ecr-registry-key
       containers:
         - name: prediction-container
-          image: 244822573120.dkr.ecr.us-west-2.amazonaws.com/prediction:latest
+          image: 244822573120.dkr.ecr.us-west-2.amazonaws.com/prediction:mvp
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -28,10 +28,6 @@ spec:
           env:
           - name: BUCKET_NAME
             value: "r2o-models"
-          - name: CHECKPOINT_FILENAME 
-            value: "s3://r2o-models/mr01eo-workshop.ckpt"
-          - name: S3_CONFIG_FILENAME
-            value: "s3://r2o-models/mr01eo2-burn_scars_Prithvi-EO.yaml"
           - name: USECASE
             value: "burn_scars"
           envFrom:

@@ -8,10 +8,10 @@ metadata:
 spec:
   tls:
   - hosts:
-    - staging.prism.nasa-impact.net
+    - kind.neo.nsstc.uah.edu
     secretName: ingress-tls
   rules:
-  - host: staging.prism.nasa-impact.net
+  - host: kind.neo.nsstc.uah.edu
     http:
       paths:
       - path: /api/predict

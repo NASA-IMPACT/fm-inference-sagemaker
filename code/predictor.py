@@ -6,19 +6,18 @@ import geopandas as gpd
 import rasterio
 import time
 import torch
-import yaml
 
-from fastapi import FastAPI, Request, APIRouter, status, Response, Body
+from fastapi import FastAPI, Request, APIRouter, status, Response, Body, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
 
-from lib.downloader import DOWNLOAD_FOLDER, Downloader
+from lib.downloader import  Downloader
 from lib.infer import Infer
-from lib.infer_generation import InferGeneration
 from lib.post_process import PostProcess
-from lib.consts import BUCKET_NAME, LAYERS, CONFIG_FILENAME, CHECKPOINT_FILE, USECASE
+from lib.consts import BUCKET_NAME, LAYERS, USECASE
 
-from lib.utils import assumed_role_session
+from lib.utils import get_boto3_session
 
 from rasterio.io import MemoryFile
 from rasterio.merge import merge
@@ -26,15 +25,19 @@ from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 
 from shapely.geometry import shape
-from skimage.morphology import disk, binary_closing
 
-from starlette.middleware.cors import CORSMiddleware
 
 from pydantic import BaseModel
 from typing import Optional
+
 # This will be served by the FastAPI as a container
-# So no need for docs or redoc
-app = FastAPI(docs_url=None, redoc_url=None)
+# Re-enable docs to see the authorization feature
+# Create without docs
+app = FastAPI(
+    docs_url=None,
+    redoc_url=None,
+
+) 
 # Todo Provide a better title
 v1_api = FastAPI(
     title="Predictor API - V1",
@@ -42,28 +45,95 @@ v1_api = FastAPI(
     version="1.0.0"
 )
 
-# 3. Use an APIRouter as normal for organization within the v1 app.
-router = APIRouter()
+
+# Add these imports at the top of your file
+import httpx
+from fastapi import Depends, HTTPException, status
+from fastapi.security import APIKeyHeader
+
+# --- Start of Modified Security Block ---
+
+# This is the URL of your external validation service.
+# It's read from an environment variable for security and flexibility.
+API_KEY_VALIDATION_URL = os.getenv("API_KEY_VALIDATION_URL", "https://neo.prism.nasa-impact.net/api/validate")
+
+# This defines that we expect the key in a header named 'x-api-key'.
+api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
+
+async def get_api_key(api_key: str = Depends(api_key_header)):
+    """
+    Dependency that validates the 'x-api-key' by calling an external service.
+    """
+    # 1. Check if the validation service URL is configured on the server.
+    if not API_KEY_VALIDATION_URL:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="API Key validation service is not configured on the server."
+        )
+
+    # 2. Check if the client provided an API key in the header.
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="An API key is required in the 'x-api-key' header."
+        )
+
+    # 3. Call the external service to validate the key.
+    try:
+        async with httpx.AsyncClient() as client:
+            # We forward the user's API key to the validation service.
+            # This assumes the validation service also expects the key in an 'x-api-key' header.
+            # Adjust if your validation service expects a different format (e.g., JSON body).
+            headers = {'x-api-key': api_key}
+            response = await client.get(API_KEY_VALIDATION_URL, headers=headers)
+
+            # 4. Check the validation result.
+            if response.status_code == 200:
+                # The key is valid. Allow the request to proceed.
+                return api_key
+            elif response.status_code in (401, 403):
+                # The key is invalid.
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="The provided API key is invalid."
+                )
+            else:
+                # The validation service itself might be down or has an error.
+                print(f"Validation service error: {response.text}")
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="The API key validation service is currently unavailable."
+                )
+    except httpx.RequestError:
+        # The FastAPI app could not connect to the validation service.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not connect to the API key validation service."
+        )
+
+
+
+
+# Apply the dependency to all routes in this router
+router = APIRouter(dependencies=[Depends(get_api_key)])
 
 def download_from_s3(s3_path, download_path='config'):
-    session = assumed_role_session()
+    session = get_boto3_session()
     s3_connection = session.resource('s3')
     bucket = s3_connection.Bucket(BUCKET_NAME)
     filename = s3_path.split('/')[-1]
     file_path = f"{download_path}/{filename}"
     if not(os.path.exists(file_path)):
-        print('====================')
-        print(s3_path.replace(f's3://{BUCKET_NAME}/', ''), file_path)
         os.makedirs(download_path, exist_ok=True)
         os.makedirs('predictions', exist_ok=True)
         bucket.download_file(s3_path.replace(f's3://{BUCKET_NAME}/', ''), file_path)
     return file_path
 
 
-def load_model():
-    config_file_path = download_from_s3(CONFIG_FILENAME)
-    model_weights_path = download_from_s3(CHECKPOINT_FILE, 'models')
-    infer = Infer(config_file_path, model_weights_path)
+def load_model(config_filename, checkpoint_file):
+    model_config_file_path = download_from_s3(config_filename)
+    model_weights_path = download_from_s3(checkpoint_file, 'models')
+    infer = Infer(model_config_file_path, model_weights_path)
     return { USECASE: infer }
 
 
@@ -143,8 +213,8 @@ def batch(tiles, spacing=60):
         yield tiles[tile : min(tile + spacing, length)]
 
 
-def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
-    models_id = load_model()
+def infer(model_id, infer_date, bounding_box,config_filename,checkpoint_file,  terramind=False, file_links=[]):
+    models_id = load_model(config_filename=config_filename, checkpoint_file=checkpoint_file)
     if model_id not in models_id:
         response = {'statusCode': 422}
         return JSONResponse(content=jsonable_encoder(response))
@@ -219,8 +289,11 @@ class InvocationData(BaseModel):
     bounding_box: list[float]
     date: str
     model_id: str
+    config_filename: str
+    checkpoint_file: str
     terramind: Optional[bool] = False
     file_links: Optional[list[str]] = []
+
 
 @router.post('/invocations')
 async def infer_from_model( invocation_data: InvocationData = Body(...)):
