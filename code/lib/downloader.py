@@ -109,7 +109,7 @@ class Downloader:
                 filename = f"{DOWNLOAD_FOLDER}/{self.layer}/{self.date}-{x_index}-{y_index}.tif"
                 tile_infos.append((x_index, y_index, filename))
         # parallelize download here
-        pool = Pool(cpu_count() - 1)
+        pool = Pool(8)
         downloaded_files = pool.starmap(self.download_tile, tile_infos)
         downloaded_files = [
             downloaded_file for downloaded_file in downloaded_files if downloaded_file
