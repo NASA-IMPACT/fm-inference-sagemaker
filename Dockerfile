@@ -10,9 +10,9 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \
     apt-get install -y software-properties-common && \
     add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt install -y python3.11-dev
+    apt-get update
 
-RUN apt-get update && apt-get install -y libgl1 python3-pip nginx git libgdal-dev --fix-missing
+RUN apt-get update && apt-get install -y libgl1 python3-pip python3-dev git libgdal-dev --fix-missing
 RUN rm -rf /var/lib/apt/lists/*
 
 WORKDIR /
@@ -36,9 +36,10 @@ ENV PYTHONUNBUFFERED=TRUE
 ENV PYTHONDONTWRITEBYTECODE=TRUE
 ENV PATH="/opt/program:${PATH}"
 
-RUN mkdir -p /var/log/nginx && \
-    touch /var/log/nginx/access.log /var/log/nginx/error.log && \
-    chmod -R 777 /var/log/nginx
 
 # Copies code under /opt/ml/code where sagemaker-containers expects to find the script to run
 WORKDIR /opt/program
+
+EXPOSE 8080
+
+CMD ["uvicorn", "predictor:app", "--host", "0.0.0.0", "--port", "8080"]
