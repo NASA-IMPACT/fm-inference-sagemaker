@@ -60,12 +60,11 @@ def download_from_s3(s3_path, download_path='config'):
     return file_path
 
 
-def load_model():
-    config_file_path = download_from_s3(CONFIG_FILENAME)
-    model_weights_path = download_from_s3(CHECKPOINT_FILE, 'models')
+def load_model(config_file_path, checkpoint_file_path):
+    config_file_path = download_from_s3(config_file_path)
+    model_weights_path = download_from_s3(checkpoint_file_path, 'models')
     infer = Infer(config_file_path, model_weights_path)
     return { USECASE: infer }
-
 
 
 def download_files(infer_date, layer, bounding_box):
@@ -143,8 +142,8 @@ def batch(tiles, spacing=60):
         yield tiles[tile : min(tile + spacing, length)]
 
 
-def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
-    models_id = load_model()
+def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[], config_file_path=CONFIG_FILENAME, checkpoint_file_path=CHECKPOINT_FILE):
+    models_id = load_model(config_file_path, checkpoint_file_path)
     if model_id not in models_id:
         response = {'statusCode': 422}
         return JSONResponse(content=jsonable_encoder(response))
@@ -219,12 +218,13 @@ class InvocationData(BaseModel):
     bounding_box: list[float]
     date: str
     model_id: str
+    config_file_path: Optional[str] = CONFIG_FILENAME
+    checkpoint_file_path: Optional[str] = CHECKPOINT_FILE
     terramind: Optional[bool] = False
     file_links: Optional[list[str]] = []
 
 @router.post('/invocations')
 async def infer_from_model( invocation_data: InvocationData = Body(...)):
-
     model_id = invocation_data.model_id
     infer_date = invocation_data.date
     bounding_box = invocation_data.bounding_box
