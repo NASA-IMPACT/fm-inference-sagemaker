@@ -30,6 +30,8 @@ spec:
             value: "r2o-models"
           - name: USECASE
             value: "burn_scars"
+          - name: API_KEY_VALIDATION_URL
+            value: "https://dev.fm.dsig.net/api/validate"
           envFrom:
             - configMapRef:
                 name: oidc-envs

@@ -55,7 +55,7 @@ from fastapi.security import APIKeyHeader
 
 # This is the URL of your external validation service.
 # It's read from an environment variable for security and flexibility.
-API_KEY_VALIDATION_URL = os.getenv("API_KEY_VALIDATION_URL", "https://neo.prism.nasa-impact.net/api/validate")
+API_KEY_VALIDATION_URL = os.getenv("API_KEY_VALIDATION_URL", "https://dev.fm.dsig.net/api/validate")
 
 # This defines that we expect the key in a header named 'x-api-key'.
 api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
