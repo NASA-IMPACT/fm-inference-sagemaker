@@ -26,9 +26,9 @@ from rio_cogeo.profiles import cog_profiles
 
 from shapely.geometry import shape
 
-
 from pydantic import BaseModel
 from typing import Optional
+import httpx
 
 # This will be served by the FastAPI as a container
 # Re-enable docs to see the authorization feature
@@ -36,29 +36,22 @@ from typing import Optional
 app = FastAPI(
     docs_url=None,
     redoc_url=None,
+)
 
-) 
 # Todo Provide a better title
 v1_api = FastAPI(
     title="Predictor API - V1",
-    description="Predictor API for NASA IMPACT",
+    description="Predictor API for NASA IMPACT (MVP)",
     version="1.0.0"
 )
-
-
-# Add these imports at the top of your file
-import httpx
-from fastapi import Depends, HTTPException, status
-from fastapi.security import APIKeyHeader
 
 # --- Start of Modified Security Block ---
 
 # This is the URL of your external validation service.
-# It's read from an environment variable for security and flexibility.
 API_KEY_VALIDATION_URL = os.getenv("API_KEY_VALIDATION_URL", "https://dev.fm.dsig.net/api/validate")
 
-# This defines that we expect the key in a header named 'x-api-key'.
-api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
+# Fixed: Remove auto_error=False to make it work with FastAPI's authorization UI
+api_key_header = APIKeyHeader(name="x-api-key")
 
 async def get_api_key(api_key: str = Depends(api_key_header)):
     """
@@ -71,7 +64,7 @@ async def get_api_key(api_key: str = Depends(api_key_header)):
             detail="API Key validation service is not configured on the server."
         )
 
-    # 2. Check if the client provided an API key in the header.
+    # 2. The api_key should now be automatically provided by FastAPI
     if not api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -80,42 +73,40 @@ async def get_api_key(api_key: str = Depends(api_key_header)):
 
     # 3. Call the external service to validate the key.
     try:
-        async with httpx.AsyncClient() as client:
-            # We forward the user's API key to the validation service.
-            # This assumes the validation service also expects the key in an 'x-api-key' header.
-            # Adjust if your validation service expects a different format (e.g., JSON body).
+        async with httpx.AsyncClient(timeout=10.0) as client:  # Added timeout
             headers = {'x-api-key': api_key}
             response = await client.get(API_KEY_VALIDATION_URL, headers=headers)
 
             # 4. Check the validation result.
             if response.status_code == 200:
-                # The key is valid. Allow the request to proceed.
                 return api_key
             elif response.status_code in (401, 403):
-                # The key is invalid.
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="The provided API key is invalid."
                 )
             else:
-                # The validation service itself might be down or has an error.
-                print(f"Validation service error: {response.text}")
+                print(f"Validation service error: {response.status_code} - {response.text}")
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                     detail="The API key validation service is currently unavailable."
                 )
-    except httpx.RequestError:
-        # The FastAPI app could not connect to the validation service.
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="API key validation service timeout."
+        )
+    except httpx.RequestError as e:
+        print(f"Request error: {e}")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Could not connect to the API key validation service."
         )
 
-
-
-
 # Apply the dependency to all routes in this router
 router = APIRouter(dependencies=[Depends(get_api_key)])
+
+# ... [rest of your existing functions remain the same] ...
 
 def download_from_s3(s3_path, download_path='config'):
     session = get_boto3_session()
@@ -129,14 +120,11 @@ def download_from_s3(s3_path, download_path='config'):
         bucket.download_file(s3_path.replace(f's3://{BUCKET_NAME}/', ''), file_path)
     return file_path
 
-
 def load_model(config_filename, checkpoint_file):
     model_config_file_path = download_from_s3(config_filename)
     model_weights_path = download_from_s3(checkpoint_file, 'models')
     infer = Infer(model_config_file_path, model_weights_path)
     return { USECASE: infer }
-
-
 
 def download_files(infer_date, layer, bounding_box):
     downloader = Downloader(infer_date, layer)
@@ -159,7 +147,6 @@ def save_cog(mosaic, profile, transform, filename):
     output_profile.update(dict(BIGTIFF="IF_SAFER"))
     output_profile.update(profile)
 
-    # Dataset Open option (see gdalwarp `-oo` option)
     config = dict(
         GDAL_NUM_THREADS="ALL_CPUS",
         GDAL_TIFF_INTERNAL_MASK=True,
@@ -179,13 +166,11 @@ def save_cog(mosaic, profile, transform, filename):
 
     return f"s3://{BUCKET_NAME}/{filename}"
 
-
 def post_process(detections, transform):
     contours, shape = PostProcess.prepare_contours(detections)
     detections = PostProcess.extract_shapes(detections, contours, transform, shape)
     detections = PostProcess.remove_intersections(detections)
     return PostProcess.convert_to_geojson(detections)
-
 
 def subset_geojson(geojson, bounding_box):
     geom = [shape(i['geometry']) for i in geojson]
@@ -206,12 +191,10 @@ def subset_geojson(geojson, bounding_box):
     bbox = gpd.GeoDataFrame({'geometry': [bbox]})
     return json.loads(geom.overlay(bbox, how='intersection').to_json())
 
-
 def batch(tiles, spacing=60):
     length = len(tiles)
     for tile in range(0, length, spacing):
         yield tiles[tile : min(tile + spacing, length)]
-
 
 def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, terramind=False, file_links=[]):
     models_id = load_model(config_filename=config_filename, checkpoint_file=checkpoint_file)
@@ -284,6 +267,7 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
     return {
         model_id: {'s3_link': s3_link, 'predictions': geojson}
     }
+
 # Define a model for the POST request body
 class InvocationData(BaseModel):
     bounding_box: list[float]
@@ -294,10 +278,8 @@ class InvocationData(BaseModel):
     terramind: Optional[bool] = False
     file_links: Optional[list[str]] = []
 
-
 @router.post('/invocations')
-async def infer_from_model( invocation_data: InvocationData = Body(...)):
-
+async def infer_from_model(invocation_data: InvocationData = Body(...)):
     model_id = invocation_data.model_id
     infer_date = invocation_data.date
     bounding_box = invocation_data.bounding_box
@@ -317,6 +299,4 @@ async def health():
     return {"status": "healthy"}
 
 v1_api.include_router(router)
-
-# Todo add better route name
 app.mount("/api/predict", v1_api)

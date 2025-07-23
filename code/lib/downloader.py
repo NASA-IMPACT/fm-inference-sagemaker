@@ -101,7 +101,6 @@ class Downloader:
 
     def download_tiles(self, bounding_box):
         x_tiles, y_tiles = self.tile_indices(bounding_box)
-        downloaded_files = list()
         tile_infos = list()
         for x_index in range(x_tiles[0], x_tiles[1] + 1):
             for y_index in range(y_tiles[0], y_tiles[1] + 1):
@@ -109,7 +108,7 @@ class Downloader:
                 filename = f"{DOWNLOAD_FOLDER}/{self.layer}/{self.date}-{x_index}-{y_index}.tif"
                 tile_infos.append((x_index, y_index, filename))
         # parallelize download here
-        pool = Pool(cpu_count() - 1)
+        pool = Pool(8)
         downloaded_files = pool.starmap(self.download_tile, tile_infos)
         downloaded_files = [
             downloaded_file for downloaded_file in downloaded_files if downloaded_file
