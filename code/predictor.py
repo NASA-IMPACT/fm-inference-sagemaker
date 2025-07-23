@@ -192,6 +192,7 @@ def subset_geojson(geojson, bounding_box):
     return json.loads(geom.overlay(bbox, how='intersection').to_json())
 
 def batch(tiles, spacing=60):
+    spacing = max(spacing, 120)
     length = len(tiles)
     for tile in range(0, length, spacing):
         yield tiles[tile : min(tile + spacing, length)]
@@ -217,7 +218,6 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
                 all_tiles.append(tile_name)
 
     start_time = time.time()
-    mosaic = []
     results = list()
     profiles = list()
     s3_link = ''
