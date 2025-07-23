@@ -103,8 +103,9 @@ async def get_api_key(api_key: str = Depends(api_key_header)):
             detail="Could not connect to the API key validation service."
         )
 
-# Apply the dependency to all routes in this router
-router = APIRouter(dependencies=[Depends(get_api_key)])
+# Create separate routers for protected and public endpoints
+protected_router = APIRouter(dependencies=[Depends(get_api_key)])
+public_router = APIRouter()
 
 # ... [rest of your existing functions remain the same] ...
 
@@ -145,7 +146,7 @@ def save_cog(mosaic, profile, transform, filename):
         raster.write(mosaic, 1)
     output_profile = cog_profiles.get('deflate')
     output_profile.update(dict(BIGTIFF="IF_SAFER"))
-    output_profile.update(profile)
+    # output_profile.update(profile)
 
     config = dict(
         GDAL_NUM_THREADS="ALL_CPUS",
@@ -278,7 +279,8 @@ class InvocationData(BaseModel):
     terramind: Optional[bool] = False
     file_links: Optional[list[str]] = []
 
-@router.post('/invocations')
+# Protected endpoints (require API key)
+@protected_router.post('/invocations')
 async def infer_from_model(invocation_data: InvocationData = Body(...)):
     model_id = invocation_data.model_id
     infer_date = invocation_data.date
@@ -290,13 +292,16 @@ async def infer_from_model(invocation_data: InvocationData = Body(...)):
     final_geojson = infer(model_id, infer_date, bounding_box, config_filename=config_filename, checkpoint_file=checkpoint_file, terramind=terramind, file_links=file_links)
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
-@router.get('/ping')
+# Public endpoints (no API key required)
+@public_router.get('/ping')
 async def ping(request: Request):
     return { 'successCode': 200, 'message': 'pong'}
 
-@router.get("/health")
+@public_router.get("/health")
 async def health():
     return {"status": "healthy"}
 
-v1_api.include_router(router)
+# Include both routers in the v1_api
+v1_api.include_router(protected_router)
+v1_api.include_router(public_router)
 app.mount("/api/predict", v1_api)
