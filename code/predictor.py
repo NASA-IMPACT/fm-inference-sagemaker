@@ -202,10 +202,10 @@ def batch(tiles, spacing=60):
 def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, terramind=False, file_links=[]):
     global MODEL
     MODEL = MODEL or load_model(config_filename=config_filename, checkpoint_file=checkpoint_file)
-    if model_id not in models_id:
+    if model_id not in MODEL:
         response = {'statusCode': 422}
         return JSONResponse(content=jsonable_encoder(response))
-    inference = models_id[model_id]
+    inference = MODEL[model_id]
     all_tiles = list()
     geojson_list = list()
     geojson = {'type': 'FeatureCollection', 'features': []}
