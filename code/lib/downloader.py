@@ -102,19 +102,27 @@ class Downloader:
     def download_tiles(self, bounding_box):
         x_tiles, y_tiles = self.tile_indices(bounding_box)
         tile_infos = list()
+        cached_files = list()
         for x_index in range(x_tiles[0], x_tiles[1] + 1):
             for y_index in range(y_tiles[0], y_tiles[1] + 1):
                 self.mkdir(f"{DOWNLOAD_FOLDER}/{self.layer}")
                 filename = f"{DOWNLOAD_FOLDER}/{self.layer}/{self.date}-{x_index}-{y_index}.tif"
+                if os.path.exists(filename):
+                    cached_files.append(filename)
+                    continue
                 tile_infos.append((x_index, y_index, filename))
         # parallelize download here
-        pool = Pool(8)
-        downloaded_files = pool.starmap(self.download_tile, tile_infos)
-        downloaded_files = [
-            downloaded_file for downloaded_file in downloaded_files if downloaded_file
-        ]
-        pool.close()
-        pool.join()
+        if len(tile_infos) == 0:
+            return cached_files
+        else:
+            pool = Pool(8)
+            downloaded_files = pool.starmap(self.download_tile, tile_infos)
+            downloaded_files = [
+                downloaded_file for downloaded_file in downloaded_files if downloaded_file
+            ]
+            pool.close()
+            pool.join()
+        downloaded_files.extend(cached_files)
         return downloaded_files
 
     def register_new_search(self):
