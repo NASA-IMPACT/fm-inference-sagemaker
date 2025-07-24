@@ -202,6 +202,7 @@ def batch(tiles, spacing=60):
         yield tiles[tile : min(tile + spacing, length)]
 
 def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, terramind=False, file_links=[]):
+    start = time.time()
     global MODEL
     MODEL = MODEL or load_model(config_filename=config_filename, checkpoint_file=checkpoint_file)
     if model_id not in MODEL:
@@ -220,7 +221,7 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
             for tile in tiles:
                 tile_name = tile.replace('.tif', '_scaled.tif')
                 all_tiles.append(tile_name)
-
+    print(f"Initial Block took {time.time() - start} seconds")
     start_time = time.time()
     results = list()
     profiles = list()
