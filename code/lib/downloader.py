@@ -107,11 +107,14 @@ class Downloader:
             for y_index in range(y_tiles[0], y_tiles[1] + 1):
                 self.mkdir(f"{DOWNLOAD_FOLDER}/{self.layer}")
                 filename = f"{DOWNLOAD_FOLDER}/{self.layer}/{self.date}-{x_index}-{y_index}.tif"
+                print(f"Checking file existence: {filename} | exists?: {os.path.exists(filename)}")
                 if os.path.exists(filename):
                     cached_files.append(filename)
                     continue
-                tile_infos.append((x_index, y_index, filename))
+                else:
+                    tile_infos.append((x_index, y_index, filename))
         # parallelize download here
+        print(f"Downloading tiles length: {len(tile_infos)}")
         if len(tile_infos) == 0:
             return cached_files
         else:
