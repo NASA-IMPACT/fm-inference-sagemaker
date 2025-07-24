@@ -32,6 +32,8 @@ spec:
             value: "burn_scars"
           - name: API_KEY_VALIDATION_URL
             value: "https://dev.fm.dsig.net/api/validate"
+          - name: DOWNLOAD_FOLDER
+            value: "/root/.cache/"
           envFrom:
             - configMapRef:
                 name: oidc-envs

@@ -22,7 +22,7 @@ TILE_URL = {
 PROJECTION = "WebMercatorQuad"
 TMS = morecantile.tms.get(PROJECTION)
 ZOOM_LEVEL = 12
-DOWNLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "../data")
+DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", '/root/.cache/')
 
 
 WIDTH, HEIGHT = (224, 224)
