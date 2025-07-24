@@ -173,7 +173,7 @@ def save_cog(mosaic, profile, transform, filename):
 def post_process(detections, transform):
     contours, shape = PostProcess.prepare_contours(detections)
     detections = PostProcess.extract_shapes(detections, contours, transform, shape)
-    detections = PostProcess.remove_intersections(detections)
+    # detections = PostProcess.remove_intersections(detections)
     return PostProcess.convert_to_geojson(detections)
 
 def subset_geojson(geojson, bounding_box):
@@ -263,7 +263,10 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
             torch.cuda.empty_cache()
         print("!!! Infer Time:", time.time() - start_time)
     del inference
+    start2 = time.time()
     gc.collect()
+    print("!!! After gc call:", time.time() - start2)
+    print("!!! Before return:", time.time() - start_time)
 
     return {
         model_id: {'s3_link': s3_link, 'predictions': geojson}
