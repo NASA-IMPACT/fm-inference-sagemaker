@@ -53,6 +53,8 @@ API_KEY_VALIDATION_URL = os.getenv("API_KEY_VALIDATION_URL", "https://dev.fm.dsi
 # Fixed: Remove auto_error=False to make it work with FastAPI's authorization UI
 api_key_header = APIKeyHeader(name="x-api-key")
 
+MODEL = None
+
 async def get_api_key(api_key: str = Depends(api_key_header)):
     """
     Dependency that validates the 'x-api-key' by calling an external service.
@@ -198,7 +200,7 @@ def batch(tiles, spacing=60):
         yield tiles[tile : min(tile + spacing, length)]
 
 def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, terramind=False, file_links=[]):
-    models_id = load_model(config_filename=config_filename, checkpoint_file=checkpoint_file)
+    MODEL = MODEL or load_model(config_filename=config_filename, checkpoint_file=checkpoint_file)
     if model_id not in models_id:
         response = {'statusCode': 422}
         return JSONResponse(content=jsonable_encoder(response))
@@ -206,7 +208,6 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
     all_tiles = list()
     geojson_list = list()
     geojson = {'type': 'FeatureCollection', 'features': []}
-    print(model_id, infer_date, bounding_box, terramind, file_links)
     if terramind:
         for file_link in file_links:
             all_tiles.append(download_from_s3(file_link, '/opt/ml/data'))
@@ -226,11 +227,9 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
             torch.cuda.synchronize()
             with torch.no_grad():
                 for tiles in batch(all_tiles):
-                    print(tiles)
                     batch_results, batch_profiles = inference.infer(tiles, terramind)
                     results.extend(batch_results)
                     profiles.extend(batch_profiles)
-                    print('Done inference')
             memory_files = list()
             torch.cuda.empty_cache()
             for index, profile in enumerate(profiles):
@@ -241,7 +240,6 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
                 })
                 with memfile.open(**profile) as memoryfile:
                     memoryfile.write(results[index][0], 1)
-                    print(index, results[index].min(), results[index].max())
                 memory_files.append(memfile.open())
 
             mosaic, transform = merge(memory_files)
