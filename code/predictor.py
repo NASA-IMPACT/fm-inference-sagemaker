@@ -142,13 +142,10 @@ def save_cog(mosaic, profile, transform, filename):
             "count": 1,
         }
     )
-    print("Profile after the update: ", profile)
     with rasterio.open(filename, 'w', **profile) as raster:
         raster.write(mosaic, 1)
     output_profile = cog_profiles.get('deflate')
     output_profile.update(dict(BIGTIFF="IF_SAFER"))
-    # output_profile.update(profile)
-    print("Profile output the update: ", output_profile)
 
     config = dict(
         GDAL_NUM_THREADS="ALL_CPUS",
@@ -166,7 +163,6 @@ def save_cog(mosaic, profile, transform, filename):
         )
         connection = boto3.client('s3')
         connection.upload_fileobj(memory_file, BUCKET_NAME, filename)
-    print("Output profile after memory file: ", output_profile)
 
     return f"s3://{BUCKET_NAME}/{filename}"
 
