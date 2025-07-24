@@ -132,8 +132,9 @@ def load_model(config_filename, checkpoint_file):
 def download_files(infer_date, layer, bounding_box):
     start = time.time()
     downloader = Downloader(infer_date, layer)
+    result = downloader.download_tiles(bounding_box)
     print(f"Download took {time.time() - start} seconds")
-    return downloader.download_tiles(bounding_box)
+    return result
 
 def save_cog(mosaic, profile, transform, filename):
     profile.update(
@@ -212,6 +213,8 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
     all_tiles = list()
     geojson_list = list()
     geojson = {'type': 'FeatureCollection', 'features': []}
+    print(f"Before the loop {time.time() - start} seconds")
+    
     if terramind:
         for file_link in file_links:
             all_tiles.append(download_from_s3(file_link, '/opt/ml/data'))
@@ -221,6 +224,8 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
             for tile in tiles:
                 tile_name = tile.replace('.tif', '_scaled.tif')
                 all_tiles.append(tile_name)
+    
+    print(f"After the loop {time.time() - start} seconds")
     print(f"Initial Block took {time.time() - start} seconds")
     start_time = time.time()
     results = list()
