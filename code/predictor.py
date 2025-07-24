@@ -130,7 +130,9 @@ def load_model(config_filename, checkpoint_file):
     return { USECASE: infer }
 
 def download_files(infer_date, layer, bounding_box):
+    start = time.time()
     downloader = Downloader(infer_date, layer)
+    print(f"Download took {time.time() - start} seconds")
     return downloader.download_tiles(bounding_box)
 
 def save_cog(mosaic, profile, transform, filename):
