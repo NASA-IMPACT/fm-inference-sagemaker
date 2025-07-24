@@ -33,7 +33,7 @@ spec:
           - name: API_KEY_VALIDATION_URL
             value: "https://dev.fm.dsig.net/api/validate"
           - name: DOWNLOAD_FOLDER
-            value: "/root/.cache/"
+            value: "/root/.cache/data/"
           envFrom:
             - configMapRef:
                 name: oidc-envs
