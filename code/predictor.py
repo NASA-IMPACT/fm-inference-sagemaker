@@ -200,6 +200,7 @@ def batch(tiles, spacing=60):
         yield tiles[tile : min(tile + spacing, length)]
 
 def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, terramind=False, file_links=[]):
+    global MODEL
     MODEL = MODEL or load_model(config_filename=config_filename, checkpoint_file=checkpoint_file)
     if model_id not in models_id:
         response = {'statusCode': 422}
