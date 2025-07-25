@@ -115,7 +115,8 @@ class Downloader:
                     cached_files.append(filename)
                     continue_download = False
                     continue
-                tile_infos.append((x_index, y_index, filename))
+                else:
+                    tile_infos.append((x_index, y_index, filename))
         # parallelize download here
         if len(tile_infos) == 0:
             downloaded_files = cached_files

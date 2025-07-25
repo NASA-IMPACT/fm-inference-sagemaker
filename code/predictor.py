@@ -130,10 +130,8 @@ def load_model(config_filename, checkpoint_file):
     return { USECASE: infer }
 
 def download_files(infer_date, layer, bounding_box):
-    start = time.time()
     downloader = Downloader(infer_date, layer)
     result = downloader.download_tiles(bounding_box)
-    print(f"Download took {time.time() - start} seconds")
     return result
 
 def save_cog(mosaic, profile, transform, filename):
@@ -203,7 +201,6 @@ def batch(tiles, spacing=60):
         yield tiles[tile : min(tile + spacing, length)]
 
 def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, terramind=False, file_links=[]):
-    start = time.time()
     global MODEL
     MODEL = MODEL or load_model(config_filename=config_filename, checkpoint_file=checkpoint_file)
     if model_id not in MODEL:
@@ -213,7 +210,6 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
     all_tiles = list()
     geojson_list = list()
     geojson = {'type': 'FeatureCollection', 'features': []}
-    print(f"Before the loop {time.time() - start} seconds")
     
     if terramind:
         for file_link in file_links:
@@ -224,9 +220,7 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
             for tile in tiles:
                 tile_name = tile.replace('.tif', '_scaled.tif')
                 all_tiles.append(tile_name)
-    
-    print(f"After the loop {time.time() - start} seconds")
-    print(f"Initial Block took {time.time() - start} seconds")
+
     start_time = time.time()
     results = list()
     profiles = list()
@@ -269,10 +263,8 @@ def infer(model_id, infer_date, bounding_box, config_filename, checkpoint_file, 
             torch.cuda.empty_cache()
         print("!!! Infer Time:", time.time() - start_time)
     del inference
-    start2 = time.time()
     gc.collect()
-    print("!!! After gc call:", time.time() - start2)
-    print("!!! Before return:", time.time() - start_time)
+
 
     return {
         model_id: {'s3_link': s3_link, 'predictions': geojson}

@@ -5,6 +5,14 @@ metadata:
   namespace: default
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300s"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300s"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300s"
+    # Add these missing annotations:
+    nginx.ingress.kubernetes.io/upstream-timeout: "300s"
+    nginx.ingress.kubernetes.io/proxy-next-upstream-timeout: "300s"
+    nginx.ingress.kubernetes.io/client-body-timeout: "300s"
+    nginx.ingress.kubernetes.io/client-header-timeout: "300s"
 spec:
   tls:
   - hosts:
