@@ -107,13 +107,18 @@ class Downloader:
             for y_index in range(y_tiles[0], y_tiles[1] + 1):
                 self.mkdir(f"{DOWNLOAD_FOLDER}/{self.layer}")
                 filename = f"{DOWNLOAD_FOLDER}/{self.layer}/{self.date}-{x_index}-{y_index}.tif"
-                if os.path.exists(filename):
+                if os.path.exists(filename) or os.path.exists(filename.replace('HLSL30', 'HLSS30')) or os.path.exists(filename.replace('HLSS30', 'HLSL30')):
+                    if os.path.exists(filename.replace('HLSL30', 'HLSS30')):
+                        filename = filename.replace('HLSL30', 'HLSS30')
+                    elif os.path.exists(filename.replace('HLSS30', 'HLSL30')):
+                        filename = filename.replace('HLSS30', 'HLSL30')
                     cached_files.append(filename)
+                    continue_download = False
                     continue
                 tile_infos.append((x_index, y_index, filename))
         # parallelize download here
         if len(tile_infos) == 0:
-            return cached_files
+            downloaded_files = cached_files
         else:
             pool = Pool(8)
             downloaded_files = pool.starmap(self.download_tile, tile_infos)
@@ -122,7 +127,7 @@ class Downloader:
             ]
             pool.close()
             pool.join()
-        downloaded_files.extend(cached_files)
+            downloaded_files.extend(cached_files)
         return downloaded_files
 
     def register_new_search(self):
