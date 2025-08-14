@@ -296,11 +296,11 @@ async def infer_from_model(invocation_data: InvocationData = Body(...)):
 # Public endpoints (no API key required)
 @public_router.get('/ping')
 async def ping(request: Request):
-    return { 'successCode': 200, 'message': 'pong'}
+    return { "successCode": 200, "message": "pong"}
 
 @public_router.get("/health")
 async def health():
-    return {"status": "healthy"}
+    return {"successCode": 200, "status": "healthy"}
 
 # Include both routers in the v1_api
 v1_api.include_router(protected_router)
