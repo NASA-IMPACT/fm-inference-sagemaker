@@ -300,7 +300,7 @@ async def ping(request: Request):
 
 @public_router.get("/health")
 async def health():
-    return {"successCode": 200, "status": "healthy"}
+    return [{"successCode": 200, "status": "healthy"}]
 
 # Include both routers in the v1_api
 v1_api.include_router(protected_router)
