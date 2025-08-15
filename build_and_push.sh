@@ -11,4 +11,5 @@ echo $ECR_PASSWORD | docker login --username AWS --password-stdin $ECR_URL
 
 docker push $ECR_URL/$ECR_IMAGE_NAME
 
+kubectl apply -f k8s-manifests/
 # kind load docker-image $ECR_URL/$ECR_IMAGE_NAME --name neo-cluster
