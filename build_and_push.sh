@@ -25,8 +25,8 @@ echo $ECR_PASSWORD | docker login --username AWS --password-stdin $ECR_URL
 docker push $ECR_URL/$ECR_IMAGE_NAME
 
 # Generate deployment.yaml and ingress.yaml from templates using envsubst
-envsubst < k8s-manifests/deployment.template.yaml > k8s-manifests/deployment.yaml
-envsubst < k8s-manifests/ingress.template.yaml > k8s-manifests/ingress.yaml
+envsubst < k8s-manifests/deployment.yaml.tmpl > k8s-manifests/deployment.yaml
+envsubst < k8s-manifests/ingress.yaml.tmpl > k8s-manifests/ingress.yaml
 
 # Apply Kubernetes manifests
 kubectl apply -f k8s-manifests/
