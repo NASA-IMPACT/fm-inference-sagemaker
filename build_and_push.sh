@@ -1,18 +1,15 @@
 #!/bin/bash
 
-# Generate dynamic tag from branch name and git commit
-BRANCH_NAME=$(git branch --show-current | sed 's/[^a-zA-Z0-9]/-/g')  # Replace special chars with hyphens
-
 # Build the image first to get the digest
-TEMP_IMAGE_NAME="prediction:temp-${BRANCH_NAME}"
+TEMP_IMAGE_NAME="prediction:temp"
 echo "Building temporary image to get digest: $TEMP_IMAGE_NAME"
 docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME .
 
 # Get the image digest (content-based hash)
 IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $TEMP_IMAGE_NAME 2>/dev/null || docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 
-# Create final tag using branch and digest
-export IMAGE_TAG="${BRANCH_NAME}-${IMAGE_DIGEST}"
+# Create final tag using just the digest
+export IMAGE_TAG="${IMAGE_DIGEST}"
 export ECR_IMAGE_NAME="prediction:${IMAGE_TAG}"
 
 # Tag the temp image with final name
