@@ -18,7 +18,7 @@ spec:
         - name: ecr-registry-key
       containers:
         - name: prediction-container
-          image: ${AWS_ACCOUNT_ID}.dkr.ecr.us-west-2.amazonaws.com/prediction:${IMAGE_TAG}
+          image: ${ECR_URL}/${ECR_IMAGE_NAME}
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
