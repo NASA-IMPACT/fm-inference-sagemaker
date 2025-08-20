@@ -2,10 +2,9 @@
 
 # Generate dynamic tag from branch name and git commit
 BRANCH_NAME=$(git branch --show-current | sed 's/[^a-zA-Z0-9]/-/g')  # Replace special chars with hyphens
-GIT_COMMIT=$(git rev-parse --short HEAD)
 
 # Build the image first to get the digest
-TEMP_IMAGE_NAME="prediction:temp-${BRANCH_NAME}-${GIT_COMMIT}"
+TEMP_IMAGE_NAME="prediction:temp-${BRANCH_NAME}"
 echo "Building temporary image to get digest: $TEMP_IMAGE_NAME"
 docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME .
 
