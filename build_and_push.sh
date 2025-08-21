@@ -1,14 +1,22 @@
 #!/bin/bash
 
+set -e  # Exit on any error
+
+# Ensure required environment variables are set
+if [[ -z "$ECR_URL" || -z "$INGRESS_HOST" ]]; then
+    echo "Error: ECR_URL and INGRESS_HOST environment variables must be set"
+    exit 1
+fi
+
 # Build the image first to get the digest
 TEMP_IMAGE_NAME="prediction:temp"
 echo "Building temporary image to get digest: $TEMP_IMAGE_NAME"
 docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME .
 
-# Get the image digest (content-based hash)
-IMAGE_DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $TEMP_IMAGE_NAME 2>/dev/null || docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
+# Get the image digest (content-based hash) - extract only the hash portion
+IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 
-# Create final tag using just the digest
+# Create final tag using just the short hash (no colons or special characters)
 export IMAGE_TAG="${IMAGE_DIGEST}"
 export ECR_IMAGE_NAME="prediction:${IMAGE_TAG}"
 
@@ -31,7 +39,7 @@ envsubst < k8s-manifests/deployment.yaml.tmpl > k8s-manifests/deployment.yaml
 envsubst < k8s-manifests/ingress.yaml.tmpl > k8s-manifests/ingress.yaml
 
 # Apply Kubernetes manifests
-kubectl apply -f k8s-manifests/
+# kubectl apply -f k8s-manifests/
 
 # Optional: Load image to kind cluster if needed
 # kind load docker-image $ECR_URL/$ECR_IMAGE_NAME --name neo-cluster
