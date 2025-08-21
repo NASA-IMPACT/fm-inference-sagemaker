@@ -18,7 +18,7 @@ IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 
 
 # Create final tag using just the short hash (no colons or special characters)
 IMAGE_TAG="${IMAGE_DIGEST}"
-ECR_IMAGE_NAME="prediction:${IMAGE_TAG}"
+export ECR_IMAGE_NAME="prediction:${IMAGE_TAG}"
 
 # Tag the temp image with final name
 docker tag $TEMP_IMAGE_NAME $ECR_URL/$ECR_IMAGE_NAME
