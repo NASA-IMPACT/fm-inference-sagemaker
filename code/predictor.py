@@ -42,7 +42,7 @@ app = FastAPI(
 v1_api = FastAPI(
     title="Predictor API - V1",
     description="Predictor API for NASA IMPACT (MVP)",
-    version="1.0.0"
+    version="1.0.1"
 )
 
 # --- Start of Modified Security Block ---
