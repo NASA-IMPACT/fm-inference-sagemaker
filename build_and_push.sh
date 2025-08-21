@@ -17,8 +17,8 @@ docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME .
 IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 
 # Create final tag using just the short hash (no colons or special characters)
-export IMAGE_TAG="${IMAGE_DIGEST}"
-export ECR_IMAGE_NAME="prediction:${IMAGE_TAG}"
+IMAGE_TAG="${IMAGE_DIGEST}"
+ECR_IMAGE_NAME="prediction:${IMAGE_TAG}"
 
 # Tag the temp image with final name
 docker tag $TEMP_IMAGE_NAME $ECR_URL/$ECR_IMAGE_NAME
@@ -39,7 +39,7 @@ envsubst < k8s-manifests/deployment.yaml.tmpl > k8s-manifests/deployment.yaml
 envsubst < k8s-manifests/ingress.yaml.tmpl > k8s-manifests/ingress.yaml
 
 # Apply Kubernetes manifests
-# kubectl apply -f k8s-manifests/
+kubectl apply -f k8s-manifests/
 
 # Optional: Load image to kind cluster if needed
 # kind load docker-image $ECR_URL/$ECR_IMAGE_NAME --name neo-cluster
