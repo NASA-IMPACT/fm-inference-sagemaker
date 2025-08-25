@@ -1,3 +1,8 @@
 .env
 
 .venv
+
+k8s-manifests/deployment.yaml
+
+k8s-manifests/ingress.yaml
+

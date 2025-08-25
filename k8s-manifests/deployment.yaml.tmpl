@@ -18,7 +18,7 @@ spec:
         - name: ecr-registry-key
       containers:
         - name: prediction-container
-          image: 244822573120.dkr.ecr.us-west-2.amazonaws.com/prediction:mvp
+          image: ${ECR_URL}/${ECR_IMAGE_NAME}
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
