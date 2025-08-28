@@ -9,4 +9,12 @@ spec:
   - port: 443
     targetPort: 8080
   type: ClusterIP
-  
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: floods-service
+spec:
+  selector:
+    app: flood-app
+  type: ClusterIP

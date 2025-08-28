@@ -41,3 +41,51 @@ spec:
         - name: cache-volume
           persistentVolumeClaim:
             claimName: prediction-cache-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: floods-app
+  labels:
+    app: pipeline-floods-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pipeline-floods-app
+  template:
+    metadata:
+      labels:
+        app: pipeline-floods-app
+    spec:
+      imagePullSecrets:
+        - name: ecr-registry-key
+      containers:
+        - name: pipeline-floods-container
+          image: ${ECR_URL}/${FLOOD_IMAGE_NAME}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+          env:
+          - name: BUCKET_NAME
+            value: "r2o-models"
+          - name: USECASE
+            value: "floods"
+          - name: API_KEY_VALIDATION_URL
+            value: "https://dev.fm.dsig.net/api/validate"
+          - name: DOWNLOAD_FOLDER
+            value: "/root/.cache/data"
+          - name: MODEL_WEIGHT_PATH
+            value: ${FLOOD_WEIGHT}
+          - name: CONFIG_PATH
+            value: ${FLOOD_CONFIG}
+          envFrom:
+            - configMapRef:
+                name: oidc-envs
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: prediction-cache-pvc
