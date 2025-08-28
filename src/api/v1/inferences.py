@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 from ...db.database import get_db
 from ...db.models import FinetunedModel, Inference, PreloadedEvent
+from ...lib.downloader import Downloader
 from ...models.finetuned_model import FinetunedModelRead
 from ...models.inference import InferenceRead, InferenceUpdate
 from ...models.preloaded_event import PreloadedEventRead
@@ -57,10 +58,31 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
             name=inference.name,
             query=inference.query
         )
+        finetuned_models = db.query(FinetunedModel).filter(FinetunedModel.id.in_(inference.finetuned_model_ids)).all()
+        if not finetuned_models or len(finetuned_models) != len(inference.finetuned_model_ids):
+            return {"error": "One or more finetuned models not found"}
+        inference.finetuned_models = finetuned_models
+
+        # better to upload merged_file to s3 and pass the s3 path to the inference pipeline
+        # for now, we will just pass the local file path
+        # call specific model inference pipeline with the file name/path here.
+        # create a dict with model names and their inference results
+        results = {}
+        for model in finetuned_models:
+            print(f"Running inference for model: {model.name} on data: {merged_file}")
+            model_id = model.source_details['model_id']
+            downloader = Downloader(inference.query['date'], inference.query['bbox'], layers=model.data_config['sources'])
+            merged_file = downloader.find_and_prepare_data()
+            # build model pipeline url here
+            # call the model endpoint with the merged_file
+            # update results dict with the inference results
+        # store the s3 results and geojson in inference object
+
+
         db.add(inference)
         db.commit()
         db.refresh(inference)
-        # get inference from specific finetuned models and update the inference object
+
         return db_model
     except Exception as e:
         return {"error": str(e)}
