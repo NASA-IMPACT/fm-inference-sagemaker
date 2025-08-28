@@ -69,11 +69,9 @@ def create_model(model: FinetunedModelUpdate, db: Session = Depends(get_db)):
     """Create a new finetuned model."""
     try:
         db_model = FinetunedModel(
-            id=model.id,
             name=model.name,
             source_type=model.source_type,
             source_details=model.source_details,
-            created_at=model.created_at,
             data_config=model.data_config
         )
         db.add(db_model)

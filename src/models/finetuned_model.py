@@ -21,7 +21,7 @@ class FinetunedModelBase(BaseModel):
         from_attributes = True
 
 class FinetunedModelRead(FinetunedModelBase):
-    inferences: Optional[List["InferenceRead"]]
+    pass
 
 class FinetunedModelUpdate(BaseModel):
     name: Optional[str] = None
