@@ -1,0 +1,30 @@
+import enum
+
+from pydantic import BaseModel, Field
+from typing import Optional, List
+from uuid import UUID
+from datetime import datetime
+
+class SourceType(str, enum.Enum):
+    huggingface = "huggingface"
+    s3 = "s3"
+
+class FinetunedModelBase(BaseModel):
+    id: UUID
+    name: str
+    source_type: SourceType
+    source_details: dict
+    created_at: datetime
+    data_config: Optional[dict]
+
+    class Config:
+        from_attributes = True
+
+class FinetunedModelRead(FinetunedModelBase):
+    inferences: Optional[List["InferenceRead"]]
+
+class FinetunedModelUpdate(BaseModel):
+    name: Optional[str] = None
+    source_type: Optional[SourceType] = SourceType.s3
+    source_details: Optional[dict] = None
+    data_config: Optional[dict] = None
