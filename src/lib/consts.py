@@ -9,5 +9,6 @@ SPLITS = ['training', 'validation', 'test']
 
 LAYERS = ['HLSS30', 'HLSL30']
 DEFAULT_BASE_PATH = '/opt/ml/'
-BUCKET_NAME = os.environ['BUCKET_NAME']
+BUCKET_NAME = os.environ.get('BUCKET_NAME')
 MODEL_PATH = "models/{model_name}"
+USECASE = os.environ.get('USECASE')
