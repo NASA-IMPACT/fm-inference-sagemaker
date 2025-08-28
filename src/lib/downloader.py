@@ -17,7 +17,6 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.windows import from_bounds, Window
 
 
-
 BANDS = ["B02", "B03", "B04", "B08", "B11", "B12", "Fmask"]
 LAYERS = {
     'HLS': ['HLSS30', 'HLSL30'],
@@ -33,7 +32,7 @@ DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", '/root/.cache/')
 WIDTH, HEIGHT = (512, 512)
 
 class Downloader:
-    def __init__(self, date, bbox, layer='HLS'):
+    def __init__(self, date, bbox, layers=LAYERS['HLS']):
         """
         Initialize Downloader
         Args:
@@ -42,7 +41,7 @@ class Downloader:
         """
         self.date = date
         self.date_range = (f"{date}T00:00:00Z", f"{date}T23:59:59Z")
-        self.layers = LAYERS[layer]
+        self.layers = layers
         self.bbox = bbox
         self.links = []
 
