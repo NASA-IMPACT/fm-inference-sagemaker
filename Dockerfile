@@ -1,44 +1,18 @@
-# Part of the implementation of this container is based on the Amazon SageMaker Apache MXNet container.
-# https://github.com/aws/sagemaker-mxnet-container
+# Use the AWS Lambda Python base image
+FROM public.ecr.aws/lambda/python:3.12
 
-FROM nvidia/cuda:12.1.1-base-ubuntu22.04
+# Set working directory
+WORKDIR /var/task
 
-LABEL maintainer="NASA IMPACT"
+# Install system dependencies
+RUN dnf install -y gcc && dnf clean all
 
-ARG DEBIAN_FRONTEND=noninteractive
+# Copy requirements and install Python dependencies
+COPY requirements.txt ./
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-RUN apt-get update && \
-    apt-get install -y software-properties-common && \
-    add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt install -y python3.11-dev
+# Copy the rest of the application
+COPY . .
 
-RUN apt-get update && apt-get install -y libgl1 python3-pip nginx git libgdal-dev --fix-missing
-RUN rm -rf /var/lib/apt/lists/*
-
-WORKDIR /
-
-RUN pip3 install --upgrade pip
-
-# RUN pip3 install GDAL
-
-COPY requirements.txt requirements.txt
-
-RUN pip3 install -r requirements.txt --ignore-installed
-
-ENV CUDA_HOME=/usr/local/cuda
-
-RUN mkdir models
-
-# Copies code under /opt/ml/code where sagemaker-containers expects to find the script to run
-COPY code /opt/program
-
-ENV PYTHONUNBUFFERED=TRUE
-ENV PYTHONDONTWRITEBYTECODE=TRUE
-ENV PATH="/opt/program:${PATH}"
-
-RUN mkdir -p /var/log/nginx && \
-    touch /var/log/nginx/access.log /var/log/nginx/error.log && \
-    chmod -R 777 /var/log/nginx
-
-# Copies code under /opt/ml/code where sagemaker-containers expects to find the script to run
-WORKDIR /opt/program
+# Set the Lambda handler (update if your handler is different)
+CMD ["src.main.handler"]
