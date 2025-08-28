@@ -72,7 +72,7 @@ class Downloader:
         filenames = earthaccess.download(links, local_path=DATA_DOWNLOAD_DIR, threads=16)
         return filenames
 
-    def generate_tiles(self, file_name, shape=(512,512), batch_size=1, overlap=0):
+    def generate_tiles(self, file_name, shape=(512,512), batch_size=1, overlap=0, scale=False):
         """
         Generate tiles of given shape from the input file.
         Yields (tile_array, window, tile_index) for each tile.
@@ -100,6 +100,9 @@ class Downloader:
                     if win_height < height or win_width < width:
                         pad_shape = (tile.shape[0], height, width)
                         padded = np.zeros(pad_shape, dtype=tile.dtype)
+                        if scaled:
+                            tile = tile / 10000.0
+                            tile = np.clip(tile, 0, 1)
                         padded[:, :win_height, :win_width] = tile
                         tile = padded
                     # Prepare metadata for memory file
@@ -181,7 +184,7 @@ class Downloader:
             s.close()
         return output_name
 
-    def find_links(self):
+    def find_and_prepare_data(self):
         granules = search_data(
             short_name=self.layers,
             temporal=self.date_range,
@@ -200,61 +203,3 @@ class Downloader:
                 filenames = self.download_bands(links)
                 merged_files.append(self.merge_bands(filenames))
         return merged_files
-
-
-# Update download process: (one branch)
-# 1. Update downloader to use earthaccess, and multi threads for faster download
-# 2. Use already existing RDS to add new database for this usecase
-# 3. setup sqlalchemy and alembic for migration (along with fast api)
-# 4. Update current inference process to use the new downloader
-#     1. each inference request is registered in database
-#     2. once downloaded, the list of files are then kept track of in redis with a timeout of 30 days.
-#     3. Once timedout, those files will be removed.
-#     4. inference is stored in the database (s3 link along with the geojson*) *contemplating if geojson is needed
-
-
-# start_time = time.time()
-# earthaccess.login()
-
-# sub_selected = []
-# for link in links:
-#         if any(b in link for b in BANDS):
-#             sub_selected.append(link)
-
-# filtered_granules = [g for g in granules if any(b in g.data_links()[0] for b in BANDS)]
-# os.makedirs(LOCAL_DIR, exist_ok=True)
-# for g in granules:
-#     try:
-#         download([g], LOCAL_DIR)
-#     except Exception as e:
-#         print(f"Download error: {e}")
-# band_files = {b: [] for b in BANDS}
-# for f in os.listdir(LOCAL_DIR):
-#     for b in BANDS:
-#         if f.endswith(f"{b}.tif"):
-#             band_files[b].append(os.path.join(LOCAL_DIR, f))
-# mosaics = []
-# out_meta = None
-# for b in BANDS:
-#     srcs = [rasterio.open(f) for f in band_files[b]]
-#     mosaic, transform = merge(srcs, method='first')
-#     mosaics.append(mosaic[0])
-#     if out_meta is None:
-#         out_meta = srcs[0].meta.copy()
-#         out_meta.update({"height": mosaic.shape[1], "width": mosaic.shape[2], "transform": transform, "count": len(BANDS)})
-#     for s in srcs:
-#         s.close()
-# stacked = np.stack(mosaics, axis=0) / 10000.0
-# stacked = np.clip(stacked, 0, 1)
-# with rasterio.open(OUTPUT_NAME, "w", **out_meta) as dst:
-#     dst.write(stacked)
-# with rasterio.open(OUTPUT_NAME) as src:
-#     row_off = (src.height - CHUNK_SIZE) // 2
-#     col_off = (src.width - CHUNK_SIZE) // 2
-#     window = Window(col_off, row_off, CHUNK_SIZE, CHUNK_SIZE)
-#     data = src.read(window=window)
-#     transform = src.window_transform(window)
-#     out_meta.update({"height": CHUNK_SIZE, "width": CHUNK_SIZE, "transform": transform})
-#     with rasterio.open(OUTPUT_NAME, "w", **out_meta) as dst:
-#         dst.write(data)
-# print(f"Single-threaded time: {time.time() - start_time:.2f}s")
