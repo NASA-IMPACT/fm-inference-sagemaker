@@ -54,7 +54,6 @@ class Infer:
         processed_images = imgs_tensor
         if not(terramind):
             processed_images = imgs_tensor.unsqueeze(2)
-        print(processed_images.shape)
         return processed_images, profiles
 
     def infer(self, images, terramind=False):

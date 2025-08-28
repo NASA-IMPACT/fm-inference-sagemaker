@@ -7,9 +7,8 @@ from lib.consts import BUCKET_NAME
 MODEL_PATH = "models/{model_name}"
 
 
-def assumed_role_session():
+def get_boto3_session():
     # Assume the "notebookAccessRole" role we created using AWS CDK.
-    client = boto3.client('sts')
     return boto3.session.Session()
 
 
@@ -17,7 +16,7 @@ def download_data(data, split):
     split_folder = f"/opt/ml/data/{split}"
     if not (os.path.exists(split_folder)):
         os.makedirs(split_folder)
-    session = assumed_role_session()
+    session = get_boto3_session()
     s3_connection = session.resource('s3')
     splits = data.split('/')
     bucket = s3_connection.Bucket(BUCKET_NAME)

@@ -49,34 +49,47 @@ class PostProcess:
 
     @classmethod
     def extract_shapes(cls, predictions, contours, transform, shape):
-        """Extracts and scores shapes from contours, returning those above threshold."""
-        smoothened = []
+        smoothened = list()
         for contour in contours:
-            if len(contour) <= MIN_POINTS:
-                continue
-            if cv2.contourArea(contour) < CONTOUR_AREA_THRESHOLD:
-                continue
-            y, x = contour.T
-            x = x.tolist()[0]
-            y = y.tolist()[0]
-            # Optionally smooth the contour here if needed
-            x_new, y_new = x, y
-            res_array = []
-            new_polygon = []
-            for px, py in zip(x_new, y_new):
-                clamped_x, clamped_y = cls._clamp_point((px, py), shape)
-                new_polygon.append((clamped_x, clamped_y))
-                res_array.append(cls.convert_xy_to_latlon(clamped_x, clamped_y, transform))
-            img = Image.new("L", (shape[0], shape[1]), 0)
-            ImageDraw.Draw(img).polygon(new_polygon, outline=1, fill=1)
-            mask = np.where(np.array(img).T > 0)
-            score_pixels = predictions[mask]
-            if len(score_pixels) == 0:
-                continue
-            score = sum(score_pixels) / len(score_pixels)
-            if score < PREDICT_THRESHOLD:
-                continue
-            smoothened.append([np.asarray(res_array), score])
+            length = len(contour)
+            if length > MIN_POINTS:
+                if cv2.contourArea(contour) < CONTOUR_AREA_THRESHOLD:
+                    continue
+                y, x = contour.T
+                x = x.tolist()[0]
+                y = y.tolist()[0]
+                # knots_vector, params = splprep([x, y], s=1.0, quiet=1, per=1)
+                # new_params = np.linspace(params.min(), params.max(), 25)
+                # x_new, y_new = splev(new_params, knots_vector, der=0)
+                x_new = x
+                y_new = y
+                res_array = list()
+                # calculate score here
+                new_polygon = list()
+                for pair in zip(x_new, y_new):
+                    pair = list(pair)
+                    # hack to make sure the shapes are inside a boundary
+                    # Working on a fix, until then this is the reality
+                    # we live in
+                    if pair[0] > shape[0]:
+                        pair[0] = shape[0]
+                    if pair[1] > shape[1]:
+                        pair[1] = shape[1]
+                    if pair[0] < 0:
+                        pair[0] = 0
+                    if pair[1] < 0:
+                        pair[1] = 0
+                    new_polygon.append((pair[0], pair[1]))
+                    res_array.append(cls.convert_xy_to_latlon(pair[0], pair[1], transform))
+                img = Image.new("L", (shape[0], shape[1]), 0)
+                ImageDraw.Draw(img).polygon(new_polygon, outline=1, fill=1)
+                mask = np.where(np.array(img).T > 0)
+                score = predictions[mask]
+                score_length = len(score)
+                score = sum(score) / score_length
+                if score < PREDICT_THRESHOLD:
+                    continue
+                smoothened.append([np.asarray(res_array), score])
         return smoothened
 
     @classmethod
