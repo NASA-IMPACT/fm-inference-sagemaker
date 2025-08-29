@@ -74,7 +74,7 @@ spec:
         - name: ecr-registry-key
       containers:
         - name: pipeline-floods-container
-          image: ${ECR_URL}/${FLOOD_IMAGE_NAME}
+          image: ${ECR_URL}/${ECR_FLOOD_IMAGE_NAME}
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
