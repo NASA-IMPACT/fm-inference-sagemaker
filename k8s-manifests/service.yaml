@@ -16,5 +16,8 @@ metadata:
   name: floods-service
 spec:
   selector:
-    app: flood-app
+    app: floods-app
+  ports:
+  - port: 8080
+    targetPort: 8001
   type: ClusterIP
