@@ -11,17 +11,26 @@ fi
 # Build the image first to get the digest
 TEMP_IMAGE_NAME="inference:temp"
 echo "Building temporary image to get digest: $TEMP_IMAGE_NAME"
-docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME . -f pipelines/floods/Dockerfile
+docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME .
+
+cd pipelines
+TEMP_FLOOD_IMAGE_NAME="floods:temp"
+echo "Building temporary image to get digest: $TEMP_FLOOD_IMAGE_NAME"
+docker buildx build --platform linux/amd64 -t $TEMP_FLOOD_IMAGE_NAME . -f floods/Dockerfile
 
 # Get the image digest (content-based hash) - extract only the hash portion
 IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
+# Get the flood image digest (content-based hash) - extract only the hash portion
+FLOOD_IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_FLOOD_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 
 # Create final tag using just the short hash (no colons or special characters)
 IMAGE_TAG="${IMAGE_DIGEST}"
 export ECR_IMAGE_NAME="inference:${IMAGE_TAG}"
+export ECR_FLOOD_IMAGE_NAME="inference_pipelines/floods:${FLOOD_IMAGE_DIGEST}"
 
 # Tag the temp image with final name
 docker tag $TEMP_IMAGE_NAME $ECR_URL/$ECR_IMAGE_NAME
+docker tag $TEMP_FLOOD_IMAGE_NAME $ECR_URL/$ECR_FLOOD_IMAGE_NAME
 
 echo "Final image: $ECR_URL/$ECR_IMAGE_NAME"
 echo "Using ingress host: $INGRESS_HOST"
@@ -30,9 +39,11 @@ echo "Using ingress host: $INGRESS_HOST"
 ECR_PASSWORD=$(aws ecr get-login-password --region us-west-2)
 echo $ECR_PASSWORD | docker login --username AWS --password-stdin $ECR_URL
 docker push $ECR_URL/$ECR_IMAGE_NAME
+docker push $ECR_URL/$ECR_FLOOD_IMAGE_NAME
 
 # Clean up temporary image
 docker rmi $TEMP_IMAGE_NAME
+docker rmi $TEMP_FLOOD_IMAGE_NAME
 
 # Generate deployment.yaml and ingress.yaml from templates using envsubst
 envsubst < k8s-manifests/deployment.yaml.tmpl > k8s-manifests/deployment.yaml
