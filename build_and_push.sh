@@ -9,16 +9,16 @@ if [[ -z "$ECR_URL" || -z "$INGRESS_HOST" ]]; then
 fi
 
 # Build the image first to get the digest
-TEMP_IMAGE_NAME="prediction:temp"
+TEMP_IMAGE_NAME="inference:temp"
 echo "Building temporary image to get digest: $TEMP_IMAGE_NAME"
-docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME .
+docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME . -f pipelines/floods/Dockerfile
 
 # Get the image digest (content-based hash) - extract only the hash portion
 IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 
 # Create final tag using just the short hash (no colons or special characters)
 IMAGE_TAG="${IMAGE_DIGEST}"
-export ECR_IMAGE_NAME="prediction:${IMAGE_TAG}"
+export ECR_IMAGE_NAME="inference:${IMAGE_TAG}"
 
 # Tag the temp image with final name
 docker tag $TEMP_IMAGE_NAME $ECR_URL/$ECR_IMAGE_NAME
