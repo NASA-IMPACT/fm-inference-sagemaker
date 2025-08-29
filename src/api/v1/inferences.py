@@ -73,6 +73,11 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
             model_id = model.source_details['model_id']
             downloader = Downloader(inference.query['date'], inference.query['bbox'], layers=model.data_config['sources'])
             merged_file = downloader.find_and_prepare_data()
+            url = f"http://{model_id}-model:8080/invocations"
+            response = requests.post(url, data={'filename': merged_file, 'scaled': model.data_config['scaled']})
+            results[model.name] = response.json()
+            inference.result_geojson = results[model.name]['geojson']
+            inference.result_s3_path = results[model.name]['s3_path']
             # build model pipeline url here
             # call the model endpoint with the merged_file
             # update results dict with the inference results
