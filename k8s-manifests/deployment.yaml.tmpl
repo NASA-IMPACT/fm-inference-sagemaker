@@ -34,6 +34,18 @@ spec:
             value: "https://dev.fm.dsig.net/api/validate"
           - name: DOWNLOAD_FOLDER
             value: "/root/.cache/data"
+          - name: DATABASE_URL
+            value: ${DATABASE_URL}
+          - name: POSTGRES_HOST
+            value: ${POSTGRES_HOST}
+          - name: ${POSTGRES_PORT}
+            value: POSTGRES_PORT
+          - name: POSTGRES_DB
+            value: ${POSTGRES_DB}
+          - name: POSTGRES_USER
+            value: ${POSTGRES_USER}
+          - name: POSTGRES_PASSWORD
+            value: ${POSTGRES_PASSWORD}
           envFrom:
             - configMapRef:
                 name: oidc-envs
