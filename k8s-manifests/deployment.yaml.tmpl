@@ -38,8 +38,8 @@ spec:
             value: "${DATABASE_URL}"
           - name: POSTGRES_HOST
             value: "${POSTGRES_HOST}"
-          - name: ${POSTGRES_PORT}
-            value: POSTGRES_PORT
+          - name: POSTGRES_PORT
+            value: "${POSTGRES_PORT}" 
           - name: POSTGRES_DB
             value: "${POSTGRES_DB}"
           - name: POSTGRES_USER
