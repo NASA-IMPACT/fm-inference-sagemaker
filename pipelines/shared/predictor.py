@@ -77,7 +77,7 @@ def load_model(config_file_path, checkpoint_file_path, source='s3'):
     infer = Infer(model_config_file_path, model_weights_path)
     return { USECASE: infer }
 
-MODEL = load_model(CONFIG_PATH, MODEL_WEIGHT_PATH)
+MODEL = None
 
 async def get_api_key(api_key: str = Depends(api_key_header)):
     """
@@ -197,6 +197,7 @@ def subset_geojson(geojson, bounding_box):
 
 def infer(filename, scale):
     global MODEL
+    MODEL = MODEL or load_model(CONFIG_PATH, MODEL_WEIGHT_PATH)
 
     if model_id not in MODEL:
         response = {'statusCode': 422}
