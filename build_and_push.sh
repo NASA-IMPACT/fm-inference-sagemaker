@@ -1,5 +1,6 @@
 #!/bin/bash
 ls -al
+ls -alh k8s-manifests/deployment.yaml.tmpl
 # set -e  # Exit on any error
 
 # # Ensure required environment variables are set
