@@ -1,7 +1,6 @@
 #!/bin/bash
-ls -al
-ls -alh k8s-manifests/deployment.yaml.tmpl
-# set -e  # Exit on any error
+
+set -e  # Exit on any error
 
 # # Ensure required environment variables are set
 # if [[ -z "$ECR_URL" || -z "$INGRESS_HOST" ]]; then
@@ -46,12 +45,12 @@ ls -alh k8s-manifests/deployment.yaml.tmpl
 # docker rmi $TEMP_IMAGE_NAME
 # docker rmi $TEMP_FLOOD_IMAGE_NAME
 
-# # Generate deployment.yaml and ingress.yaml from templates using envsubst
-# envsubst < k8s-manifests/deployment.yaml.tmpl > k8s-manifests/deployment.yaml
-# envsubst < k8s-manifests/ingress.yaml.tmpl > k8s-manifests/ingress.yaml
+# Generate deployment.yaml and ingress.yaml from templates using envsubst
+envsubst < k8s-manifests/deployment.yaml.tmpl > k8s-manifests/deployment.yaml
+envsubst < k8s-manifests/ingress.yaml.tmpl > k8s-manifests/ingress.yaml
 
-# # Apply Kubernetes manifests
-# kubectl apply -f k8s-manifests/
+# Apply Kubernetes manifests
+#kubectl apply -f k8s-manifests/
 
-# # Optional: Load image to kind cluster if needed
-# # kind load docker-image $ECR_URL/$ECR_IMAGE_NAME --name neo-cluster
+# Optional: Load image to kind cluster if needed
+# kind load docker-image $ECR_URL/$ECR_IMAGE_NAME --name neo-cluster
