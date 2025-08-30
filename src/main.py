@@ -29,14 +29,14 @@ async def lifespan(app: FastAPI):
     print("Shutting down FM Inference Service...")
 
 
-root_path = os.environ.get("FASTAPI_ROOT_PATH", "")
+root_path = os.environ.get("FASTAPI_ROOT_PATH", "/api/predict")
 
 app = FastAPI(
     title="FM Inference Service",
     description="REST API for managing finetuned models and inferences.",
     version="0.0.1",
     lifespan=lifespan,
-    root_path=os.environ.get("FASTAPI_ROOT_PATH", "")
+    root_path=root_path
 )
 
 # Add CORS middleware
