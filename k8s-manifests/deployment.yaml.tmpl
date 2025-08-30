@@ -52,7 +52,7 @@ spec:
       volumes:
         - name: cache-volume
           persistentVolumeClaim:
-            claimName: prediction-cache-pvc
+            claimName: service--cache-pvc
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -100,4 +100,4 @@ spec:
       volumes:
         - name: cache-volume
           persistentVolumeClaim:
-            claimName: prediction-cache-pvc
+            claimName: service--cache-pvc
