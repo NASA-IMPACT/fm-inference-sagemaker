@@ -14,6 +14,7 @@ echo "Building temporary image to get digest: $TEMP_IMAGE_NAME"
 docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME .
 
 cd pipelines
+
 TEMP_FLOOD_IMAGE_NAME="floods:temp"
 echo "Building temporary image to get digest: $TEMP_FLOOD_IMAGE_NAME"
 docker buildx build --platform linux/amd64 -t $TEMP_FLOOD_IMAGE_NAME . -f floods/Dockerfile
@@ -45,6 +46,7 @@ docker push $ECR_URL/$ECR_FLOOD_IMAGE_NAME
 docker rmi $TEMP_IMAGE_NAME
 docker rmi $TEMP_FLOOD_IMAGE_NAME
 
+cd -
 # Generate deployment.yaml and ingress.yaml from templates using envsubst
 envsubst < k8s-manifests/deployment.yaml.tmpl > k8s-manifests/deployment.yaml
 envsubst < k8s-manifests/ingress.yaml.tmpl > k8s-manifests/ingress.yaml
