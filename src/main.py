@@ -74,7 +74,7 @@ def read_root():
 @app.get("/health")
 def health_check():
     """Health check endpoint (legacy)."""
-    return {"status": "healthy"}
+    return {"successCode": 200, "status": "healthy"}
 
 if __name__ == "__main__":
     import uvicorn
