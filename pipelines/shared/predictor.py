@@ -1,34 +1,36 @@
 import boto3
 import json
 import os
-import gc
-import geopandas as gpd
-import rasterio
 import time
-import torch
+from typing import Optional
+import httpx
+from pydantic import BaseModel
+import logging
 
 from fastapi import FastAPI, Request, APIRouter, status, Response, Body, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 
-from lib.data_preparer import DataPreparer
-from lib.infer import Infer
-from lib.post_process import PostProcess
-from lib.consts import BUCKET_NAME, LAYERS, CONFIG_PATH, MODEL_WEIGHT_PATH, USECASE, DOWNLOAD_FOLDER
+try:
+    import gc
+    import geopandas as gpd
+    import rasterio
+    import torch
+    from lib.data_preparer import DataPreparer
+    from lib.infer import Infer
+    from lib.post_process import PostProcess
+    from lib.consts import BUCKET_NAME, LAYERS, CONFIG_PATH, MODEL_WEIGHT_PATH, USECASE, DOWNLOAD_FOLDER
+    from lib.utils import get_boto3_session
+    from rasterio.io import MemoryFile
+    from rasterio.merge import merge
+    from rio_cogeo.cogeo import cog_translate
+    from rio_cogeo.profiles import cog_profiles
+    from shapely.geometry import shape
 
-from lib.utils import get_boto3_session
 
-from rasterio.io import MemoryFile
-from rasterio.merge import merge
-from rio_cogeo.cogeo import cog_translate
-from rio_cogeo.profiles import cog_profiles
-
-from shapely.geometry import shape
-
-from pydantic import BaseModel
-from typing import Optional
-import httpx
+except Exception as e:
+    logging.error(f"Error importing libraries: {e}")
 
 # This will be served by the FastAPI as a container
 # Re-enable docs to see the authorization feature

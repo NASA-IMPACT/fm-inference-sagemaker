@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
 
-from .db.database import engine, Base
+
 from .api.v1 import (
     inference_router,
     models_router,
@@ -18,6 +18,7 @@ async def lifespan(app: FastAPI):
 
     # Create database tables (if they don't exist)
     try:
+        from .db.database import engine, Base
         Base.metadata.create_all(bind=engine)
         print("Database tables created/verified successfully")
     except Exception as e:
