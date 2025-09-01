@@ -1,7 +1,11 @@
 import httpx
+import os
+
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.security import APIKeyHeader
 
 API_KEY_VALIDATION_URL = os.getenv("API_KEY_VALIDATION_URL", "https://dev.fm.dsig.net/api/validate")
+api_key_header = APIKeyHeader(name="x-api-key")
 
 async def get_api_key(api_key: str = Depends(api_key_header)):
     """
