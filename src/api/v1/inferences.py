@@ -13,7 +13,7 @@ from ...models.finetuned_model import FinetunedModelRead
 from ...models.inference import InferenceRead, InferenceUpdate
 from ...models.preloaded_event import PreloadedEventRead
 
-router = APIRouter(prefix="/v1/inferences", tags=["inferences"], dependencies=[Depends(get_api_key)])
+router = APIRouter(prefix="/v1/inferences", tags=["inferences"])
 
 @router.get("/", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
 def get_models(db: Session = Depends(get_db)):
