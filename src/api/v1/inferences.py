@@ -51,45 +51,47 @@ def get_inference_preloaded_events(inference_id: str, db: Session = Depends(get_
         return {"error": str(e)}
 
 @router.post("/", response_model=InferenceRead, status_code=status.HTTP_201_CREATED)
-def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
+def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
     """Create a new finetuned model."""
     try:
-        inference_name = inference.name if inference.name else time.strftime("inference_%Y%m%d_%H%M%S")
-        inference = Inference(
-            name=inference.name,
-            query=inference.query
-        )
-        finetuned_models = db.query(FinetunedModel).filter(FinetunedModel.id.in_(inference.finetuned_model_ids)).all()
-        if not finetuned_models or len(finetuned_models) != len(inference.finetuned_model_ids):
-            return {"error": "One or more finetuned models not found"}
-        inference.finetuned_models = finetuned_models
+        # inference_name = inference.name if inference.name else
+        inference.name = time.strftime("inference_%Y%m%d_%H%M%S")
+        # inference = Inference(
+        #     name=time.strftime("inference_%Y%m%d_%H%M%S"),
+        #     query=inference.query
+        # )
+        # finetuned_models = db.query(FinetunedModel).filter(FinetunedModel.id.in_(inference.finetuned_model_ids)).all()
+        # if not finetuned_models or len(finetuned_models) != len(inference.finetuned_model_ids):
+        #     return {"error": "One or more finetuned models not found"}
+        # inference.finetuned_models = finetuned_models
 
         # better to upload merged_file to s3 and pass the s3 path to the inference pipeline
         # for now, we will just pass the local file path
         # call specific model inference pipeline with the file name/path here.
         # create a dict with model names and their inference results
         results = {}
-        for model in finetuned_models:
+        for model in ['floods']:
             print(f"Running inference for model: {model.name} on data: {merged_file}")
-            model_id = model.source_details['model_id']
-            downloader = Downloader(inference.query['date'], inference.query['bbox'], layers=model.data_config['sources'])
+            model_id = 'floods' #model.source_details['model_id']
+            downloader = Downloader(inference.query['date'], inference.query['bbox'], layers=['HLSS30', 'HLSL30'])#model.data_config['sources'])
             merged_file = downloader.find_and_prepare_data()
             url = f"http://{model_id}-model:8080/invocations"
             response = requests.post(url, data={'filename': merged_file, 'scaled': model.data_config['scaled']})
-            results[model.name] = response.json()
-            inference.result_geojson = results[model.name]['geojson']
-            inference.result_s3_path = results[model.name]['s3_path']
+            results['floods'] = response.json()
+            foolds = results['floods']
+            inference.result_geojson = [floods['geojson']]
+            inference.result_s3_path = floods['s3_path']
             # build model pipeline url here
             # call the model endpoint with the merged_file
             # update results dict with the inference results
         # store the s3 results and geojson in inference object
 
 
-        db.add(inference)
-        db.commit()
-        db.refresh(inference)
+        # db.add(inference)
+        # db.commit()
+        # db.refresh(inference)
 
-        return db_model
+        return inference
     except Exception as e:
         return {"error": str(e)}
 
