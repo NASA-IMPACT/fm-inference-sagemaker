@@ -4,12 +4,12 @@ from uuid import UUID
 from datetime import datetime
 
 class InferenceBase(BaseModel):
-    id: UUID
+    id: Optional[UUID]
     name: str
     query: Optional[dict]
     result_s3_path: Optional[str]
     result_geojson: Optional[List[dict]]
-    created_at: datetime
+    created_at: Optional[datetime]
 
     class Config:
         from_attributes = True
@@ -25,4 +25,4 @@ class InferenceUpdate(BaseModel):
     query: dict
     result_s3_path: Optional[str]
     result_geojson: Optional[List[dict]]
-    finetuned_model_ids: List[UUID]
+    # finetuned_model_ids: Optional[List[UUID]]

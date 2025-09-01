@@ -1,5 +1,6 @@
 import boto3
 import os
+
 from os import path
 from glob import glob
 from lib.consts import BUCKET_NAME, MODEL_PATH

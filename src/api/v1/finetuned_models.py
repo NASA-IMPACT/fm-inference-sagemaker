@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from ...db.database import get_db
 from ...db.models import FinetunedModel, Inference, PreloadedEvent
+from ...lib.utils import get_api_key
 from ...models.finetuned_model import FinetunedModelRead, FinetunedModelUpdate
 from ...models.inference import InferenceRead
 from ...models.preloaded_event import PreloadedEventRead
