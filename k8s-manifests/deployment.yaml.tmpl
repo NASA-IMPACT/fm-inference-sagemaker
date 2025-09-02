@@ -63,16 +63,16 @@ kind: Deployment
 metadata:
   name: floods-app
   labels:
-    app: pipeline-floods-app
+    app: floods-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: pipeline-floods-app
+      app: floods-app
   template:
     metadata:
       labels:
-        app: pipeline-floods-app
+        app: floods-app
     spec:
       imagePullSecrets:
         - name: ecr-registry-key
