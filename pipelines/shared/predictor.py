@@ -193,7 +193,8 @@ def subset_geojson(geojson, bounding_box):
     return json.loads(geom.overlay(bbox, how='intersection').to_json())
 
 def infer(filename, scale, model_id, bounding_box, terramind=False):
-
+    global MODEL
+    
     MODEL = MODEL or load_model(CONFIG_PATH, MODEL_WEIGHT_PATH)
 
     if model_id not in MODEL:
@@ -267,7 +268,7 @@ class InvocationData(BaseModel):
 async def infer_from_model(invocation_data: InvocationData = Body(...)):
     filename = invocation_data.filename
     terramind = invocation_data.terramind or False
-    final_geojson = infer(filename, invocation_data.scale, invocation_data.model_id, invocation_data.bounding_box, terramind)
+    final_geojson = infer(filename=filename, scale=invocation_data.scale, model_id=invocation_data.model_id, model_id = invocation_data.bounding_box, terramind=terramind)
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
 # Public endpoints (no API key required)
