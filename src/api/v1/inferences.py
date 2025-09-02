@@ -50,7 +50,7 @@ def get_inference_preloaded_events(inference_id: str, db: Session = Depends(get_
     except Exception as e:
         return {"error": str(e)}
 
-@router.post("/", response_model=InferenceUpdate, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=InferenceRead, status_code=status.HTTP_201_CREATED)
 def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
     """Create a new finetuned model."""
     try:
@@ -71,7 +71,7 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
         # create a dict with model names and their inference results
         results = {}
         for model in ['floods']:
-            print(f"Running inference for model: {model.name} on data: {merged_file}")
+            # print(f"Running inference for model: {model.name} on data: {merged_file}")
             model_id = 'floods' #model.source_details['model_id']
             downloader = Downloader(inference.query['date'], inference.query['bbox'], layers=['HLSS30', 'HLSL30'])#model.data_config['sources'])
             merged_file = downloader.find_and_prepare_data()
