@@ -3,6 +3,8 @@ FROM nvidia/cuda:12.1.1-base-ubuntu22.04
 # Set working directory
 WORKDIR /app
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 # Install system dependencies
 RUN apt update && apt install -y software-properties-common
 
