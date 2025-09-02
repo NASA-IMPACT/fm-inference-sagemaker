@@ -79,7 +79,7 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
             print('Downloading files')
             merged_file = downloader.find_and_prepare_data()
             print(f'Downloaded and merged file at: {merged_file}')
-            url = f"http://{model_id}-model:8080/invocations"
+            url = f"http://{model_id}-model:8080/api/v1/invocations"
             print(f'Calling model endpoint at: {url}')
             response = requests.post(url, data={'filename': merged_file, 'scaled': True}) #model.data_config['scaled']})
             print(f'Model response: {response.status_code}, {response.text}')

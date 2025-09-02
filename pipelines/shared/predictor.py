@@ -281,4 +281,4 @@ async def health():
 # Include both routers in the v1_api
 v1_api.include_router(protected_router)
 v1_api.include_router(public_router)
-app.mount("/api/v1/predict", v1_api)
+app.mount("/api/v1", v1_api)
