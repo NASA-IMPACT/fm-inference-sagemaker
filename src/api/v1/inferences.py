@@ -74,9 +74,13 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
             # print(f"Running inference for model: {model.name} on data: {merged_file}")
             model_id = 'floods' #model.source_details['model_id']
             downloader = Downloader(inference.query['date'], inference.query['bbox'], layers=['HLSS30', 'HLSL30'])#model.data_config['sources'])
+            print('Downloading files')
             merged_file = downloader.find_and_prepare_data()
+            print(f'Downloaded and merged file at: {merged_file}')
             url = f"http://{model_id}-model:8080/invocations"
+            print(f'Calling model endpoint at: {url}')
             response = requests.post(url, data={'filename': merged_file, 'scaled': model.data_config['scaled']})
+            print(f'Model response: {response.status_code}, {response.text}')
             results['floods'] = response.json()
             floods = results['floods']
             inference.result_geojson = [floods['geojson']]
