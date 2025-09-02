@@ -265,6 +265,11 @@ def infer(filename, scale, model_id, bounding_box, terramind=False):
 class InvocationData(BaseModel):
     filename: str
     scale: Optional[bool] = False
+    model_id: str
+    bounding_box: list[float]
+    terramind: Optional[bool] = False
+
+
 
 # Protected endpoints (require API key)
 @public_router.post('/invocations')
