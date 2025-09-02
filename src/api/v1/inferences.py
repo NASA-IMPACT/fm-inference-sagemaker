@@ -72,16 +72,17 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
         # call specific model inference pipeline with the file name/path here.
         # create a dict with model names and their inference results
         results = {}
-        for model in ['floods']:
+        for model_id in ['floods']:
             # print(f"Running inference for model: {model.name} on data: {merged_file}")
-            model_id = 'floods' #model.source_details['model_id']
-            downloader = Downloader(inference.query['date'], inference.query['bbox'], layers=['HLSS30', 'HLSL30'])#model.data_config['sources'])
+            downloader = Downloader(inference.query['date'], inference.query['bounding_box'], layers=['HLSS30', 'HLSL30'])#model.data_config['sources'])
             print('Downloading files')
-            merged_file = downloader.find_and_prepare_data()
+            merged_files = downloader.find_and_prepare_data()
             print(f'Downloaded and merged file at: {merged_file}')
             url = f"http://{model_id}-service:8080/api/v1/invocations"
             print(f'Calling model endpoint at: {url}')
-            response = requests.post(url, data={'filename': merged_file, 'scaled': True}) #model.data_config['scaled']})
+            # Todo why it is a list?
+            merged_file = merged_files[0]
+            response = requests.post(url, json={'filename': merged_file, 'scaled': True}) #model.data_config['scaled']})
             print(f'Model response: {response.status_code}, {response.text}')
             results['floods'] = response.json()
             floods = results['floods']
