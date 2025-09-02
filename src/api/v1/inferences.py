@@ -78,7 +78,7 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
             url = f"http://{model_id}-model:8080/invocations"
             response = requests.post(url, data={'filename': merged_file, 'scaled': model.data_config['scaled']})
             results['floods'] = response.json()
-            foolds = results['floods']
+            floods = results['floods']
             inference.result_geojson = [floods['geojson']]
             inference.result_s3_path = floods['s3_path']
             # build model pipeline url here
