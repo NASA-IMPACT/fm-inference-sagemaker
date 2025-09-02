@@ -12,25 +12,20 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 
-try:
-    import gc
-    import geopandas as gpd
-    import rasterio
-    import torch
-    from lib.data_preparer import DataPreparer
-    from lib.infer import Infer
-    from lib.post_process import PostProcess
-    from lib.consts import BUCKET_NAME, LAYERS, CONFIG_PATH, MODEL_WEIGHT_PATH, USECASE, DOWNLOAD_FOLDER
-    from lib.utils import get_boto3_session
-    from rasterio.io import MemoryFile
-    from rasterio.merge import merge
-    from rio_cogeo.cogeo import cog_translate
-    from rio_cogeo.profiles import cog_profiles
-    from shapely.geometry import shape
-
-
-except Exception as e:
-    logging.error(f"Error importing libraries: {e}")
+import gc
+import geopandas as gpd
+import rasterio
+import torch
+from lib.data_preparer import DataPreparer
+from lib.infer import Infer
+from lib.post_process import PostProcess
+from lib.consts import BUCKET_NAME, LAYERS, CONFIG_PATH, MODEL_WEIGHT_PATH, USECASE, DOWNLOAD_FOLDER
+from lib.utils import get_boto3_session
+from rasterio.io import MemoryFile
+from rasterio.merge import merge
+from rio_cogeo.cogeo import cog_translate
+from rio_cogeo.profiles import cog_profiles
+from shapely.geometry import shape
 
 # This will be served by the FastAPI as a container
 # Re-enable docs to see the authorization feature
@@ -198,10 +193,6 @@ def subset_geojson(geojson, bounding_box):
     return json.loads(geom.overlay(bbox, how='intersection').to_json())
 
 def infer(filename, scale, model_id, bounding_box, terramind=False):
-    global MODEL
-    global CONFIG_PATH
-    global MODEL_WEIGHT_PATH
-
 
     MODEL = MODEL or load_model(CONFIG_PATH, MODEL_WEIGHT_PATH)
 
@@ -275,7 +266,8 @@ class InvocationData(BaseModel):
 @public_router.post('/invocations')
 async def infer_from_model(invocation_data: InvocationData = Body(...)):
     filename = invocation_data.filename
-    final_geojson = infer(filename, invocation_data.scale, invocation_data.model_id, invocation_data.bounding_box)
+    terramind = invocation_data.terramind or False
+    final_geojson = infer(filename, invocation_data.scale, invocation_data.model_id, invocation_data.bounding_box, terramind)
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
 # Public endpoints (no API key required)
