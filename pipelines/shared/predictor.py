@@ -268,7 +268,7 @@ class InvocationData(BaseModel):
 async def infer_from_model(invocation_data: InvocationData = Body(...)):
     filename = invocation_data.filename
     terramind = invocation_data.terramind or False
-    final_geojson = infer(filename=filename, scale=invocation_data.scale, model_id=invocation_data.model_id, model_id = invocation_data.bounding_box, terramind=terramind)
+    final_geojson = infer(filename=filename, scale=invocation_data.scale, model_id=invocation_data.model_id, bounding_box = invocation_data.bounding_box, terramind=terramind)
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
 # Public endpoints (no API key required)
