@@ -39,13 +39,17 @@ spec:
           - name: POSTGRES_HOST
             value: "${POSTGRES_HOST}"
           - name: POSTGRES_PORT
-            value: "${POSTGRES_PORT}" 
+            value: "${POSTGRES_PORT}"
           - name: POSTGRES_DB
             value: "${POSTGRES_DB}"
           - name: POSTGRES_USER
             value: "${POSTGRES_USER}"
           - name: POSTGRES_PASSWORD
             value: "${POSTGRES_PASSWORD}"
+          - name: EARTHDATA_USERNAME
+            value: "${EARTHDATA_USERNAME}"
+          - name: EARTHDATA_PASSWORD
+            value: "${EARTHDATA_PASSWORD}"
           envFrom:
             - configMapRef:
                 name: oidc-envs
