@@ -187,7 +187,7 @@ class Downloader:
         granules = search_data(
             short_name=self.layers,
             temporal=self.date_range,
-            bounding_box=self.bbox,
+            bounding_box=tuple(map(float, self.bbox)),
             cloud_hosted=True,
             count=1000
         )
