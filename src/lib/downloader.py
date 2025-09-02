@@ -68,7 +68,7 @@ class Downloader:
             os.makedirs(foldername)
 
     def download_bands(self, links):
-        filenames = earthaccess.download(links, local_path=DATA_DOWNLOAD_DIR, threads=16)
+        filenames = earthaccess.download(links, local_path=DOWNLOAD_FOLDER, threads=16)
         return filenames
 
     def generate_tiles(self, file_name, shape=(512,512), batch_size=1, overlap=0, scale=False):
