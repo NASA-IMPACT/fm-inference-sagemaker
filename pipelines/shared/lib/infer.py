@@ -16,26 +16,16 @@ class Infer:
     def load_model(self):
         inference_model = LightningInferenceModel.from_config(self.config_filename, self.checkpoint_filename)
         self.model = inference_model.model
-
-        # load model using terratorch
         self.model = self.model.eval()
 
-    def preprocess(self, images, terramind=False):
+    def preprocess(self, images):
         images_array = []
         profiles = []
 
         mean = []
         std = []
-        if terramind:
-            modality = 'S2L1C'
-            with rasterio.open(images[0]) as raster_file:
-                if raster_file.count == 12:
-                    modality = 'S2L1A'
-            mean = torch.tensor(self.config['data']['init_args']['means'][modality]).view(-1, 1, 1)
-            std = torch.tensor(self.config['data']['init_args']['stds'][modality]).view(-1, 1, 1)
-        else:
-            mean = torch.tensor(self.config['data']['init_args']['means']).view(-1, 1, 1)
-            std = torch.tensor(self.config['data']['init_args']['stds']).view(-1, 1, 1)
+        mean = torch.tensor(self.config['data']['init_args']['means']).view(-1, 1, 1)
+        std = torch.tensor(self.config['data']['init_args']['stds']).view(-1, 1, 1)
 
         for image in images:
             with rasterio.open(image) as raster_file:
@@ -52,11 +42,10 @@ class Infer:
 
         # increase dimensions to match input size
         processed_images = imgs_tensor
-        if not(terramind):
-            processed_images = imgs_tensor.unsqueeze(2)
+        processed_images = imgs_tensor.unsqueeze(2)
         return processed_images, profiles
 
-    def infer(self, images, terramind=False):
+    def infer(self, images):
         """
         Infer on provided images
         Args:
@@ -64,7 +53,7 @@ class Infer:
         """
         # forward the model
         with torch.no_grad():
-            images, profiles = self.preprocess(images, terramind=terramind)
+            images, profiles = self.preprocess(images)
             result = self.model(images.to('cpu'))
             predicted_masks = list()
             results = result.output.detach().cpu()

@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM nvidia/cuda:12.1.1-base-ubuntu22.04
 
 # Set working directory
 WORKDIR /app
@@ -8,7 +8,8 @@ RUN apt-get update && \
     apt-get install -y gcc g++ && \
     apt-get clean git && \
     apt-get install -y gdal-bin libgdal-dev && \
-    apt-get install -y ffmpeg libsm6 libxext6
+    apt-get install -y ffmpeg libsm6 libxext6 libgl1 && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
 COPY floods/requirements.txt /app/
