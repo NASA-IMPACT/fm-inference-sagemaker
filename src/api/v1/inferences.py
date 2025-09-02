@@ -76,16 +76,16 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
             # print(f"Running inference for model: {model.name} on data: {merged_file}")
             downloader = Downloader(inference.query['date'], inference.query['bounding_box'], layers=['HLSS30', 'HLSL30'])#model.data_config['sources'])
             print('Downloading files')
-            merged_files = downloader.find_and_prepare_data()
+            merged_file = downloader.find_and_prepare_data()
             print(f'Downloaded and merged file at: {merged_file}')
             url = f"http://{model_id}-service:8080/api/v1/invocations"
             print(f'Calling model endpoint at: {url}')
             # Todo why it is a list?
-            merged_file = merged_files[0]
-            response = requests.post(url, json={'filename': merged_file, 'scaled': True}) #model.data_config['scaled']})
+            merged_file = merged_file[0] if isinstance(merged_file, list) else merged_file
+            response = requests.post(url, json={'filename': merged_file, 'scaled': True, 'model_id': model_id, 'bounding_box': inference.query['bounding_box']}) #model.data_config['scaled']})
             print(f'Model response: {response.status_code}, {response.text}')
-            results['floods'] = response.json()
-            floods = results['floods']
+            results[model_id] = response.json()
+            floods = results[model_id]
             inference.result_geojson = [floods['geojson']]
             inference.result_s3_path = floods['s3_path']
             # build model pipeline url here

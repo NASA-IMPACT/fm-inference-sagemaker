@@ -197,8 +197,12 @@ def subset_geojson(geojson, bounding_box):
     bbox = gpd.GeoDataFrame({'geometry': [bbox]})
     return json.loads(geom.overlay(bbox, how='intersection').to_json())
 
-def infer(filename, scale):
+def infer(filename, scale, model_id, bounding_box, terramind=False):
     global MODEL
+    global CONFIG_PATH
+    global MODEL_WEIGHT_PATH
+
+
     MODEL = MODEL or load_model(CONFIG_PATH, MODEL_WEIGHT_PATH)
 
     if model_id not in MODEL:
@@ -217,7 +221,7 @@ def infer(filename, scale):
         tiles = DataPreparer(filename, batch_size=20, overlap=0, scale=scale).generate_tiles()
         torch.cuda.synchronize()
         with torch.no_grad():
-            for tile in tiles:
+            for _ in tiles:
                 batch_results, batch_profiles = inference.infer(tiles, terramind)
                 results.extend(batch_results)
                 profiles.extend(batch_profiles)
@@ -247,7 +251,7 @@ def infer(filename, scale):
             geojson_list.append(updated_geometry)
         geojson = subset_geojson(geojson_list, bounding_box)
     except Exception as e:
-        print('!!! infer error', infer_date, model_id, bounding_box, e)
+        print(f"!!! infer error {model_id} {bounding_box} {e}")
         torch.cuda.empty_cache()
     print("!!! Infer Time:", time.time() - start_time)
     del inference
@@ -266,7 +270,7 @@ class InvocationData(BaseModel):
 @public_router.post('/invocations')
 async def infer_from_model(invocation_data: InvocationData = Body(...)):
     filename = invocation_data.filename
-    final_geojson = infer(filename, invocation_data.scale)
+    final_geojson = infer(filename, invocation_data.scale, invocation_data.model_id, invocation_data.bounding_box)
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
 # Public endpoints (no API key required)
