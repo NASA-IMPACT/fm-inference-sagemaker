@@ -8,7 +8,7 @@ RUN apt-get update && \
     apt-get install -y gcc g++ && \
     apt-get clean git && \
     apt-get install -y gdal-bin libgdal-dev && \
-    apt-get install -y ffmpeg libsm6 libxext6 libgl1 && \
+    apt-get install -y ffmpeg libsm6 libxext6 libgl1 python3-pip && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
