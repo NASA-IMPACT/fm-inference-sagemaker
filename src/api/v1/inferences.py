@@ -81,7 +81,7 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
             print(f'Downloaded and merged file at: {merged_file}')
             url = f"http://{model_id}-model:8080/invocations"
             print(f'Calling model endpoint at: {url}')
-            response = requests.post(url, data={'filename': merged_file, 'scaled': model.data_config['scaled']})
+            response = requests.post(url, data={'filename': merged_file, 'scaled': True}) #model.data_config['scaled']})
             print(f'Model response: {response.status_code}, {response.text}')
             results['floods'] = response.json()
             floods = results['floods']
