@@ -18,7 +18,7 @@ COPY shared/lib /app/lib
 COPY shared/predictor.py /app/
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8001
 
 # Default command for development (can be overridden by docker-compose)
 CMD ["uvicorn", "predictor:app", "--host", "0.0.0.0", "--port", "8001"]
