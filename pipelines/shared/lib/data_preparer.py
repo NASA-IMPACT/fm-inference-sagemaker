@@ -73,4 +73,4 @@ class DataPreparer:
                         yield np.asarray(batch)
                         batch = []
             if batch:
-                yield np.asarray(batch), profiles
+                yield np.asarray(batch)
