@@ -79,4 +79,4 @@ class Infer:
                             mode="nearest"
                         )
                 predicted_masks.append(predicted_mask)
-        return predicted_masks, profiles
+            return predicted_masks, profiles

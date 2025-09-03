@@ -210,10 +210,10 @@ def infer(filename, scale, model_id, bounding_box):
         torch.cuda.synchronize()
         with torch.no_grad():
             for tiles in tiles_generator:
-                batch_results, profiles = inference.infer(tiles)
+                batch_results, batch_profiles = inference.infer(tiles)
                 results.extend(batch_results)
                 # profile is ofset by some value. need to debug
-                profiles.extend(profiles)
+                profiles.extend(batch_profiles)
         memory_files = list()
         torch.cuda.empty_cache()
         for index, profile in enumerate(profiles):
