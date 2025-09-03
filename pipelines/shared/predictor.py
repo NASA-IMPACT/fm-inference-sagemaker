@@ -210,11 +210,11 @@ def infer(filename, scale, model_id, bounding_box):
     profiles = list()
     s3_link = ''
     # try:
-    tiles = DataPreparer(filename, batch_size=20, overlap=0, scale=scale).generate_tiles()
+    tiles_generator = DataPreparer(filename, overlap=0, scale=scale).generate_tiles()
     torch.cuda.synchronize()
     with torch.no_grad():
-        for _ in tiles:
-            batch_results, batch_profiles = inference.infer(tiles)
+        for tiles, batch_profiles in tiles_generator:
+            batch_results = inference.infer(tiles)
             results.extend(batch_results)
             profiles.extend(batch_profiles)
     memory_files = list()

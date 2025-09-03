@@ -36,6 +36,7 @@ class DataPreparer:
             nrows = max(1, (src.height - self.overlap) // step_y)
             ncols = max(1, (src.width - self.overlap) // step_x)
             batch = []
+            profiles = []
             for i in range(nrows):
                 for j in range(ncols):
                     row_off = i * step_y
@@ -64,12 +65,13 @@ class DataPreparer:
                     base_transform = src.window_transform(Window(col_off, row_off, win_width, win_height))
                     # Assign transform for the window (same for padded and non-padded)
                     meta["transform"] = base_transform
-                    memfile = MemoryFile()
-                    with memfile.open(**meta) as dst:
-                        dst.write(tile)
+                    # memfile = MemoryFile()
+                    # with memfile.open(**meta) as dst:
+                    #     dst.write(tile)
+                    profiles.append(meta)
                     batch.append(tile)
                     if len(batch) == self.batch_size:
-                        yield np.asarray(batch)
+                        yield np.asarray(batch), profiles
                         batch = []
             if batch:
-                yield np.asarray(batch)
+                yield np.asarray(batch), profiles

@@ -34,24 +34,19 @@ class Infer:
         # std = torch.tensor(self.config['data']['init_args']['stds']).view(-1, 1, 1)
 
         for image in images:
-            with rasterio.open(image) as raster_file:
-                image = raster_file.read()
-                image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
-                image = torch.from_numpy(image)
-                if mean and std:
-                    image = (image - mean) / std
-                images_array.append(image)
-                profiles.append(raster_file.profile)
-                raster_file.close()
+            image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
+            image = torch.from_numpy(image)
+            if mean and std:
+                image = (image - mean) / std
+            images_array.append(image)
         # Example processing function to simulate the pipeline
         imgs_tensor = torch.from_numpy(np.asarray(images_array))  # Assuming input_array is of type np.float32
-        imgs_tensor = imgs_tensor.float()
+        processed_images = imgs_tensor.float()
 
         # increase dimensions to match input size
-        processed_images = imgs_tensor
         print("shape of processed images:", processed_images.shape)
-        processed_images = imgs_tensor.unsqueeze(2)
-        return processed_images, profiles
+        processed_images = processed_images.unsqueeze(2)
+        return processed_images
 
     def infer(self, images):
         """
