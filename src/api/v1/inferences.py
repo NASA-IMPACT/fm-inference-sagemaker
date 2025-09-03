@@ -71,6 +71,9 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
         # for now, we will just pass the local file path
         # call specific model inference pipeline with the file name/path here.
         # create a dict with model names and their inference results
+        print("________________________________________________")
+        print(inference.name, inference.query)
+        print("________________________________________________")
         results = {}
         for model_id in ['floods']:
             # print(f"Running inference for model: {model.name} on data: {merged_file}")
