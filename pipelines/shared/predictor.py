@@ -165,7 +165,7 @@ def save_cog(mosaic, profile, transform, filename):
         connection = boto3.client('s3')
         connection.upload_fileobj(memory_file, BUCKET_NAME, filename)
 
-    return f"s3://{BUCKET_NAME}/{filename}"
+    return f"s3://{BUCKET_NAME}/predictions/{filename.split('/')[-1]}"
 
 def post_process(detections, transform):
     contours, shape = PostProcess.prepare_contours(detections)
