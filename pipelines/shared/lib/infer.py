@@ -66,7 +66,7 @@ class Infer:
                     predicted_mask = (updated_mask > self.config.get('threshold', 0.5)).int()
                 else:
                     predicted_mask = mask.argmax(dim=0)
-                    img_size = images[index].shape[1:]
+                    img_size = images[index].shape[-1]
                     predicted_mask = torch.nn.functional.interpolate(
                             predicted_mask.unsqueeze(0).float(),
                             size=img_size,
