@@ -49,7 +49,7 @@ class DataPreparer:
                     if win_height < height or win_width < width:
                         pad_shape = (tile.shape[0], height, width)
                         padded = np.zeros(pad_shape, dtype=tile.dtype)
-                        if scaled:
+                        if self.scale:
                             tile = tile / 10000.0
                             tile = np.clip(tile, 0, 1)
                         padded[:, :win_height, :win_width] = tile

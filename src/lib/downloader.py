@@ -141,8 +141,7 @@ class Downloader:
         srcs = [rasterio.open(f) for f in filenames]
         # Assume all files have same shape, transform, and CRS
         arrays = [src.read(1) for src in srcs]
-        stacked = np.stack(arrays, axis=0) / 10000.0
-        stacked = np.clip(stacked, 0, 1)
+        stacked = np.stack(arrays, axis=0)
         out_meta = srcs[0].meta.copy()
         transform = srcs[0].transform
         out_meta.update({
