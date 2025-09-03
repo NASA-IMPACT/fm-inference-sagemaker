@@ -24,15 +24,22 @@ class Infer:
 
         mean = []
         std = []
-        mean = torch.tensor(self.config['data']['init_args']['means']).view(-1, 1, 1)
-        std = torch.tensor(self.config['data']['init_args']['stds']).view(-1, 1, 1)
+        # Use proper mean and std from consts if not in config.
+        means = self.config['data']['init_args'].get('means', None)
+        stds = self.config['data']['init_args'].get('stds', None)
+        if means and stds:
+            mean = means.view(-1, 1, 1)
+            std = stds.view(-1, 1, 1)
+        # mean = torch.tensor(self.config['data']['init_args']['means']).view(-1, 1, 1)
+        # std = torch.tensor(self.config['data']['init_args']['stds']).view(-1, 1, 1)
 
         for image in images:
             with rasterio.open(image) as raster_file:
                 image = raster_file.read()
                 image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
                 image = torch.from_numpy(image)
-                image = (image - mean) / std
+                if mean and std:
+                    image = (image - mean) / std
                 images_array.append(image)
                 profiles.append(raster_file.profile)
                 raster_file.close()
