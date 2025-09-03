@@ -175,7 +175,7 @@ class Downloader:
             "transform": rasterio.windows.transform(window, transform)
         })
         # Write cropped mosaic
-        with rasterio.open(output_name, "w", **out_meta) as dst:
+        with rasterio.open(f"{DOWNLOAD_FOLDER}{output_name}", "w", **out_meta) as dst:
             for index in range(cropped.shape[0]):
                 dst.write(cropped[index], index + 1)
         # Close all sources
