@@ -61,7 +61,7 @@ class Infer:
             results = result.output.detach().cpu()
             for index, mask in enumerate(results):
                 output = mask.cpu()  # [n_segmentation_class, 224, 224]
-                if self.config['data']['init_args']['num_classes'] == 1:
+                if self.config['model']['init_args']['num_classes'] == 1:
                     updated_mask = torch.sigmoid(output.clone()).squeeze(0)
                     predicted_mask = (updated_mask > self.config.get('threshold', 0.5)).int()
                 else:
