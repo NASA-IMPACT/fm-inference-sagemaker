@@ -37,7 +37,7 @@ class Infer:
             image = torch.from_numpy(image)
             if mean and std:
                 image = (image - mean) / std
-            images_array.append(image)
+            images_array.append(image[:6, :, :])  # Take only first 6 channels
         # Example processing function to simulate the pipeline
         imgs_tensor = torch.from_numpy(np.asarray(images_array))  # Assuming input_array is of type np.float32
         processed_images = imgs_tensor.float()
