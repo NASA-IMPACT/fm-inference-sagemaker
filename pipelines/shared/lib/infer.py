@@ -20,7 +20,6 @@ class Infer:
 
     def preprocess(self, images):
         images_array = []
-        profiles = []
 
         mean = []
         std = []
@@ -56,7 +55,7 @@ class Infer:
         """
         # forward the model
         with torch.no_grad():
-            images, profiles = self.preprocess(images)
+            images = self.preprocess(images)
             result = self.model(images.to('cpu'))
             predicted_masks = list()
             results = result.output.detach().cpu()
@@ -67,11 +66,11 @@ class Infer:
                     predicted_mask = (updated_mask > self.config.get('threshold', 0.5)).int()
                 else:
                     predicted_mask = mask.argmax(dim=0)
-                    img_size = profiles[index]['width']
+                    img_size = images[index].shape[1:]
                     predicted_mask = torch.nn.functional.interpolate(
                             predicted_mask.unsqueeze(0).float(),
                             size=img_size,
                             mode="nearest"
                         )
                 predicted_masks.append(predicted_mask)
-        return predicted_masks, profiles
+        return predicted_masks
