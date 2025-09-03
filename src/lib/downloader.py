@@ -132,7 +132,7 @@ class Downloader:
             output_name: output file name
         """
 
-        output_name = f"{DOWNLOAD_FOLDER}{self.generate_digest(self.date, self.bbox)}.tif"
+        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{self.generate_digest(self.date, self.bbox)}.tif"
         if os.path.exists(output_name):
             print(f"File {output_name} already exists. Skipping merge.")
             return output_name
