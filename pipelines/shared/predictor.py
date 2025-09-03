@@ -74,7 +74,7 @@ def load_model(config_file_path, checkpoint_file_path, source='s3'):
     infer = Infer(model_config_file_path, model_weights_path)
     return { USECASE: infer }
 
-MODEL = None
+MODEL = load_model(CONFIG_PATH, MODEL_WEIGHT_PATH)
 
 async def get_api_key(api_key: str = Depends(api_key_header)):
     """
@@ -193,10 +193,6 @@ def subset_geojson(geojson, bounding_box):
     return json.loads(geom.overlay(bbox, how='intersection').to_json())
 
 def infer(filename, scale, model_id, bounding_box):
-    global MODEL
-
-    MODEL = MODEL or load_model(CONFIG_PATH, MODEL_WEIGHT_PATH)
-
     if model_id not in MODEL:
         response = {'statusCode': 422}
         return JSONResponse(content=jsonable_encoder(response))
@@ -216,6 +212,7 @@ def infer(filename, scale, model_id, bounding_box):
             for tiles, batch_profiles in tiles_generator:
                 batch_results = inference.infer(tiles)
                 results.extend(batch_results)
+                # profile is ofset by some value. need to debug
                 profiles.extend(batch_profiles)
         memory_files = list()
         torch.cuda.empty_cache()
