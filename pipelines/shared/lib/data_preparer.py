@@ -26,11 +26,11 @@ class DataPreparer:
         Generate tiles of given shape from the input file.
         Yields (tile_array, window, tile_index) for each tile.
         Args:
-            file_name: path to the multi-band raster file
+            filename: path to the multi-band raster file
             shape: (height, width) of each tile
         """
         height, width = SHAPE
-        with rasterio.open(self.file_name) as src:
+        with rasterio.open(self.filename) as src:
             step_y = height - self.overlap
             step_x = width - self.overlap
             nrows = max(1, (src.height - self.overlap) // step_y)
