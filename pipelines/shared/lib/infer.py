@@ -49,6 +49,7 @@ class Infer:
 
         # increase dimensions to match input size
         processed_images = imgs_tensor
+        print("shape of processed images:", processed_images.shape)
         processed_images = imgs_tensor.unsqueeze(2)
         return processed_images, profiles
 
