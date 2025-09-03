@@ -35,7 +35,7 @@ class Infer:
 
         for image in images:
             with rasterio.open(image) as raster_file:
-                image = raster_file.read()
+                image = raster_file.read()[:6]  # Read first 6 bands
                 image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
                 image = torch.from_numpy(image)
                 if mean and std:
