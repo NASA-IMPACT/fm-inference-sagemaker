@@ -120,6 +120,6 @@ def delete_inference(inference_id: str, db: Session = Depends(get_db)):
         return {"error": str(e)}
 
 @router.get("/health", status_code=status.HTTP_200_OK)
-def health_check(api_key: str = Depends(get_api_key)):
+def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "timestamp": datetime.utcnow()}
