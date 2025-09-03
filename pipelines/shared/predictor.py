@@ -250,7 +250,7 @@ def infer(filename, scale, model_id, bounding_box):
     gc.collect()
 
     return {
-        model_id: {'s3_link': s3_link, 'predictions': geojson}
+        model_id: {'s3_link': s3_link, 'geojson': geojson}
     }
 
 # Define a model for the POST request body
