@@ -209,42 +209,42 @@ def infer(filename, scale, model_id, bounding_box):
     results = list()
     profiles = list()
     s3_link = ''
-    # try:
-    tiles_generator = DataPreparer(filename, overlap=0, scale=scale).generate_tiles()
-    torch.cuda.synchronize()
-    with torch.no_grad():
-        for tiles, batch_profiles in tiles_generator:
-            batch_results = inference.infer(tiles)
-            results.extend(batch_results)
-            profiles.extend(batch_profiles)
-    memory_files = list()
-    torch.cuda.empty_cache()
-    for index, profile in enumerate(profiles):
-        memfile = MemoryFile()
-        profile.update({
-            'count': 1,
-            'dtype': 'float32'
-        })
-        with memfile.open(**profile) as memoryfile:
-            memoryfile.write(results[index][0], 1)
-        memory_files.append(memfile.open())
+    try:
+        tiles_generator = DataPreparer(filename, overlap=0, scale=scale).generate_tiles()
+        torch.cuda.synchronize()
+        with torch.no_grad():
+            for tiles, batch_profiles in tiles_generator:
+                batch_results = inference.infer(tiles)
+                results.extend(batch_results)
+                profiles.extend(batch_profiles)
+        memory_files = list()
+        torch.cuda.empty_cache()
+        for index, profile in enumerate(profiles):
+            memfile = MemoryFile()
+            profile.update({
+                'count': 1,
+                'dtype': 'float32'
+            })
+            with memfile.open(**profile) as memoryfile:
+                memoryfile.write(results[index][0], 1)
+            memory_files.append(memfile.open())
 
-    mosaic, transform = merge(memory_files)
+        mosaic, transform = merge(memory_files)
 
-    [memfile.close() for memfile in memory_files]
-    prediction_filename = f"predictions/{start_time}-predictions.tif"
+        [memfile.close() for memfile in memory_files]
+        prediction_filename = f"{DOWNLOAD_FOLDER}/{start_time}-predictions.tif"
 
-    s3_link = save_cog(mosaic[0], profile, transform, prediction_filename)
+        s3_link = save_cog(mosaic[0], profile, transform, prediction_filename)
 
-    geojson = post_process(mosaic[0], transform)
+        geojson = post_process(mosaic[0], transform)
 
-    for geometry in geojson:
-        updated_geometry = PostProcess.convert_geojson(geometry)
-        geojson_list.append(updated_geometry)
-    geojson = subset_geojson(geojson_list, bounding_box)
-    # except Exception as e:
-    #     print(f"!!! infer error {model_id} {bounding_box} {e}")
-    #     torch.cuda.empty_cache()
+        for geometry in geojson:
+            updated_geometry = PostProcess.convert_geojson(geometry)
+            geojson_list.append(updated_geometry)
+        geojson = subset_geojson(geojson_list, bounding_box)
+    except Exception as e:
+        print(f"!!! infer error {model_id} {bounding_box} {e}")
+        torch.cuda.empty_cache()
     print("!!! Infer Time:", time.time() - start_time)
     del inference
     gc.collect()
