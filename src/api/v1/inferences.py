@@ -17,18 +17,23 @@ from ...models.preloaded_event import PreloadedEventRead
 
 router = APIRouter(prefix="/v1/inferences", tags=["inferences"])
 
-@router.get("/", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
-def get_models(db: Session = Depends(get_db)):
-    """Get all inferences."""
-    try:
-        # get all inferences
-        inferences = db.query(
-            Inference
-        ).all()
+@router.get("/health", status_code=status.HTTP_200_OK)
+def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy", "timestamp": datetime.utcnow()}
 
-        return inferences
-    except Exception as e:
-        return {"error": str(e)}
+# @router.get("/", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
+# def get_models(db: Session = Depends(get_db)):
+#     """Get all inferences."""
+#     try:
+#         # get all inferences
+#         inferences = db.query(
+#             Inference
+#         ).all()
+
+#         return inferences
+#     except Exception as e:
+#         return {"error": str(e)}
 
 @router.get("/{inference_id}", response_model=InferenceRead, status_code=status.HTTP_200_OK)
 def get_inference(inference_id: str, db: Session = Depends(get_db)):
@@ -118,8 +123,3 @@ def delete_inference(inference_id: str, db: Session = Depends(get_db)):
         return {"message": "Inference deleted successfully"}
     except Exception as e:
         return {"error": str(e)}
-
-@router.get("/health", status_code=status.HTTP_200_OK)
-def health_check():
-    """Health check endpoint."""
-    return {"status": "healthy", "timestamp": datetime.utcnow()}
