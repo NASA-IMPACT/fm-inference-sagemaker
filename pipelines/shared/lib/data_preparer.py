@@ -9,7 +9,7 @@ from rasterio.windows import from_bounds, Window
 SHAPE = (512, 512)
 
 class DataPreparer:
-    def __init__(self, filename, batch_size=20, overlap=0, scale=False):
+    def __init__(self, filename, batch_size=120, overlap=0, scale=False):
         """
         Initialize Downloader
         Args:
@@ -68,7 +68,7 @@ class DataPreparer:
                     with memfile.open(**meta) as dst:
                         dst.write(tile)
                     batch.append(tile)
-                    if len(batch) == batch_size:
+                    if len(batch) == self.batch_size:
                         yield np.asarray(batch)
                         batch = []
             if batch:
