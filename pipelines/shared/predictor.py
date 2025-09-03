@@ -254,7 +254,7 @@ def infer(filename, scale, model_id, bounding_box):
 # Define a model for the POST request body
 class InvocationData(BaseModel):
     filename: str
-    scaled: Optional[bool] = False
+    scale: Optional[bool] = False
     model_id: str
     bounding_box: list[float]
 
