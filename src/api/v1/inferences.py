@@ -90,7 +90,12 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
             print(f'Calling model endpoint at: {url}')
             # Todo why it is a list?
             merged_file = merged_file[0] if isinstance(merged_file, list) else merged_file
-            response = requests.post(url, json={'filename': merged_file, 'scaled': True, 'model_id': model_id, 'bounding_box': inference.query['bounding_box']}) #model.data_config['scaled']})
+            response = requests.post(url, json={
+                'filename': merged_file,
+                'scale': True,
+                'model_id': model_id,
+                'bounding_box': inference.query['bounding_box']
+            }) #model.data_config['scaled']})
             print(f'Model response: {response.status_code}, {response.text}')
             results[model_id] = response.json()
             floods = results[model_id]
