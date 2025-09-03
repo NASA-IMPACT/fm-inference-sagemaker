@@ -209,11 +209,11 @@ def infer(filename, scale, model_id, bounding_box):
         tiles_generator = DataPreparer(filename, overlap=0, scale=scale).generate_tiles()
         torch.cuda.synchronize()
         with torch.no_grad():
-            for tiles, batch_profiles in tiles_generator:
-                batch_results = inference.infer(tiles)
+            for tiles in tiles_generator:
+                batch_results, profiles = inference.infer(tiles)
                 results.extend(batch_results)
                 # profile is ofset by some value. need to debug
-                profiles.extend(batch_profiles)
+                profiles.extend(profiles)
         memory_files = list()
         torch.cuda.empty_cache()
         for index, profile in enumerate(profiles):

@@ -36,7 +36,6 @@ class DataPreparer:
             nrows = max(1, (src.height - self.overlap) // step_y)
             ncols = max(1, (src.width - self.overlap) // step_x)
             batch = []
-            profiles = []
             for i in range(nrows):
                 for j in range(ncols):
                     row_off = i * step_y
@@ -45,7 +44,8 @@ class DataPreparer:
                     # Calculate actual window shape
                     win_height = min(height, src.height - row_off)
                     win_width = min(width, src.width - col_off)
-                    tile = src.read(window=Window(col_off, row_off, win_width, win_height))
+                    window = Window(col_off, row_off, win_width, win_height)
+                    tile = src.read(window=window)
                     # Zero pad if needed
                     if win_height < height or win_width < width:
                         pad_shape = (tile.shape[0], height, width)
@@ -62,16 +62,15 @@ class DataPreparer:
                         "width": width
                     })
                     # Calculate correct transform for padded window
-                    base_transform = src.window_transform(Window(col_off, row_off, win_width, win_height))
+                    base_transform = src.window_transform(window)
                     # Assign transform for the window (same for padded and non-padded)
                     meta["transform"] = base_transform
-                    # memfile = MemoryFile()
-                    # with memfile.open(**meta) as dst:
-                    #     dst.write(tile)
-                    profiles.append(meta)
-                    batch.append(tile)
+                    memfile = MemoryFile()
+                    with memfile.open(**meta) as dst:
+                        dst.write(tile)
+                    batch.append(memfile)
                     if len(batch) == self.batch_size:
-                        yield np.asarray(batch), profiles
+                        yield np.asarray(batch)
                         batch = []
             if batch:
                 yield np.asarray(batch), profiles

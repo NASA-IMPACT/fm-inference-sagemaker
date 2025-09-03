@@ -20,6 +20,7 @@ class Infer:
 
     def preprocess(self, images):
         images_array = []
+        profiles = []
 
         mean = []
         std = []
@@ -33,19 +34,24 @@ class Infer:
         # std = torch.tensor(self.config['data']['init_args']['stds']).view(-1, 1, 1)
 
         for image in images:
-            image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
-            image = torch.from_numpy(image)
-            if mean and std:
-                image = (image - mean) / std
-            images_array.append(image[:6, :, :])  # Take only first 6 channels
+            with rasterio.open(image) as raster_file:
+                image = raster_file.read()
+                image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
+                image = torch.from_numpy(image)
+                if mean and std:
+                    image = (image - mean) / std
+                images_array.append(image)
+                profiles.append(raster_file.profile)
+                raster_file.close()
         # Example processing function to simulate the pipeline
         imgs_tensor = torch.from_numpy(np.asarray(images_array))  # Assuming input_array is of type np.float32
-        processed_images = imgs_tensor.float()
+        imgs_tensor = imgs_tensor.float()
 
         # increase dimensions to match input size
+        processed_images = imgs_tensor
         print("shape of processed images:", processed_images.shape)
-        processed_images = processed_images.unsqueeze(2)
-        return processed_images
+        processed_images = imgs_tensor.unsqueeze(2)
+        return processed_images, profiles
 
     def infer(self, images):
         """
@@ -55,7 +61,7 @@ class Infer:
         """
         # forward the model
         with torch.no_grad():
-            images = self.preprocess(images)
+            images, profiles = self.preprocess(images)
             result = self.model(images.to('cpu'))
             predicted_masks = list()
             results = result.output.detach().cpu()
@@ -66,11 +72,11 @@ class Infer:
                     predicted_mask = (updated_mask > self.config.get('threshold', 0.5)).int()
                 else:
                     predicted_mask = mask.argmax(dim=0)
-                    img_size = images[index].shape[-1]
+                    img_size = profiles[index]['height']
                     predicted_mask = torch.nn.functional.interpolate(
                             predicted_mask.unsqueeze(0).float(),
                             size=img_size,
                             mode="nearest"
                         )
                 predicted_masks.append(predicted_mask)
-        return predicted_masks
+        return predicted_masks, profiles
