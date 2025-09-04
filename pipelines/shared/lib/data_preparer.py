@@ -8,8 +8,17 @@ from rasterio.windows import from_bounds, Window
 
 SHAPE = (512, 512)
 
+QA_INDICES = {
+    'cloud': 1,
+    'adjacent_cloud': 2,
+    'shadow': 3,
+    'snow': 4,
+    'water': 5,
+    'aerosol': 6
+}
+
 class DataPreparer:
-    def __init__(self, filename, batch_size=120, overlap=0, scale=False):
+    def __init__(self, filename, batch_size=120, overlap=0, scale=False, qa_flags=['cloud', 'shadow', 'snow', 'water']):
         """
         Initialize Downloader
         Args:
@@ -46,6 +55,13 @@ class DataPreparer:
                     win_width = min(width, src.width - col_off)
                     window = Window(col_off, row_off, win_width, win_height)
                     tile = src.read(window=window)
+                    combined = np.zeros_like(tile)
+                    for qa_flag in qa_flags:
+                        qa_index = QA_INDICES.get(qa_flag)
+                        flag = tile[6] & (1 << qa_index) != 0
+                        combined |= flag
+                    tile = [tile[index][combined] == 0.0001 for index in range(6)]
+
                     # Zero pad if needed
                     if win_height < height or win_width < width:
                         pad_shape = (tile.shape[0], height, width)
