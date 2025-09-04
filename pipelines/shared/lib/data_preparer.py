@@ -56,7 +56,7 @@ class DataPreparer:
                     win_width = min(width, src.width - col_off)
                     window = Window(col_off, row_off, win_width, win_height)
                     tile = src.read(window=window)
-                    combined = np.zeros_like(tile)
+                    combined = np.zeros_like(tile).astype('uint')
                     for qa_flag in self.qa_flags:
                         qa_index = QA_INDICES.get(qa_flag)
                         flag = tile[6].astype('uint') & (1 << qa_index) != 0
