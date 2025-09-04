@@ -16,7 +16,7 @@ class Infer:
         # Use proper mean and std from consts if not in config.
         self.means = np.asarray(self.config['data']['init_args'].get('means', MEANS))
         self.stds = np.asarray(self.config['data']['init_args'].get('stds', STDS))
-        if means and stds:
+        if self.means and self.stds:
             self.mean = self.means.view(-1, 1, 1)
             self.std = self.stds.view(-1, 1, 1)
 
@@ -37,8 +37,8 @@ class Infer:
                 image = raster_file.read()[:6]  # Read first 6 bands
                 image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
                 image = torch.from_numpy(image)
-                if self.mean and self.std:
-                    image = (image - self.mean) / self.std
+                if self.means and self.stds:
+                    image = (image - self.means) / self.stds
                 images_array.append(image)
                 profiles.append(raster_file.profile)
                 raster_file.close()
