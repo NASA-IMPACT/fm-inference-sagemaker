@@ -179,7 +179,7 @@ def save_cog(mosaic, profile, transform, filename, bbox):
     transform, width, height = calculate_default_transform(
         profile["crs"], dst_crs, profile["width"], profile["height"], *profile.get("bounds", bbox)
     )
-    reprojected = np.empty((mosaic.shape[0], height, width), dtype=np.float32)
+    reprojected = np.zeros_like(mosaic)
     reproject(
         source=mosaic,
         destination=reprojected,
