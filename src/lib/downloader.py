@@ -6,6 +6,8 @@ import numpy as np
 import os
 import rasterio
 import requests
+import geopandas as gpd
+from shapely.geometry import box
 import time
 
 from earthaccess import search_data, download
@@ -17,7 +19,11 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.windows import from_bounds, Window
 
 
-BANDS = ["B02", "B03", "B04", "B08", "B11", "B12", "Fmask"]
+BANDS = {
+    "HLSL30": ["B02", "B03", "B04", "B08", "B11", "B12", "Fmask", "SAA", "SZA"],
+    "HLSS30": ["B02", "B03", "B04", "B8A", "B11", "B12", "Fmask", "SAA", "SZA"],
+}
+
 LAYERS = {
     'HLS': ['HLSS30', 'HLSL30'],
     'MERRA2': ['M2T1NXSLV', 'M2T1NXLND']
@@ -45,7 +51,8 @@ class Downloader:
         self.bbox = bbox
         self.links = []
 
-    def generate_digest(self, date, bbox):
+    @staticmethod
+    def generate_digest(date, bbox):
         """
         Create a digest (hash) based on the combination of date and bounding box.
         Returns:
@@ -132,7 +139,7 @@ class Downloader:
             output_name: output file name
         """
 
-        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{self.generate_digest(self.date, self.bbox)}.tif"
+        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}.tif"
         if os.path.exists(output_name):
             print(f"File {output_name} already exists. Skipping merge.")
             return output_name
@@ -182,22 +189,84 @@ class Downloader:
             s.close()
         return output_name
 
+    def crop_to_bbox(self, filename):
+        """
+        Crop the input file to the bounding box and resample to 512x512.
+        Args:
+            filename: path to the input raster file
+        Returns:
+            str: path to the cropped and resampled file
+        """
+        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{filename.split('/')[-1].replace('.tif', '_cropped.tif')}"
+        if os.path.exists(output_name):
+            print(f"File {output_name} already exists. Skipping crop.")
+            return output_name
+
+        with rasterio.open(filename) as src:
+            # Create bbox geometry in WGS84
+            minx, miny, maxx, maxy = self.bbox
+            bbox_geom = box(minx, miny, maxx, maxy)
+            bbox_gdf = gpd.GeoDataFrame([1], geometry=[bbox_geom], crs='EPSG:4326')
+
+            # Reproject bbox to raster CRS
+            bbox_reproj = bbox_gdf.to_crs(src.crs)
+            bounds = bbox_reproj.total_bounds
+            minx_t, miny_t, maxx_t, maxy_t = bounds
+
+            # Create window from bounds
+            window = from_bounds(minx_t, miny_t, maxx_t, maxy_t, src.transform)
+
+            # Read window
+            data = src.read(window=window)
+            window_transform = rasterio.windows.transform(window, src.transform)
+
+            # Resample to 512x512
+            transform, width, height = calculate_default_transform(
+                src.crs, src.crs, data.shape[2], data.shape[1],
+                minx_t, miny_t, maxx_t, maxy_t,
+                dst_width=WIDTH, dst_height=HEIGHT
+            )
+
+            out_meta = src.meta.copy()
+            out_meta.update({
+                "height": height,
+                "width": width,
+                "transform": transform
+            })
+
+            with rasterio.open(output_name, "w", **out_meta) as dst:
+                for i in range(1, src.count + 1):
+                    reproject(
+                        source=data[i - 1],
+                        destination=rasterio.band(dst, i),
+                        src_transform=window_transform,
+                        src_crs=src.crs,
+                        dst_transform=transform,
+                        dst_crs=src.crs,
+                        resampling=Resampling.bilinear
+                    )
+
+        return output_name
+
     def find_and_prepare_data(self):
-        granules = search_data(
-            short_name=self.layers,
-            temporal=self.date_range,
-            bounding_box=tuple(map(float, self.bbox)),
-            cloud_hosted=True,
-            count=1000
-        )
+        # TODO:
+        # will also need to update to have timeseries support as needed.
         merged_files = []
-        for granule in granules:
-            all_bands_available = False
-            links = [link
-                for band in BANDS for link in granule.data_links(access='external')
-                   if f".{band}." in link
-            ]
-            if all(band in ' '.join(links) for band in BANDS):
-                filenames = self.download_bands(links)
-                merged_files.append(self.merge_bands(filenames))
+        for layer in self.layers:
+            granules = search_data(
+                short_name=layer,
+                temporal=self.date_range,
+                bounding_box=tuple(map(float, self.bbox)),
+                cloud_hosted=True,
+                count=1000
+            )
+            for granule in granules:
+                all_bands_available = False
+                links = [link
+                    for band in BANDS[layer] for link in granule.data_links(access='external')
+                    if f".{band}." in link
+                ]
+                if all(band in ' '.join(links) for band in BANDS[layer]):
+                    filenames = self.download_bands(links)
+                    merged_files.append(self.merge_bands(filenames))
         return merged_files
