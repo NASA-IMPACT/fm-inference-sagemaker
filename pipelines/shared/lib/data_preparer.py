@@ -61,7 +61,8 @@ class DataPreparer:
                         qa_index = QA_INDICES.get(qa_flag)
                         flag = tile[6].astype('uint') & (1 << qa_index) != 0
                         combined |= flag
-                    tile = [tile[index][combined] == 0.0001 for index in range(6)]
+                    for index in range(6):
+                        tile[index][combined] = 0.0001
 
                     # Zero pad if needed
                     if win_height < height or win_width < width:
