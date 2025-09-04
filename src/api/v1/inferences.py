@@ -85,8 +85,7 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
             downloader = Downloader(
                 inference.query['date'],
                 inference.query['bounding_box'],
-                layers=['HLSS30', 'HLSL30'],
-                qa_flags=['cloud', 'shadow', 'snow', 'adjacent_cloud']
+                layers=['HLSS30', 'HLSL30']
             )#model.data_config['sources'])
             print('Downloading files')
             merged_file = downloader.find_and_prepare_data()
@@ -103,6 +102,7 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
                 'filename': merged_file,
                 'scale': True,
                 'model_id': model_id,
+                'qa_flags': ['cloud', 'shadow', 'adjacent_cloud'],
                 'bounding_box': inference.query['bounding_box']
             }) #model.data_config['scaled']})
             print(f'Model response: {response.status_code}, {response.text}')

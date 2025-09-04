@@ -301,7 +301,7 @@ class InvocationData(BaseModel):
     scale: Optional[bool] = False
     model_id: str
     bounding_box: list[float]
-
+    qa_flags: Optional[list[str]] = ['cloud', 'shadow', 'adjacent_cloud']
 
 
 # Protected endpoints (require API key)

@@ -28,6 +28,7 @@ class DataPreparer:
         self.filename = filename
         self.batch_size = batch_size
         self.overlap = overlap
+        self.qa_flags = qa_flags
         self.scale = scale
 
     def generate_tiles(self):
@@ -56,7 +57,7 @@ class DataPreparer:
                     window = Window(col_off, row_off, win_width, win_height)
                     tile = src.read(window=window)
                     combined = np.zeros_like(tile)
-                    for qa_flag in qa_flags:
+                    for qa_flag in self.qa_flags:
                         qa_index = QA_INDICES.get(qa_flag)
                         flag = tile[6] & (1 << qa_index) != 0
                         combined |= flag
