@@ -33,6 +33,8 @@ from rio_cogeo.profiles import cog_profiles
 from shapely.geometry import shape
 
 from typing import Optional
+import numpy as np
+from rasterio.warp import calculate_default_transform, reproject, Resampling
 
 
 # This will be served by the FastAPI as a container
@@ -144,6 +146,8 @@ public_router = APIRouter()
 # ... [rest of your existing functions remain the same] ...
 
 def save_cog(mosaic, profile, transform, filename, bbox):
+    # reproject to 4326 and save as cog
+
     profile.update(
         {
             "driver": "GTiff",
@@ -169,9 +173,32 @@ def save_cog(mosaic, profile, transform, filename, bbox):
         ],
     }
     # Write mosaic to an in-memory file
+    # Reproject to EPSG:4326 before writing
+
+    dst_crs = "EPSG:4326"
+    transform, width, height = calculate_default_transform(
+        profile["crs"], dst_crs, profile["width"], profile["height"], *profile.get("bounds", bbox)
+    )
+    reprojected = np.empty((mosaic.shape[0], height, width), dtype=np.float32)
+    reproject(
+        source=mosaic,
+        destination=reprojected,
+        src_transform=profile["transform"],
+        src_crs=profile["crs"],
+        dst_transform=transform,
+        dst_crs=dst_crs,
+        resampling=Resampling.nearest
+    )
+    profile.update({
+        "crs": dst_crs,
+        "transform": transform,
+        "width": width,
+        "height": height
+    })
+
     with MemoryFile() as memfile:
         with memfile.open(**profile) as dst:
-            dst.write(mosaic, 1)
+            dst.write(reprojected, 1)
             out_image, out_transform = mask(dst, [bbox_geom], crop=True)
             out_meta = dst.meta.copy()
 
