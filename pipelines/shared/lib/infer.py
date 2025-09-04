@@ -3,7 +3,7 @@ import yaml
 import numpy as np
 import rasterio
 from terratorch.cli_tools import LightningInferenceModel
-from lib.consts import NO_DATA, NO_DATA_FLOAT
+from lib.consts import NO_DATA, NO_DATA_FLOAT, MEANS, STDS
 
 class Infer:
     def __init__(self, config, checkpoint):
@@ -18,6 +18,9 @@ class Infer:
         self.model = inference_model.model
         self.model = self.model.eval()
 
+    def postprocess(self, bbox, date, predictions, images):
+        return predictions
+
     def preprocess(self, images):
         images_array = []
         profiles = []
@@ -25,13 +28,11 @@ class Infer:
         mean = []
         std = []
         # Use proper mean and std from consts if not in config.
-        means = self.config['data']['init_args'].get('means', None)
-        stds = self.config['data']['init_args'].get('stds', None)
+        means = self.config['data']['init_args'].get('means', MEANS)
+        stds = self.config['data']['init_args'].get('stds', STDS)
         if means and stds:
             mean = means.view(-1, 1, 1)
             std = stds.view(-1, 1, 1)
-        # mean = torch.tensor(self.config['data']['init_args']['means']).view(-1, 1, 1)
-        # std = torch.tensor(self.config['data']['init_args']['stds']).view(-1, 1, 1)
 
         for image in images:
             with rasterio.open(image) as raster_file:
