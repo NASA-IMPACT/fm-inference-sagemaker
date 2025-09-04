@@ -59,7 +59,7 @@ class DataPreparer:
                     combined = np.zeros_like(tile)
                     for qa_flag in self.qa_flags:
                         qa_index = QA_INDICES.get(qa_flag)
-                        flag = tile[6] & (1 << qa_index) != 0
+                        flag = tile[6].astype('uint') & (1 << qa_index) != 0
                         combined |= flag
                     tile = [tile[index][combined] == 0.0001 for index in range(6)]
 
