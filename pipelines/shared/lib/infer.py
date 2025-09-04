@@ -17,8 +17,8 @@ class Infer:
         self.means = np.asarray(self.config['data']['init_args'].get('means', MEANS))
         self.stds = np.asarray(self.config['data']['init_args'].get('stds', STDS))
         if self.means and self.stds:
-            self.mean = self.means.view(-1, 1, 1)
-            self.std = self.stds.view(-1, 1, 1)
+            self.means = self.means.view(-1, 1, 1)
+            self.stds = self.stds.view(-1, 1, 1)
 
     def load_model(self):
         inference_model = LightningInferenceModel.from_config(self.config_filename, self.checkpoint_filename)
