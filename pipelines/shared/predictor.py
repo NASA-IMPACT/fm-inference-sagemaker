@@ -1,31 +1,39 @@
 import boto3
-import json
-import os
-import time
-from typing import Optional
+import gc
+import geopandas as gpd
 import httpx
-from pydantic import BaseModel
+import importlib
+import inflection
+import json
 import logging
+import os
+import rasterio
+import time
+import torch
 
 from fastapi import FastAPI, Request, APIRouter, status, Response, Body, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 
-import gc
-import geopandas as gpd
-import rasterio
-import torch
-from lib.data_preparer import DataPreparer
-from lib.infer import Infer
-from lib.post_process import PostProcess
 from lib.consts import BUCKET_NAME, LAYERS, CONFIG_PATH, MODEL_WEIGHT_PATH, USECASE, DOWNLOAD_FOLDER
+from lib.data_preparer import DataPreparer
+from lib.post_process import PostProcess
 from lib.utils import get_boto3_session
+
+from pydantic import BaseModel
+
 from rasterio.io import MemoryFile
+from rasterio.mask import mask
 from rasterio.merge import merge
+
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
+
 from shapely.geometry import shape
+
+from typing import Optional
+
 
 # This will be served by the FastAPI as a container
 # Re-enable docs to see the authorization feature
@@ -71,7 +79,9 @@ def load_model(config_file_path, checkpoint_file_path, source='s3'):
     elif source == 'huggingface':
         pass
     # Load the model only once
-    infer = Infer(model_config_file_path, model_weights_path)
+    infer_classname = f"{inflection.singularize(USECASE).capitalize()}Infer"
+    model_module = importlib.import_module(f"lib.{USECASE}_infer")
+    infer = getattr(model_module, infer_classname)(model_config_file_path, model_weights_path)
     return { USECASE: infer }
 
 MODEL = load_model(CONFIG_PATH, MODEL_WEIGHT_PATH)
@@ -132,7 +142,7 @@ public_router = APIRouter()
 
 # ... [rest of your existing functions remain the same] ...
 
-def save_cog(mosaic, profile, transform, filename):
+def save_cog(mosaic, profile, transform, filename, bbox):
     profile.update(
         {
             "driver": "GTiff",
@@ -143,29 +153,62 @@ def save_cog(mosaic, profile, transform, filename):
             "count": 1,
         }
     )
-    with rasterio.open(filename, 'w', **profile) as raster:
-        raster.write(mosaic, 1)
-    output_profile = cog_profiles.get('deflate')
-    output_profile.update(dict(BIGTIFF="IF_SAFER"))
+    # Crop to bbox
+    minx, miny, maxx, maxy = bbox
+    bbox_geom = {
+        "type": "Polygon",
+        "coordinates": [
+            [
+                [minx, miny],
+                [minx, maxy],
+                [maxx, maxy],
+                [maxx, miny],
+                [minx, miny],
+            ]
+        ],
+    }
+    # Write mosaic to an in-memory file
+    with MemoryFile() as memfile:
+        with memfile.open(**profile) as dst:
+            dst.write(mosaic, 1)
+            out_image, out_transform = mask(dst, [bbox_geom], crop=True)
+            out_meta = dst.meta.copy()
 
-    config = dict(
-        GDAL_NUM_THREADS="ALL_CPUS",
-        GDAL_TIFF_INTERNAL_MASK=True,
-        GDAL_TIFF_OVR_BLOCKSIZE="512",
-    )
-    with MemoryFile() as memory_file:
-        cog_translate(
-            filename,
-            memory_file.name,
-            output_profile,
-            config=config,
-            quiet=True,
-            in_memory=True,
+    out_meta.update({
+        "height": out_image.shape[1],
+        "width": out_image.shape[2],
+        "transform": out_transform
+    })
+
+    with rasterio.open(filename, 'w', **out_meta) as raster:
+        raster.write(out_image, 1)
+
+    return filename
+
+
+    def upload_to_s3(filename):
+        output_profile = cog_profiles.get('deflate')
+        output_profile.update(dict(BIGTIFF="IF_SAFER"))
+
+        config = dict(
+            GDAL_NUM_THREADS="ALL_CPUS",
+            GDAL_TIFF_INTERNAL_MASK=True,
+            GDAL_TIFF_OVR_BLOCKSIZE="512",
         )
-        connection = boto3.client('s3')
-        connection.upload_fileobj(memory_file, BUCKET_NAME, filename)
+        s3_prefix = f"predictions/{filename.split('/')[-1]}"
+        with MemoryFile() as memory_file:
+            cog_translate(
+                filename,
+                memory_file.name,
+                output_profile,
+                config=config,
+                quiet=True,
+                in_memory=True,
+            )
+            connection = boto3.client('s3')
+            connection.upload_fileobj(memory_file, BUCKET_NAME, s3_prefix)
 
-    return f"s3://{BUCKET_NAME}/predictions/{filename.split('/')[-1]}"
+        return f"s3://{BUCKET_NAME}/{s3_prefix}"
 
 def post_process(detections, transform):
     contours, shape = PostProcess.prepare_contours(detections)
@@ -226,13 +269,13 @@ def infer(filename, scale, model_id, bounding_box):
             with memfile.open(**profile) as memoryfile:
                 memoryfile.write(results[index][0], 1)
             memory_files.append(memfile.open())
-
         mosaic, transform = merge(memory_files)
-
         [memfile.close() for memfile in memory_files]
-        prediction_filename = f"{DOWNLOAD_FOLDER}/{start_time}-predictions.tif"
+        prediction_filename = f"{DOWNLOAD_FOLDER}/predictions/{start_time}-predictions.tif"
 
-        s3_link = save_cog(mosaic[0], profile, transform, prediction_filename)
+        prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename, bounding_box)
+        postprocessed_filename = inference.postprocess(bbox, date, prediction_filename, filename)
+        s3_link = upload_to_s3(prediction_filename)
 
         geojson = post_process(mosaic[0], transform)
 
