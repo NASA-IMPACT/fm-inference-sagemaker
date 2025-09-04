@@ -2,9 +2,11 @@ boto3
 datasets
 fastapi
 geojson
+geopandas
 gunicorn
 httpx
 huggingface_hub
+inflection
 morecantile
 opencv-python
 Pillow==9.4.0
@@ -12,6 +14,8 @@ pydantic
 python-dotenv
 rasterio
 rio-cogeo
+scipy
+shapely
 shapely
 starlette
 terratorch==1.0.2
