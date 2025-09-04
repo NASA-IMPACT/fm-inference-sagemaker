@@ -1,9 +1,10 @@
-import torch
-import yaml
 import numpy as np
 import rasterio
-from terratorch.cli_tools import LightningInferenceModel
+import torch
+import yaml
+
 from lib.consts import NO_DATA, NO_DATA_FLOAT, MEANS, STDS
+from terratorch.cli_tools import LightningInferenceModel
 
 class Infer:
     def __init__(self, config, checkpoint):
@@ -12,6 +13,12 @@ class Infer:
             self.config = yaml.safe_load(config)
         self.checkpoint_filename = checkpoint
         self.load_model()
+        # Use proper mean and std from consts if not in config.
+        self.means = np.asarray(self.config['data']['init_args'].get('means', MEANS))
+        self.stds = np.asarray(self.config['data']['init_args'].get('stds', STDS))
+        if means and stds:
+            self.mean = self.means.view(-1, 1, 1)
+            self.std = self.stds.view(-1, 1, 1)
 
     def load_model(self):
         inference_model = LightningInferenceModel.from_config(self.config_filename, self.checkpoint_filename)
@@ -25,22 +32,13 @@ class Infer:
         images_array = []
         profiles = []
 
-        mean = []
-        std = []
-        # Use proper mean and std from consts if not in config.
-        means = self.config['data']['init_args'].get('means', MEANS)
-        stds = self.config['data']['init_args'].get('stds', STDS)
-        if means and stds:
-            mean = means.view(-1, 1, 1)
-            std = stds.view(-1, 1, 1)
-
         for image in images:
             with rasterio.open(image) as raster_file:
                 image = raster_file.read()[:6]  # Read first 6 bands
                 image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
                 image = torch.from_numpy(image)
-                if mean and std:
-                    image = (image - mean) / std
+                if self.mean and self.std:
+                    image = (image - self.mean) / self.std
                 images_array.append(image)
                 profiles.append(raster_file.profile)
                 raster_file.close()
