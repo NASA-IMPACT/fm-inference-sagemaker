@@ -2,7 +2,7 @@ import time
 import requests
 
 from typing import Dict, List
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from datetime import datetime, timedelta
@@ -22,18 +22,15 @@ def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "timestamp": datetime.utcnow()}
 
-# @router.get("/", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
-# def get_models(db: Session = Depends(get_db)):
-#     """Get all inferences."""
-#     try:
-#         # get all inferences
-#         inferences = db.query(
-#             Inference
-#         ).all()
+@router.get("/", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
+def get_models(db: Session = Depends(get_db)):
+    """Get all inferences."""
+    try:
+        inferences = db.query(Inference).all()
+        return inferences
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-#         return inferences
-#     except Exception as e:
-#         return {"error": str(e)}
 
 @router.get("/{inference_id}", response_model=InferenceRead, status_code=status.HTTP_200_OK)
 def get_inference(inference_id: str, db: Session = Depends(get_db)):
@@ -41,10 +38,10 @@ def get_inference(inference_id: str, db: Session = Depends(get_db)):
     try:
         inference = db.query(Inference).filter(Inference.id == inference_id).first()
         if not inference:
-            return {"error": "inference not found"}
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inference not found")
         return inference
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @router.get("/{inference_id}/preloaded_events", response_model=List[PreloadedEventRead], status_code=status.HTTP_200_OK)
 def get_inference_preloaded_events(inference_id: str, db: Session = Depends(get_db)):
@@ -55,12 +52,15 @@ def get_inference_preloaded_events(inference_id: str, db: Session = Depends(get_
         ).all()
         return events
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
 def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
     """Create a new finetuned model."""
     try:
+        # TODO: handle db session properly
+        # handle large requests properly with background tasks
+        # send back a job id and let the client poll for status/results
         # inference_name = inference.name if inference.name else
         inference.name = time.strftime("inference_%Y%m%d_%H%M%S")
         # inference = Inference(
@@ -82,9 +82,18 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
         results = {}
         for model_id in ['floods']:
             # print(f"Running inference for model: {model.name} on data: {merged_file}")
-            downloader = Downloader(inference.query['date'], inference.query['bounding_box'], layers=['HLSS30', 'HLSL30'])#model.data_config['sources'])
+            downloader = Downloader(
+                inference.query['date'],
+                inference.query['bounding_box'],
+                layers=['HLSS30', 'HLSL30'],
+                qa_flags=['cloud', 'shadow', 'snow', 'adjacent_cloud']
+            )#model.data_config['sources'])
             print('Downloading files')
             merged_file = downloader.find_and_prepare_data()
+            # download extra data if needed here
+            # dem_file = downloader.download_dem()
+            # also calculate any indices if needed here
+            # pass these extra files to the inference pipeline as needed
             print(f'Downloaded and merged file at: {merged_file}')
             url = f"http://{model_id}-service:8080/api/v1/invocations"
             print(f'Calling model endpoint at: {url}')
@@ -122,9 +131,9 @@ def delete_inference(inference_id: str, db: Session = Depends(get_db)):
     try:
         inference = db.query(Inference).filter(Inference.id == inference_id).first()
         if not inference:
-            return {"error": "Inference not found"}
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inference not found")
         db.delete(inference)
         db.commit()
         return {"message": "Inference deleted successfully"}
     except Exception as e:
-        return {"error": str(e)}
+        return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
