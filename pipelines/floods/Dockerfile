@@ -60,6 +60,9 @@ RUN mkdir -p gdal-3.11.3/build && \
 ENV GDAL_DATA=/usr/local/share/gdal
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 ENV PATH=/usr/local/bin:$PATH
+ENV USECASE=floods
+ENV MEANS="[0.14245495,0.13921481,0.12434631,0.31420089,0.20743526,0.12046503]"
+ENV STDS="[0.04036231,0.04186983,0.05267646,0.0822221,0.06834774,0.05294205]"
 
 RUN python3.12 -m ensurepip --upgrade
 
@@ -75,6 +78,9 @@ RUN uv pip install -r /app/requirements.txt --system
 RUN mkdir /app/lib
 # Copy the rest of the application
 COPY shared/lib /app/lib
+
+COPY floods/lib /app/lib
+
 
 COPY shared/predictor.py /app/
 

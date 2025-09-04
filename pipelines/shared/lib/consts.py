@@ -1,4 +1,5 @@
 import os
+import json
 
 NO_DATA = -1
 NO_DATA_FLOAT = 0.0001
@@ -14,4 +15,5 @@ USECASE = os.environ.get('USECASE')
 MODEL_WEIGHT_PATH = os.environ.get('MODEL_WEIGHT_PATH')
 CONFIG_PATH = os.environ.get('CONFIG_PATH')
 DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", '/root/.cache/')
-API_KEY_VALIDATION_URL = os.getenv("API_KEY_VALIDATION_URL", "https://dev.fm.dsig.net/api/validate")
+MEANS = json.loads(os.environ.get('MEANS', '[]'))
+STDS = json.loads(os.environ.get('STDS', '[]'))
