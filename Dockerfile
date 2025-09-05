@@ -15,6 +15,8 @@ RUN pip install uv && uv pip install -r /app/requirements.txt --system
 # Copy the rest of the application
 COPY . /app/
 
+RUN mkdir /root/.config/data/predictions
+
 # Expose port
 EXPOSE 8000
 
