@@ -218,7 +218,7 @@ def crop_file(filename, bbox):
     dst_crs = "EPSG:4326"
 
     with MemoryFile() as memfile, rasterio.open(filename) as raster:
-        with memfile.open(**reprojected_profile) as dst:
+        with memfile.open(**raster.profile) as dst:
             dst.write(raster.read(1), 1)
             # Clip to bbox
             out_image, out_transform = mask(dst, clip_geom.geometry, crop=True)
