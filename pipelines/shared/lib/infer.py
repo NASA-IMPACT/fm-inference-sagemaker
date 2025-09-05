@@ -45,7 +45,7 @@ class Infer:
                 if len(self.means) > 0 and len(self.stds) > 0:
                     for band in range(image.shape[0]):
                         band_mask = image[band] == NO_DATA_FLOAT
-                        image[band][~band_mask] = ((image[band][~band_mask] - self.means[band]) / self.stds[band]).astype(image.dtype)
+                        image[band][~band_mask] = ((image[band][~band_mask].float() - self.means[band]) / self.stds[band]).to(image.dtype)
                 images_array.append(image)
                 coords.append(raster_file.lnglat())
                 temporal.append([julian_year, julian_day])
