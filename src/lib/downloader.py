@@ -210,36 +210,19 @@ class Downloader:
             bbox_geom = box(minx, miny, maxx, maxy)
             bbox_gdf = gpd.GeoDataFrame([1], geometry=[bbox_geom], crs='EPSG:4326')
 
-            # Reproject bbox to raster CRS
-            bbox_reproj = bbox_gdf.to_crs(src.crs)
-            bounds = bbox_reproj.total_bounds
-            minx_t, miny_t, maxx_t, maxy_t = bounds
-
-            # Create window from bounds
-            window = from_bounds(minx_t, miny_t, maxx_t, maxy_t, src.transform)
-
-            # Read window
-            data = src.read(window=window)
-            window_transform = rasterio.windows.transform(window, src.transform)
-            print(f"Cropped data shape: {data.shape}")
-            # Resample to 512x512
-            transform, width, height = calculate_default_transform(
-                src.crs, src.crs, data.shape[2], data.shape[1],
-                minx_t, miny_t, maxx_t, maxy_t,
-                dst_width=WIDTH, dst_height=HEIGHT
-            )
+            out_image, out_transform = mask(src, clip_geom.geometry, crop=True)
 
             out_meta = src.meta.copy()
             out_meta.update({
-                "height": height,
-                "width": width,
+                "height": out_image.shape[1],
+                "width": out_image.shape[2],
                 "transform": transform
             })
 
             with rasterio.open(output_name, "w", **out_meta) as dst:
                 for i in range(1, src.count + 1):
                     reproject(
-                        source=data[i - 1],
+                        source=out_image[i-1],
                         destination=rasterio.band(dst, i),
                         src_transform=window_transform,
                         src_crs=src.crs,
