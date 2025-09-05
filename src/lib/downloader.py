@@ -216,7 +216,7 @@ class Downloader:
             out_meta.update({
                 "height": out_image.shape[1],
                 "width": out_image.shape[2],
-                "transform": transform
+                "transform": out_transform
             })
 
             with rasterio.open(output_name, "w", **out_meta) as dst:
@@ -224,9 +224,9 @@ class Downloader:
                     reproject(
                         source=out_image[i-1],
                         destination=rasterio.band(dst, i),
-                        src_transform=window_transform,
+                        src_transform=src.transform,
                         src_crs=src.crs,
-                        dst_transform=transform,
+                        dst_transform=out_transform,
                         dst_crs=src.crs,
                         resampling=Resampling.bilinear
                     )
