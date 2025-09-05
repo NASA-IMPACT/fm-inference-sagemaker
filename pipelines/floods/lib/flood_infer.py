@@ -1,3 +1,5 @@
+import rasterio
+
 from lib.infer import Infer
 from lib.dem_downloader import DEMDownloader
 
