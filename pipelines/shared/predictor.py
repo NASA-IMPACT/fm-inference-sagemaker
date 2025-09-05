@@ -302,7 +302,7 @@ def infer(filename, scale, model_id, bounding_box):
     prediction_filename = f"{DOWNLOAD_FOLDER}/predictions/{start_time}-predictions.tif"
 
     prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename, bounding_box)
-    postprocessed_filename = inference.postprocess(bbox, date, prediction_filename, filename)
+    postprocessed_filename = inference.postprocess(bounding_box, date, prediction_filename, filename)
     s3_link = upload_to_s3(prediction_filename)
 
     geojson = post_process(mosaic[0], transform)
