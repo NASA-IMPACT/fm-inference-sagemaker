@@ -110,7 +110,7 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
             results[model_id] = response.json()[model_id]
             floods = results[model_id]
             inference.result_geojson = [floods['geojson']]
-            inference.result_s3_path = floods['s3_path']
+            inference.result_s3_path = floods['s3_link']
             # build model pipeline url here
             # call the model endpoint with the merged_file
             # update results dict with the inference results
