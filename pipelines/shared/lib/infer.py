@@ -43,7 +43,8 @@ class Infer:
                 image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
                 image = torch.from_numpy(image)
                 if len(self.means) > 0 and len(self.stds) > 0:
-                    image[np.where(image == NO_DATA_FLOAT)] = (image[np.where(image == NO_DATA_FLOAT)] - self.means) / self.stds
+                    for band in range(image.shape[0]):
+                        image[band][np.where(image == NO_DATA_FLOAT)] = (image[band][np.where(image == NO_DATA_FLOAT)] - self.means) / self.stds
                 images_array.append(image)
                 coords.append(raster_file.lnglat())
                 temporal.append([julian_year, julian_day])
