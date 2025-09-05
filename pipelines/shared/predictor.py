@@ -30,7 +30,7 @@ from rasterio.merge import merge
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
 
-from shapely.geometry import shape
+from shapely.geometry import shape, box
 
 from typing import Optional
 import numpy as np
