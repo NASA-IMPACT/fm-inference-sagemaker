@@ -250,10 +250,65 @@ class Downloader:
 
         return output_name
 
+    def save_cog(self, mosaic, transform, filename):
+        """
+        Reproject raster to EPSG:4326 and save as a file.
+        Args:
+            mosaic (np.ndarray): The raster data.
+            transform (affine.Affine): The rasterio transform.
+            filename (str): The output filename.
+        """
+        src_profile = {
+            'driver': 'GTiff',
+            'height': mosaic.shape[0],
+            'width': mosaic.shape[1],
+            'transform': transform,
+            'count': mosaic.shape[0],
+            'dtype': mosaic.dtype,
+            'crs': profile.get('crs', 'EPSG:3857') # Assuming default CRS if not provided
+        }
+        dst_crs = 'EPSG:4326'
+
+        with MemoryFile() as memfile:
+            with memfile.open(**src_profile) as src:
+                for band in range(mosaic.shape[0]):
+                    src.write(mosaic[band], band + 1)
+
+                dst_transform, dst_width, dst_height = calculate_default_transform(
+                    src.crs, dst_crs, src.width, src.height, *src.bounds
+                )
+
+                dst_profile = src.profile.copy()
+                dst_profile.update({
+                    'crs': dst_crs,
+                    'transform': dst_transform,
+                    'width': dst_width,
+                    'height': dst_height
+                })
+
+            with MemoryFile() as dst_memfile, memfile.open() as src:
+                with dst_memfile.open(**dst_profile) as dst:
+                    for band in range(1, src.count + 1):
+                        reproject(
+                            source=rasterio.band(src.read(band), band),
+                            destination=rasterio.band(dst, band),
+                            src_transform=src.transform,
+                            src_crs=src.crs,
+                            dst_transform=dst_transform,
+                            dst_crs=dst_crs,
+                            resampling=Resampling.bilinear
+                        )
+
+                with dst_memfile.open() as reprojected_raster:
+                    with rasterio.open(filename, 'w', **reprojected_raster.profile) as out_raster:
+                        out_raster.write(reprojected_raster.read())
+        return filename
+
     def find_and_prepare_data(self):
         # TODO:
         # will also need to update to have timeseries support as needed.
         merged_files = []
+        all_granules = []
         for layer in self.layers:
             granules = search_data(
                 short_name=layer,
@@ -262,15 +317,20 @@ class Downloader:
                 cloud_hosted=True,
                 count=1000
             )
-            for granule in granules:
-                all_bands_available = False
-                links = [link
-                    for band in BANDS[layer] for link in granule.data_links(access='external')
-                    if f".{band}." in link
-                ]
-                if all(band in ' '.join(links) for band in BANDS[layer]):
-                    filenames = self.download_bands(links)
-                    merged_file = self.merge_bands(filenames)
-                    cropped_file = self.crop_to_bbox(merged_file)
-                    merged_files.append(cropped_file)
-        return merged_files
+            all_granules.extend(granules)
+        for granule in all_granules:
+            all_bands_available = False
+            links = [link
+                for band in BANDS[layer] for link in granule.data_links(access='external')
+                if f".{band}." in link
+            ]
+            if all(band in ' '.join(links) for band in BANDS[layer]):
+                filenames = self.download_bands(links)
+                merged_file = self.merge_bands(filenames)
+                merged_files.append(merged_file)
+        # stitch together multiple merged files
+        mosaic, transform = merge(merged_files, method='first')
+        merged_file = save_cog(mosaic, transform, f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_merged.tif")
+        cropped_file = self.crop_to_bbox(merged_file)
+
+        return cropped_file
