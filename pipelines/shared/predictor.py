@@ -6,6 +6,7 @@ import importlib
 import inflection
 import json
 import logging
+import numpy as np
 import os
 import rasterio
 import time
@@ -26,6 +27,7 @@ from pydantic import BaseModel
 from rasterio.io import MemoryFile
 from rasterio.mask import mask
 from rasterio.merge import merge
+from rasterio.warp import calculate_default_transform, reproject, Resampling
 
 from rio_cogeo.cogeo import cog_translate
 from rio_cogeo.profiles import cog_profiles
@@ -33,9 +35,9 @@ from rio_cogeo.profiles import cog_profiles
 from shapely.geometry import shape, box
 
 from typing import Optional
-import numpy as np
-from rasterio.warp import calculate_default_transform, reproject, Resampling
 
+PREDICTION_FOLDER = f"{DOWNLOAD_FOLDER}/predictions"
+os.makedirs(PREDICTION_FOLDER, exist_ok=True)
 
 # This will be served by the FastAPI as a container
 # Re-enable docs to see the authorization feature
@@ -299,7 +301,7 @@ def infer(filename, scale, model_id, bounding_box):
         memory_files.append(memfile.open())
     mosaic, transform = merge(memory_files)
     [memfile.close() for memfile in memory_files]
-    prediction_filename = f"{DOWNLOAD_FOLDER}/predictions/{start_time}-predictions.tif"
+    prediction_filename = f"{PREDICTION_FOLDER}/{start_time}-predictions.tif"
 
     prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename, bounding_box)
     postprocessed_filename = inference.postprocess(bounding_box, date, prediction_filename, filename)
