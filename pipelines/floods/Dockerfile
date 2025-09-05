@@ -60,10 +60,6 @@ RUN mkdir -p gdal-3.11.3/build && \
 ENV GDAL_DATA=/usr/local/share/gdal
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 ENV PATH=/usr/local/bin:$PATH
-ENV USECASE=floods
-
-ENV MEANS="[1924.863, 2184.553, 2340.936, 3627.704, 3416.714, 2849.625]"
-ENV STDS="[1201.092, 1219.943, 1397.225, 1447.836, 1471.002, 1365.30]"
 
 RUN python3.12 -m ensurepip --upgrade
 
@@ -84,6 +80,12 @@ COPY floods/lib /app/lib
 
 
 COPY shared/predictor.py /app/
+
+ENV USECASE=floods
+
+ENV MEANS="[1924.863, 2184.553, 2340.936, 3627.704, 3416.714, 2849.625]"
+ENV STDS="[1201.092, 1219.943, 1397.225, 1447.836, 1471.002, 1365.30]"
+
 
 # Expose port
 EXPOSE 8001
