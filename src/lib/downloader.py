@@ -158,32 +158,48 @@ class Downloader:
             "count": len(filenames),
             "dtype": 'float32'
         })
-        # Crop to bbox before writing
-        # Convert bbox from WGS84 to data CRS
-        src_crs = 'EPSG:4326'  # WGS84
-        dst_crs = out_meta['crs'] if 'crs' in out_meta else srcs[0].crs
-        minx, miny, maxx, maxy = self.bbox
+        # Reproject the stacked array to EPSG:4326
+        dst_crs = 'EPSG:4326'
+        dst_transform, dst_width, dst_height = calculate_default_transform(
+            srcs[0].crs, dst_crs, stacked.shape[2], stacked.shape[1], *srcs[0].bounds
+        )
 
-        transformer = Transformer.from_crs(src_crs, dst_crs, always_xy=True)
-        minx_t, miny_t = transformer.transform(minx, miny)
-        maxx_t, maxy_t = transformer.transform(maxx, maxy)
-        # Use the transform from the merged files (mosaic)
-        window = from_bounds(minx_t, miny_t, maxx_t, maxy_t, transform)
-        # Read window from stacked array
-        # Calculate window indices
+        reprojected = np.zeros((len(filenames), dst_height, dst_width), dtype=np.float32)
+
+        reproject(
+            source=stacked,
+            destination=reprojected,
+            src_transform=transform,
+            src_crs=srcs[0].crs,
+            dst_transform=dst_transform,
+            dst_crs=dst_crs,
+            resampling=Resampling.bilinear
+        )
+
+        out_meta.update({
+            "height": dst_height,
+            "width": dst_width,
+            "transform": dst_transform,
+            "crs": dst_crs,
+            "count": len(filenames)
+        })
+
+        # Now crop the reprojected data using the bbox
+        minx, miny, maxx, maxy = self.bbox
+        window = from_bounds(minx, miny, maxx, maxy, dst_transform)
+
         row_start, row_stop = int(window.row_off), int(window.row_off + window.height)
         col_start, col_stop = int(window.col_off), int(window.col_off + window.width)
-        cropped = stacked[:, row_start:row_stop, col_start:col_stop]
-        # Update metadata for cropped output
+        cropped = reprojected[:, row_start:row_stop, col_start:col_stop]
+
         out_meta.update({
             "height": cropped.shape[1],
             "width": cropped.shape[2],
-            "transform": rasterio.windows.transform(window, transform)
+            "transform": rasterio.windows.transform(window, dst_transform)
         })
-        # Write cropped mosaic
+
         with rasterio.open(output_name, "w", **out_meta) as dst:
-            for index in range(cropped.shape[0]):
-                dst.write(cropped[index], index + 1)
+            dst.write(cropped)
         # Close all sources
         for s in srcs:
             s.close()
