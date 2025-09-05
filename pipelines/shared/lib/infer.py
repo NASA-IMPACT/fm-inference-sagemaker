@@ -70,8 +70,8 @@ class Infer:
             images, profiles, coords, temporal = self.preprocess(images, date)
             result = self.model(
                 images.to('cuda' if torch.cuda.is_available() else 'cpu'),
-                location_coords=torch.tensor(coords).to('cuda' if torch.cuda.is_available() else 'cpu').unsqueeze(0),
-                temporal_coords=torch.tensor(temporal).to('cuda' if torch.cuda.is_available() else 'cpu').unsqueeze(0)
+                # location_coords=torch.tensor(coords).to('cuda' if torch.cuda.is_available() else 'cpu').unsqueeze(0),
+                # temporal_coords=torch.tensor(temporal).to('cuda' if torch.cuda.is_available() else 'cpu').unsqueeze(0)
             )
             predicted_masks = list()
             results = result.output.detach().cpu()

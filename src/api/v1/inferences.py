@@ -99,7 +99,7 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
             merged_file = merged_file[0] if isinstance(merged_file, list) else merged_file
             response = requests.post(url, json={
                 'filename': merged_file,
-                'scale': False,
+                'scale': True,
                 'model_id': model_id,
                 'qa_flags': ['cloud', 'shadow', 'adjacent_cloud'],
                 'bounding_box': inference.query['bounding_box'],

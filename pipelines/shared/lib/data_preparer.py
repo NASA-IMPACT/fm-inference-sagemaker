@@ -56,13 +56,6 @@ class DataPreparer:
                     win_width = min(width, src.width - col_off)
                     window = Window(col_off, row_off, win_width, win_height)
                     tile = src.read(window=window)
-                    combined = np.zeros_like(tile).astype('uint')
-                    for qa_flag in self.qa_flags:
-                        qa_index = QA_INDICES.get(qa_flag)
-                        flag = tile[6].astype('uint') & (1 << qa_index) != 0
-                        combined |= flag
-                    for index in range(6):
-                        tile[index][combined] = 0.0001
 
                     # Zero pad if needed
                     if win_height < height or win_width < width:
@@ -73,6 +66,15 @@ class DataPreparer:
                             tile = np.clip(tile, 0, 1)
                         padded[:, :win_height, :win_width] = tile
                         tile = padded
+
+                    combined = np.zeros_like(tile).astype('uint')
+                    for qa_flag in self.qa_flags:
+                        qa_index = QA_INDICES.get(qa_flag)
+                        flag = tile[6].astype('uint') & (1 << qa_index) != 0
+                        combined |= flag
+                    for index in range(6):
+                        tile[index][combined] = 0.0001
+
                     # Prepare metadata for memory file
                     meta = src.meta.copy()
                     meta.update({
