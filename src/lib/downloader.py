@@ -164,10 +164,10 @@ class Downloader:
             srcs[0].crs, dst_crs, stacked.shape[2], stacked.shape[1], *srcs[0].bounds
         )
 
-        reprojected = np.zeros((len(filenames), dst_height, dst_width), dtype=np.float32)
+        reprojected = np.empty((len(filenames), dst_height, dst_width), dtype=np.float32)
 
         reproject(
-            source=stacked,
+            source=stacked.astype(np.float32),
             destination=reprojected,
             src_transform=transform,
             src_crs=srcs[0].crs,
@@ -184,22 +184,8 @@ class Downloader:
             "count": len(filenames)
         })
 
-        # Now crop the reprojected data using the bbox
-        minx, miny, maxx, maxy = self.bbox
-        window = from_bounds(minx, miny, maxx, maxy, dst_transform)
-
-        row_start, row_stop = int(window.row_off), int(window.row_off + window.height)
-        col_start, col_stop = int(window.col_off), int(window.col_off + window.width)
-        cropped = reprojected[:, row_start:row_stop, col_start:col_stop]
-
-        out_meta.update({
-            "height": cropped.shape[1],
-            "width": cropped.shape[2],
-            "transform": rasterio.windows.transform(window, dst_transform)
-        })
-
         with rasterio.open(output_name, "w", **out_meta) as dst:
-            dst.write(cropped)
+            dst.write(reprojected)
         # Close all sources
         for s in srcs:
             s.close()
