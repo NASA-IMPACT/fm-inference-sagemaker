@@ -260,8 +260,8 @@ class Downloader:
         """
         src_profile = {
             'driver': 'GTiff',
-            'height': mosaic.shape[0],
-            'width': mosaic.shape[1],
+            'height': mosaic.shape[1],
+            'width': mosaic.shape[2],
             'transform': transform,
             'count': mosaic.shape[0],
             'dtype': mosaic.dtype,
