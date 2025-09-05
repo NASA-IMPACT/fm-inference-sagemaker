@@ -356,23 +356,23 @@ class DEMDownloader:
             )
 
             # 2. Smart aerosol filter (optional)
-            terrain_output = rasterio.open(terrain_output, 'r')
-            if use_smart_aerosol:
-                aerosol_output, aerosol_mask, aerosol_pixels = DEMDownloader.postprocess_smart_aerosol_filter(
-                    terrain_output, hls_src
-                )
-            else:
-                print("\nSkipping aerosol filter...")
-                aerosol_output = terrain_output
-                aerosol_mask = np.zeros_like(shadow_mask)
-                aerosol_pixels = 0
+            with rasterio.open(terrain_output, 'r') as terrain_out:
+                if use_smart_aerosol:
+                    aerosol_output, aerosol_mask, aerosol_pixels = DEMDownloader.postprocess_smart_aerosol_filter(
+                        terrain_out, hls_src
+                    )
+                else:
+                    print("\nSkipping aerosol filter...")
+                    aerosol_output = terrain_output
+                    aerosol_mask = np.zeros_like(shadow_mask)
+                    aerosol_pixels = 0
 
             # 3. Vegetation filter
             with rasterio.open(aerosol_output, 'r') as aerosol_src:
                 veg_output, veg_mask, veg_pixels, ndvi_file = DEMDownloader.postprocess_vegetation_filter(
                     aerosol_src, hls_src, dem_file
                 )
-            terrain_output.close()
+
             # Final corrected file
             final_corrected = os.path.join(postproc_dir, flood_detection_file.replace('.tif', '_final_corrected.tif'))
             shutil.copy(veg_output, final_corrected)
