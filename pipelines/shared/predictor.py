@@ -320,7 +320,7 @@ def infer(filename, scale, model_id, bounding_box, date):
             'nodata': 0
         })
         with memfile.open(**profile) as memoryfile:
-            memoryfile.write(results[index][0], 1)
+            memoryfile.write(results[index], 1)
         memory_files.append(memfile.open())
     mosaic, transform = merge(memory_files)
     [memfile.close() for memfile in memory_files]
