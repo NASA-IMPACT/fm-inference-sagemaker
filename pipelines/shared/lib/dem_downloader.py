@@ -114,6 +114,7 @@ class DEMDownloader:
 
             with rasterio.open(filename, "w", **out_meta) as dest:
                 if width and height:
+                    print(f"Reprojecting DEM to width: {width}, height: {height}")
                     reprojected_image = np.empty((height, width), dtype=out_image.dtype)
                     reproject(
                         source=out_image,
@@ -282,7 +283,7 @@ class DEMDownloader:
         pixels_corrected = np.sum((flood_data == 1) & shadow_mask)
         flood_corrected[shadow_mask & (flood_data == 1)] = 0
 
-        output_file = os.path.join(output_dir, flood_src.name.replace('.tif', '_flood_terrain_corrected.tif'))
+        output_file = os.path.join(output_dir, os.path.basename(flood_src.name).replace('.tif', '_flood_terrain_corrected.tif'))
         with rasterio.open(output_file, 'w', **flood_profile) as dst:
             dst.write(flood_corrected, 1)
         return output_file, shadow_mask, pixels_corrected
@@ -313,7 +314,7 @@ class DEMDownloader:
         pixels_corrected = np.sum(aerosol_mask)
         flood_corrected[aerosol_mask] = 0
 
-        output_file = os.path.join(output_dir, flood_src.name.replace('.tif', '_flood_aerosol_corrected.tif'))
+        output_file = os.path.join(output_dir, os.path.basename(flood_src.name).replace('.tif', '_flood_aerosol_corrected.tif'))
         with rasterio.open(output_file, 'w', **flood_profile) as dst:
             dst.write(flood_corrected, 1)
         return output_file, aerosol_mask, pixels_corrected
@@ -336,7 +337,7 @@ class DEMDownloader:
         pixels_corrected = np.sum(veg_mask)
         flood_corrected[veg_mask] = 0
 
-        output_file = os.path.join(output_dir, flood_src.name.replace('.tif', '_flood_veg_corrected.tif'))
+        output_file = os.path.join(output_dir, os.path.basename(flood_src.name).replace('.tif', '_flood_veg_corrected.tif'))
         with rasterio.open(output_file, 'w', **flood_profile) as dst:
             dst.write(flood_corrected, 1)
 
