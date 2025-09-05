@@ -337,7 +337,7 @@ class DEMDownloader:
         return output_file, veg_mask, pixels_corrected, ndvi_file
 
     @staticmethod
-    def apply_all_postprocessing(flood_detection_file, hls_file, dem_file, use_smart_aerosol=True):
+    def apply_all_postprocessing(flood_detection_file, hls_file, dem_file, use_smart_aerosol=False):
         postproc_dir = f"{DOWNLOAD_FOLDER}/predictions/flood_detection/postprocessed"
         os.makedirs(postproc_dir, exist_ok=True)
 
