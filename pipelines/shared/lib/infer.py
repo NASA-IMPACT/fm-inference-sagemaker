@@ -36,7 +36,7 @@ class Infer:
         coords = []
         temporal = []
         date = datetime.strptime(date, '%Y-%m-%d')
-        julian_year, julian_day = int(datetime.strftime(date, "%Y")), (datetime.strftime(date, "%j"))
+        julian_year, julian_day = int(datetime.strftime(date, "%Y")), int(datetime.strftime(date, "%j"))
         for image in images:
             with rasterio.open(image) as raster_file:
                 image = raster_file.read()[:6]  # Read first 6 bands
