@@ -1,7 +1,7 @@
 import os
 import json
 
-NO_DATA = -1
+NO_DATA = -9999
 NO_DATA_FLOAT = 0.0001
 PERCENTILES = (0.1, 99.9)
 
