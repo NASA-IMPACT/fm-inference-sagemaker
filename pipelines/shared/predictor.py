@@ -145,8 +145,60 @@ async def get_api_key(api_key: str = Depends(api_key_header)):
 protected_router = APIRouter(dependencies=[Depends(get_api_key)])
 public_router = APIRouter()
 
-# ... [rest of your existing functions remain the same] ...
-def save_cog(mosaic, profile, transform, filename, bbox):
+def save_cog(mosaic, profile, transform, filename):
+    """
+    Reproject raster to EPSG:4326 and save as a file.
+    Args:
+        mosaic (np.ndarray): The raster data.
+        profile (dict): The rasterio profile.
+        transform (affine.Affine): The rasterio transform.
+        filename (str): The output filename.
+    """
+    src_profile = profile.copy()
+    src_profile.update({
+        'driver': 'GTiff',
+        'height': mosaic.shape[0],
+        'width': mosaic.shape[1],
+        'transform': transform,
+        'count': 1,
+        'dtype': mosaic.dtype,
+        'crs': profile.get('crs', 'EPSG:3857') # Assuming default CRS if not provided
+    })
+
+    with MemoryFile() as memfile:
+        with memfile.open(**src_profile) as src:
+            src.write(mosaic, 1)
+
+            # Reproject
+            dst_crs = 'EPSG:4326'
+            dst_transform, dst_width, dst_height = calculate_default_transform(
+                src.crs, dst_crs, src.width, src.height, *src.bounds)
+
+            dst_profile = src.profile.copy()
+            dst_profile.update({
+                'crs': dst_crs,
+                'transform': dst_transform,
+                'width': dst_width,
+                'height': dst_height
+            })
+
+            with MemoryFile() as dst_memfile:
+                with dst_memfile.open(**dst_profile) as dst:
+                    reproject(
+                        source=rasterio.band(src, 1),
+                        destination=rasterio.band(dst, 1),
+                        src_transform=src.transform,
+                        src_crs=src.crs,
+                        dst_transform=dst_transform,
+                        dst_crs=dst_crs,
+                        resampling=Resampling.bilinear)
+
+                with dst_memfile.open() as reprojected_raster:
+                    with rasterio.open(filename, 'w', **reprojected_raster.profile) as out_raster:
+                        out_raster.write(reprojected_raster.read())
+    return filename
+
+def crop_file(filename, bbox):
     """
     Reproject raster to EPSG:4326, crop to bbox, and save as COG
 
@@ -164,44 +216,10 @@ def save_cog(mosaic, profile, transform, filename, bbox):
     clip_geom = gpd.GeoDataFrame({'geometry': [bbox_geom]}, crs='EPSG:4326')
     # Set up reprojection to EPSG:4326
     dst_crs = "EPSG:4326"
-    # Calculate transform for reprojection
-    # Use the bounds from the original raster
-    # save original mosaic as temp file
 
-    left, bottom, right, top = rasterio.transform.array_bounds(
-        profile["height"], profile["width"], profile["transform"]
-    )
-    dst_transform, dst_width, dst_height = calculate_default_transform(
-        profile["crs"], dst_crs, profile["width"], profile["height"],
-        left, bottom, right, top
-    )
-    # Create array for reprojected data
-    reprojected = np.zeros((dst_height, dst_width), dtype=mosaic.dtype)
-    # Perform reprojection
-    reproject(
-        source=mosaic,
-        destination=reprojected,
-        src_transform=profile["transform"],
-        src_crs=profile["crs"],
-        dst_transform=dst_transform,
-        dst_crs=dst_crs,
-        resampling=Resampling.nearest
-    )
-    # Update profile for reprojected data
-    reprojected_profile = profile.copy()
-    reprojected_profile.update({
-        "crs": dst_crs,
-        "transform": dst_transform,
-        "width": dst_width,
-        "height": dst_height,
-        "driver": "GTiff",
-        "dtype": mosaic.dtype,
-        "count": 1,
-    })
-    # Write reprojected data to memory and clip to bbox
-    with MemoryFile() as memfile:
+    with MemoryFile() as memfile, rasterio.open(filename) as raster:
         with memfile.open(**reprojected_profile) as dst:
-            dst.write(reprojected, 1)
+            dst.write(raster.read(1), 1)
             # Clip to bbox
             out_image, out_transform = mask(dst, clip_geom.geometry, crop=True)
             out_meta = dst.meta.copy()
@@ -303,8 +321,9 @@ def infer(filename, scale, model_id, bounding_box, date):
     [memfile.close() for memfile in memory_files]
     prediction_filename = f"{PREDICTION_FOLDER}/{start_time}-predictions.tif"
 
-    prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename, bounding_box)
+    prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename)
     postprocessed_filename = inference.postprocess(bounding_box, date, prediction_filename, filename)
+    prediction_filename = crop_file(postprocessed_filename, bounding_box)
     s3_link = upload_to_s3(prediction_filename)
 
     geojson = post_process(mosaic[0], transform)
