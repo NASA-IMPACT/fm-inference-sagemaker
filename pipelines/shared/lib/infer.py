@@ -79,8 +79,8 @@ class Infer:
                     updated_mask = torch.sigmoid(output.clone()).squeeze(0)
                     predicted_mask = (updated_mask > self.config.get('threshold', 0.5)).int()
                 else:
-                    predicted_mask = mask.argmax(dim=0)
-                    probabilities = torch.softmax(outputs.output, dim=1)
+                    # predicted_mask = mask.argmax(dim=0)
+                    probabilities = torch.softmax(output.output, dim=1)
                     predicted_mask = torch.argmax(probabilities, dim=1).cpu().numpy()[0]
                     flood_prob = predicted_mask[0, 1].cpu().numpy()
                     # img_size = profiles[index]['height']
