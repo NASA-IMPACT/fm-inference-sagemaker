@@ -134,8 +134,9 @@ class DEMDownloader:
 
         slope_rad = np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))
         slope_deg = np.degrees(slope_rad)
-
-        slope_file = os.path.join(f"{DOWNLOAD_FOLDER}/slopes", os.path.basename(dem_src.name).replace('_dem_clipped.tif', '_slope_degrees.tif'))
+        slope_path = f"{DOWNLOAD_FOLDER}/slopes"
+        os.makedirs(slope_path, exist_ok=True)
+        slope_file = os.path.join(slope_path, os.path.basename(dem_src.name).replace('_dem_clipped.tif', '_slope_degrees.tif'))
         profile = dem_src.profile.copy()
         profile.update(dtype=rasterio.float32)
 
@@ -228,6 +229,7 @@ class DEMDownloader:
     @staticmethod
     def postprocess_terrain_shadows(flood_src, slia_file, slope_file, slia_threshold=85, slope_threshold=15):
         output_dir = f"{DOWNLOAD_FOLDER}/predictions/flood_detection/postprocessed"
+        os.makedirs(output_dir, exist_ok=True)
         flood_data = flood_src.read(1)
         flood_profile = flood_src.profile.copy()
         flood_transform = flood_src.transform
@@ -275,7 +277,7 @@ class DEMDownloader:
     @staticmethod
     def postprocess_smart_aerosol_filter(flood_src, hls_src):
         output_dir = f"{DOWNLOAD_FOLDER}/predictions/flood_detection/postprocessed"
-
+        os.makedirs(output_dir, exist_ok=True)
         flood_data = flood_src.read(1)
         flood_profile = flood_src.profile.copy()
         nir_data = hls_src.read(4).astype(np.float32)
