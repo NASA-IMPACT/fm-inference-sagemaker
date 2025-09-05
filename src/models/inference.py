@@ -23,6 +23,6 @@ class InferenceRead(InferenceBase):
 class InferenceUpdate(BaseModel):
     name: Optional[str]
     query: dict
-    result_s3_path: Optional[str]
+    result_s3_path: Optional[List[str]]
     result_geojson: Optional[List[dict]]
     # finetuned_model_ids: Optional[List[UUID]]
