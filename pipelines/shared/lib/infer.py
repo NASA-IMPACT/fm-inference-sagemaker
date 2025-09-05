@@ -82,7 +82,7 @@ class Infer:
                     # predicted_mask = mask.argmax(dim=0)
                     probabilities = torch.softmax(output, dim=1)
                     predicted_mask = torch.argmax(probabilities, dim=1).cpu().numpy()[0]
-                    flood_prob = predicted_mask[0, 1].cpu().numpy()
+                    # flood_prob = predicted_mask[0, 1].cpu().numpy()
                     # img_size = profiles[index]['height']
                     # predicted_mask = torch.nn.functional.interpolate(
                     #         predicted_mask.unsqueeze(0).float(),
