@@ -89,5 +89,6 @@ class Infer:
                     #         size=img_size,
                     #         mode="nearest"
                     #     )
+                    print("Shape of predicted mask:", predicted_mask.shape)
                 predicted_masks.append(predicted_mask)
             return predicted_masks, profiles
