@@ -17,7 +17,7 @@ from rasterio.io import MemoryFile
 from rasterio.merge import merge
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.windows import from_bounds, Window
-
+from rasterio.mask import mask
 
 BANDS = {
     "HLSL30": ["B02", "B03", "B04", "B08", "B11", "B12", "Fmask", "SAA", "SZA"],
