@@ -21,7 +21,8 @@ def get_models(db: Session = Depends(get_db)):
         models = db.query(
             FinetunedModel
         ).all()
-
+        print('----------------')
+        print(len(models))
         return models
     except Exception as e:
         return {"error": str(e)}
