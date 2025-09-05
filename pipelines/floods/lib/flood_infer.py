@@ -10,6 +10,7 @@ from terratorch.tasks import SemanticSegmentationTask
 class FloodInfer(Infer):
     def __init__(self, config, checkpoint):
         super().__init__(config, checkpoint)
+        self.load_model()
 
     def load_model(self):
         num_classes = 2
