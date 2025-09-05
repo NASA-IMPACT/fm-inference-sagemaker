@@ -250,7 +250,7 @@ class Downloader:
 
         return output_name
 
-    def save_cog(self, mosaic, transform, filename):
+    def save_cog(self, mosaic, transform, filename, crs):
         """
         Reproject raster to EPSG:4326 and save as a file.
         Args:
@@ -265,7 +265,7 @@ class Downloader:
             'transform': transform,
             'count': mosaic.shape[0],
             'dtype': mosaic.dtype,
-            'crs': profile.get('crs', 'EPSG:3857') # Assuming default CRS if not provided
+            'crs': crs # Assuming default CRS if not provided
         }
         dst_crs = 'EPSG:4326'
 
@@ -330,7 +330,9 @@ class Downloader:
                 merged_files.append(merged_file)
         # stitch together multiple merged files
         mosaic, transform = merge(merged_files, method='first')
-        merged_file = self.save_cog(mosaic, transform, f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_merged.tif")
+        with open(merged_files[0], 'r') as src:
+            crs = src.crs
+        merged_file = self.save_cog(mosaic, transform, f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_merged.tif", crs)
         cropped_file = self.crop_to_bbox(merged_file)
 
         return cropped_file
