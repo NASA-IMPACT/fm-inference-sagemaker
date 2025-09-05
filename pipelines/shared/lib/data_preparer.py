@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import os
 import rasterio
@@ -43,17 +44,21 @@ class DataPreparer:
         with rasterio.open(self.filename) as src:
             step_y = height - self.overlap
             step_x = width - self.overlap
-            nrows = max(1, (src.height - self.overlap) // step_y)
-            ncols = max(1, (src.width - self.overlap) // step_x)
+            nrows = max(1, math.ceil((src.height - self.overlap) / step_y))
+            ncols = max(1, math.ceil((src.width - self.overlap) / step_x))
             batch = []
-            for i in range(nrows + 1):
-                for j in range(ncols + 1):
+            for i in range(nrows):
+                for j in range(ncols):
                     row_off = i * step_y
                     col_off = j * step_x
                     window = Window(col_off, row_off, width, height)
                     # Calculate actual window shape
                     win_height = min(height, src.height - row_off)
+                    if win_height <= 0:
+                        win_height = 0
                     win_width = min(width, src.width - col_off)
+                    if win_width <= 0:
+                        win_width = 0
                     window = Window(col_off, row_off, win_width, win_height)
                     tile = src.read(window=window)
 
