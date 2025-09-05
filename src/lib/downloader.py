@@ -210,7 +210,7 @@ class Downloader:
             bbox_geom = box(minx, miny, maxx, maxy)
             bbox_gdf = gpd.GeoDataFrame([1], geometry=[bbox_geom], crs='EPSG:4326')
 
-            out_image, out_transform = mask(src, clip_geom.geometry, crop=True)
+            out_image, out_transform = mask(src, bbox_gdf.geometry, crop=True)
 
             out_meta = src.meta.copy()
             out_meta.update({
