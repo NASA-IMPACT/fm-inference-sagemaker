@@ -323,7 +323,7 @@ def infer(filename, scale, model_id, bounding_box, date):
 
     prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename)
     prediction_filename = crop_file(prediction_filename, bounding_box)
-    with rasterio.open(prediction_filename) as predition_file:
+    with rasterio.open(prediction_filename) as prediction_file:
         bbox = prediction_file.bounds
     postprocessed_filename = inference.postprocess(bbox, date, prediction_filename, filename)
     s3_link = upload_to_s3(prediction_filename)
