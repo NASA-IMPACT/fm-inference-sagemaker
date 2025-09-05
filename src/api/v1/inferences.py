@@ -107,7 +107,7 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
                 'date': inference.query['date']
             }) #model.data_config['scaled']})
             print(f'Model response: {response.status_code}, {response.text}')
-            results[model_id] = response.json()
+            results[model_id] = response.json()[model_id]
             floods = results[model_id]
             inference.result_geojson = [floods['geojson']]
             inference.result_s3_path = floods['s3_path']
