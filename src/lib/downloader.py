@@ -270,5 +270,7 @@ class Downloader:
                 ]
                 if all(band in ' '.join(links) for band in BANDS[layer]):
                     filenames = self.download_bands(links)
-                    merged_files.append(self.merge_bands(filenames))
+                    merged_files = self.merge_bands(filenames)
+                    cropped_file = self.crop_to_bbox(merged_files)
+                    merged_files.append(cropped_file)
         return merged_files

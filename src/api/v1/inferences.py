@@ -90,7 +90,6 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
             print('Downloading files')
             merged_file = downloader.find_and_prepare_data()
             # download extra data if needed here
-            # dem_file = downloader.download_dem()
             # also calculate any indices if needed here
             # pass these extra files to the inference pipeline as needed
             print(f'Downloaded and merged file at: {merged_file}')
