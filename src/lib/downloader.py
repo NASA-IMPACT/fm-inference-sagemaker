@@ -330,7 +330,7 @@ class Downloader:
                 merged_files.append(merged_file)
         # stitch together multiple merged files
         mosaic, transform = merge(merged_files, method='first')
-        with open(merged_files[0], 'r') as src:
+        with rasterio.open(merged_files[0], 'r') as src:
             crs = src.crs
         merged_file = self.save_cog(mosaic, transform, f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_merged.tif", crs)
         cropped_file = self.crop_to_bbox(merged_file)
