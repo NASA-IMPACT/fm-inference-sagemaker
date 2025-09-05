@@ -156,7 +156,8 @@ class Downloader:
             "width": stacked.shape[2],
             "transform": transform,
             "count": len(filenames),
-            "dtype": 'float32'
+            "dtype": 'float32',
+            "nodata": -9999
         })
         # Reproject the stacked array to EPSG:4326
         dst_crs = 'EPSG:4326'
@@ -221,15 +222,7 @@ class Downloader:
 
             with rasterio.open(output_name, "w", **out_meta) as dst:
                 for i in range(1, src.count + 1):
-                    reproject(
-                        source=out_image[i-1],
-                        destination=rasterio.band(dst, i),
-                        src_transform=src.transform,
-                        src_crs=src.crs,
-                        dst_transform=out_transform,
-                        dst_crs=src.crs,
-                        resampling=Resampling.bilinear
-                    )
+                    dst.write(out_image[i - 1], i)
 
         return output_name
 
