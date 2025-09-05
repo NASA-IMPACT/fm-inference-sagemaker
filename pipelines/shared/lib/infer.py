@@ -93,5 +93,6 @@ class Infer:
                     #     )
                     print("Shape of predicted mask:", predicted_mask.shape)
                     print("max and min of predicted mask:", torch.max(predicted_mask), torch.min(predicted_mask))
+                    print("max and min of predicted mask:", predicted_mask.max(), predicted_mask.min())
                 predicted_masks.append(predicted_mask)
             return predicted_masks, profiles
