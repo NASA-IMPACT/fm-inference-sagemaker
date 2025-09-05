@@ -103,7 +103,8 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
                 'scale': True,
                 'model_id': model_id,
                 'qa_flags': ['cloud', 'shadow', 'adjacent_cloud'],
-                'bounding_box': inference.query['bounding_box']
+                'bounding_box': inference.query['bounding_box'],
+                'date': inference.query['date']
             }) #model.data_config['scaled']})
             print(f'Model response: {response.status_code}, {response.text}')
             results[model_id] = response.json()

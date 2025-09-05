@@ -266,7 +266,7 @@ def subset_geojson(geojson, bounding_box):
     bbox = gpd.GeoDataFrame({'geometry': [bbox]})
     return json.loads(geom.overlay(bbox, how='intersection').to_json())
 
-def infer(filename, scale, model_id, bounding_box):
+def infer(filename, scale, model_id, bounding_box, date):
     if model_id not in MODEL:
         response = {'statusCode': 422}
         return JSONResponse(content=jsonable_encoder(response))
@@ -327,6 +327,7 @@ class InvocationData(BaseModel):
     scale: Optional[bool] = False
     model_id: str
     bounding_box: list[float]
+    date: Optional[str] = None
     qa_flags: Optional[list[str]] = ['cloud', 'shadow', 'adjacent_cloud']
 
 
@@ -338,7 +339,8 @@ async def infer_from_model(invocation_data: InvocationData = Body(...)):
         filename=filename,
         scale=invocation_data.scale,
         model_id=invocation_data.model_id,
-        bounding_box=invocation_data.bounding_box
+        bounding_box=invocation_data.bounding_box,
+        date=invocation_data.date
     )
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
