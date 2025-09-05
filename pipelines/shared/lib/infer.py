@@ -70,8 +70,6 @@ class Infer:
             images, profiles, coords, temporal = self.preprocess(images, date)
             result = self.model(
                 images.to('cuda' if torch.cuda.is_available() else 'cpu'),
-                # location_coords=torch.tensor(coords).to('cuda' if torch.cuda.is_available() else 'cpu').unsqueeze(0),
-                # temporal_coords=torch.tensor(temporal).to('cuda' if torch.cuda.is_available() else 'cpu').unsqueeze(0)
             )
             predicted_masks = list()
             results = result.output.detach().cpu()
@@ -82,11 +80,14 @@ class Infer:
                     predicted_mask = (updated_mask > self.config.get('threshold', 0.5)).int()
                 else:
                     predicted_mask = mask.argmax(dim=0)
-                    img_size = profiles[index]['height']
-                    predicted_mask = torch.nn.functional.interpolate(
-                            predicted_mask.unsqueeze(0).float(),
-                            size=img_size,
-                            mode="nearest"
-                        )
+                    probabilities = torch.softmax(outputs.output, dim=1)
+                    predicted_mask = torch.argmax(probabilities, dim=1).cpu().numpy()[0]
+                    flood_prob = predicted_mask[0, 1].cpu().numpy()
+                    # img_size = profiles[index]['height']
+                    # predicted_mask = torch.nn.functional.interpolate(
+                    #         predicted_mask.unsqueeze(0).float(),
+                    #         size=img_size,
+                    #         mode="nearest"
+                    #     )
                 predicted_masks.append(predicted_mask)
             return predicted_masks, profiles
