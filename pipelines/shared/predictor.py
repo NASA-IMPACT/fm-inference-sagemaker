@@ -144,73 +144,74 @@ protected_router = APIRouter(dependencies=[Depends(get_api_key)])
 public_router = APIRouter()
 
 # ... [rest of your existing functions remain the same] ...
-
 def save_cog(mosaic, profile, transform, filename, bbox):
-    # reproject to 4326 and save as cog
+    """
+    Reproject raster to EPSG:4326, crop to bbox, and save as COG
 
-    profile.update(
-        {
-            "driver": "GTiff",
-            "height": mosaic.shape[0],
-            "width": mosaic.shape[1],
-            "transform": transform,
-            "dtype": 'float32',
-            "count": 1,
-        }
-    )
-    # Crop to bbox
+    Args:
+        mosaic: 2D numpy array of raster data
+        profile: rasterio profile dict
+        transform: rasterio transform
+        filename: output filename
+        bbox: [minx, miny, maxx, maxy] in EPSG:4326 coordinates
+    """
+    # Extract bbox coordinates
     minx, miny, maxx, maxy = bbox
-    bbox_geom = {
-        "type": "Polygon",
-        "coordinates": [
-            [
-                [minx, miny],
-                [minx, maxy],
-                [maxx, maxy],
-                [maxx, miny],
-                [minx, miny],
-            ]
-        ],
-    }
-    # Write mosaic to an in-memory file
-    # Reproject to EPSG:4326 before writing
-
+    # Create bbox geometry
+    bbox_geom = box(minx, miny, maxx, maxy)
+    clip_geom = gpd.GeoDataFrame({'geometry': [bbox_geom]}, crs='EPSG:4326')
+    # Set up reprojection to EPSG:4326
     dst_crs = "EPSG:4326"
-    transform, width, height = calculate_default_transform(
-        profile["crs"], dst_crs, profile["width"], profile["height"], *profile.get("bounds", bbox)
+    # Calculate transform for reprojection
+    # Use the bounds from the original raster
+    # save original mosaic as temp file
+
+    left, bottom, right, top = rasterio.transform.array_bounds(
+        profile["height"], profile["width"], profile["transform"]
     )
-    reprojected = np.zeros_like(mosaic)
+    dst_transform, dst_width, dst_height = calculate_default_transform(
+        profile["crs"], dst_crs, profile["width"], profile["height"],
+        left, bottom, right, top
+    )
+    # Create array for reprojected data
+    reprojected = np.zeros((dst_height, dst_width), dtype=mosaic.dtype)
+    # Perform reprojection
     reproject(
         source=mosaic,
         destination=reprojected,
         src_transform=profile["transform"],
         src_crs=profile["crs"],
-        dst_transform=transform,
+        dst_transform=dst_transform,
         dst_crs=dst_crs,
         resampling=Resampling.nearest
     )
-    profile.update({
+    # Update profile for reprojected data
+    reprojected_profile = profile.copy()
+    reprojected_profile.update({
         "crs": dst_crs,
-        "transform": transform,
-        "width": width,
-        "height": height
+        "transform": dst_transform,
+        "width": dst_width,
+        "height": dst_height,
+        "driver": "GTiff",
+        "dtype": mosaic.dtype,
+        "count": 1,
     })
-
+    # Write reprojected data to memory and clip to bbox
     with MemoryFile() as memfile:
-        with memfile.open(**profile) as dst:
+        with memfile.open(**reprojected_profile) as dst:
             dst.write(reprojected, 1)
-            out_image, out_transform = mask(dst, [bbox_geom], crop=True)
+            # Clip to bbox
+            out_image, out_transform = mask(dst, clip_geom.geometry, crop=True)
             out_meta = dst.meta.copy()
-
+    # Update metadata for clipped raster
     out_meta.update({
         "height": out_image.shape[1],
         "width": out_image.shape[2],
         "transform": out_transform
     })
-
+    # Write final result
     with rasterio.open(filename, 'w', **out_meta) as raster:
-        raster.write(out_image, 1)
-
+        raster.write(out_image)
     return filename
 
 
