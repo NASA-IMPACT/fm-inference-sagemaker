@@ -290,7 +290,7 @@ class Downloader:
                 with dst_memfile.open(**dst_profile) as dst:
                     for band in range(1, src.count + 1):
                         reproject(
-                            source=rasterio.band(src.read(band), band),
+                            source=src.read(band),
                             destination=rasterio.band(dst, band),
                             src_transform=src.transform,
                             src_crs=src.crs,
