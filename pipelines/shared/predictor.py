@@ -240,29 +240,29 @@ def crop_file(filename, bbox, width=None, height=None):
     return filename
 
 
-    def upload_to_s3(filename):
-        output_profile = cog_profiles.get('deflate')
-        output_profile.update(dict(BIGTIFF="IF_SAFER"))
+def upload_to_s3(filename):
+    output_profile = cog_profiles.get('deflate')
+    output_profile.update(dict(BIGTIFF="IF_SAFER"))
 
-        config = dict(
-            GDAL_NUM_THREADS="ALL_CPUS",
-            GDAL_TIFF_INTERNAL_MASK=True,
-            GDAL_TIFF_OVR_BLOCKSIZE="512",
+    config = dict(
+        GDAL_NUM_THREADS="ALL_CPUS",
+        GDAL_TIFF_INTERNAL_MASK=True,
+        GDAL_TIFF_OVR_BLOCKSIZE="512",
+    )
+    s3_prefix = f"predictions/{filename.split('/')[-1]}"
+    with MemoryFile() as memory_file:
+        cog_translate(
+            filename,
+            memory_file.name,
+            output_profile,
+            config=config,
+            quiet=True,
+            in_memory=True,
         )
-        s3_prefix = f"predictions/{filename.split('/')[-1]}"
-        with MemoryFile() as memory_file:
-            cog_translate(
-                filename,
-                memory_file.name,
-                output_profile,
-                config=config,
-                quiet=True,
-                in_memory=True,
-            )
-            connection = boto3.client('s3')
-            connection.upload_fileobj(memory_file, BUCKET_NAME, s3_prefix)
+        connection = boto3.client('s3')
+        connection.upload_fileobj(memory_file, BUCKET_NAME, s3_prefix)
 
-        return f"s3://{BUCKET_NAME}/{s3_prefix}"
+    return f"s3://{BUCKET_NAME}/{s3_prefix}"
 
 def post_process(detections, transform):
     contours, shape = PostProcess.prepare_contours(detections)
