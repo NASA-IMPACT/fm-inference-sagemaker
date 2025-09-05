@@ -3,6 +3,7 @@ import rasterio
 import torch
 import yaml
 
+from datetime import datetime
 from lib.consts import NO_DATA, NO_DATA_FLOAT, MEANS, STDS
 from terratorch.cli_tools import LightningInferenceModel
 
@@ -29,10 +30,13 @@ class Infer:
     def postprocess(self, bbox, date, predictions, images):
         return predictions
 
-    def preprocess(self, images):
+    def preprocess(self, images, date):
         images_array = []
         profiles = []
-
+        coords = []
+        temporal = []
+        date = datetime.strptime(date, '%Y-%m-%d')
+        julian_year, julian_day = int(datetime.strftime(date, "%Y")), (datetime.strftime(date, "%j"))
         for image in images:
             with rasterio.open(image) as raster_file:
                 image = raster_file.read()[:6]  # Read first 6 bands
@@ -41,6 +45,8 @@ class Infer:
                 if len(self.means) > 0 and len(self.stds) > 0:
                     image = (image - self.means) / self.stds
                 images_array.append(image)
+                coords.append(raster_file.lnglat())
+                temporal.append([julian_year, julian_day])
                 profiles.append(raster_file.profile)
                 raster_file.close()
         # Example processing function to simulate the pipeline
@@ -51,9 +57,9 @@ class Infer:
         processed_images = imgs_tensor
         print("shape of processed images:", processed_images.shape)
         processed_images = imgs_tensor.unsqueeze(2)
-        return processed_images, profiles
+        return processed_images, profiles, coords, temporal
 
-    def infer(self, images):
+    def infer(self, images, date):
         """
         Infer on provided images
         Args:
@@ -61,8 +67,12 @@ class Infer:
         """
         # forward the model
         with torch.no_grad():
-            images, profiles = self.preprocess(images)
-            result = self.model(images.to('cuda' if torch.cuda.is_available() else 'cpu'))
+            images, profiles, coords, temporal = self.preprocess(images, date)
+            result = self.model(
+                images.to('cuda' if torch.cuda.is_available() else 'cpu'),
+                location_coords=torch.tensor(coords).to('cuda' if torch.cuda.is_available() else 'cpu').unsqueeze(0),
+                temporal_coords=torch.tensor(temporal).to('cuda' if torch.cuda.is_available() else 'cpu').unsqueeze(0)
+            )
             predicted_masks = list()
             results = result.output.detach().cpu()
             for index, mask in enumerate(results):
