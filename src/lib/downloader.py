@@ -330,7 +330,7 @@ class Downloader:
                 merged_files.append(merged_file)
         # stitch together multiple merged files
         mosaic, transform = merge(merged_files, method='first')
-        merged_file = save_cog(mosaic, transform, f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_merged.tif")
+        merged_file = self.save_cog(mosaic, transform, f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_merged.tif")
         cropped_file = self.crop_to_bbox(merged_file)
 
         return cropped_file
