@@ -46,8 +46,8 @@ class DataPreparer:
             nrows = max(1, (src.height - self.overlap) // step_y)
             ncols = max(1, (src.width - self.overlap) // step_x)
             batch = []
-            for i in range(nrows):
-                for j in range(ncols):
+            for i in range(nrows + 1):
+                for j in range(ncols + 1):
                     row_off = i * step_y
                     col_off = j * step_x
                     window = Window(col_off, row_off, width, height)
