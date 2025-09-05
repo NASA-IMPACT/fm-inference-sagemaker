@@ -62,7 +62,7 @@ class Infer:
         # forward the model
         with torch.no_grad():
             images, profiles = self.preprocess(images)
-            result = self.model(images.to('cpu'))
+            result = self.model(images.to('cuda' if torch.cuda.is_available() else 'cpu'))
             predicted_masks = list()
             results = result.output.detach().cpu()
             for index, mask in enumerate(results):
