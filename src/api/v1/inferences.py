@@ -92,7 +92,7 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
             # download extra data if needed here
             # also calculate any indices if needed here
             # pass these extra files to the inference pipeline as needed
-            print(f'Downloaded and merged file at: {merged_file}')
+            print(f'Downloaded and merged file at: {merged_files}')
             url = f"http://{model_id}-service:8080/api/v1/invocations"
             print(f'Calling model endpoint at: {url}')
             # Todo why it is a list?
