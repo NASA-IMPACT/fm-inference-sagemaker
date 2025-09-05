@@ -96,7 +96,7 @@ def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
         url = f"http://{model_id}-service:8080/api/v1/invocations"
         print(f'Calling model endpoint at: {url}')
         # Todo why it is a list?
-        # merged_file = merged_file[0] if isinstance(merged_file, list) else merged_file
+        merged_file = merged_file if isinstance(merged_file, list) else [merged_file]
         for merged_file in merged_files:
             response = requests.post(url, json={
                 'filename': merged_file,
