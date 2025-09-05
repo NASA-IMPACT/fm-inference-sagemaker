@@ -221,7 +221,7 @@ class Downloader:
             # Read window
             data = src.read(window=window)
             window_transform = rasterio.windows.transform(window, src.transform)
-
+            print(f"Cropped data shape: {data.shape}")
             # Resample to 512x512
             transform, width, height = calculate_default_transform(
                 src.crs, src.crs, data.shape[2], data.shape[1],
@@ -298,7 +298,8 @@ class Downloader:
                             dst_crs=dst_crs,
                             resampling=Resampling.bilinear
                         )
-
+                print(f"Saving reprojected file to {filename}", flush=True)
+                print(f"Reprojected raster profile: {dst.profile}", flush=True)
                 with dst_memfile.open() as reprojected_raster:
                     with rasterio.open(filename, 'w', **reprojected_raster.profile) as out_raster:
                         out_raster.write(reprojected_raster.read())
