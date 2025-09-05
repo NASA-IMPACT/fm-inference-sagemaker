@@ -286,6 +286,8 @@ class Downloader:
                     'height': dst_height
                 })
 
+                print(f"Reprojecting raster to {dst_profile}", flush=True)
+
             with MemoryFile() as dst_memfile, memfile.open() as src:
                 with dst_memfile.open(**dst_profile) as dst:
                     for band in range(1, src.count + 1):
@@ -299,7 +301,6 @@ class Downloader:
                             resampling=Resampling.bilinear
                         )
                 print(f"Saving reprojected file to {filename}", flush=True)
-                print(f"Reprojected raster profile: {dst.profile}", flush=True)
                 with dst_memfile.open() as reprojected_raster:
                     with rasterio.open(filename, 'w', **reprojected_raster.profile) as out_raster:
                         out_raster.write(reprojected_raster.read())
