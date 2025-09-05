@@ -1,4 +1,5 @@
 import rasterio
+import torch
 
 from lib.infer import Infer
 from lib.dem_downloader import DEMDownloader
