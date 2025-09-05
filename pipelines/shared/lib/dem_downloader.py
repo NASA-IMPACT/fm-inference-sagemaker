@@ -76,7 +76,7 @@ class DEMDownloader:
             return None
         return dem_tiles
 
-    def merge_and_clip_dems(self, dem_tiles):
+    def merge_and_clip_dems(self, dem_tiles, width=None, height=None):
         try:
             west, south, east, north = self.bbox
             base_filename = f"{west}_{south}_{east}_{north}".replace('.', '_').replace('-', 'm')
@@ -113,7 +113,20 @@ class DEMDownloader:
             })
 
             with rasterio.open(filename, "w", **out_meta) as dest:
-                dest.write(out_image)
+                if width and height:
+                    reprojected_image = np.empty((height, width), dtype=out_image.dtype)
+                    reproject(
+                        source=out_image,
+                        destination=reprojected_image,
+                        src_transform=out_transform,
+                        src_crs=src.crs,
+                        dst_transform=out_transform,
+                        dst_crs=src.crs,
+                        resampling=Resampling.bilinear
+                    )
+                    dest.write(reprojected_image, 1)
+                else:
+                    dest.write(out_image)
 
             return filename
 

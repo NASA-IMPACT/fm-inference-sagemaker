@@ -198,40 +198,45 @@ def save_cog(mosaic, profile, transform, filename):
                         out_raster.write(reprojected_raster.read())
     return filename
 
-def crop_file(filename, bbox):
+def crop_file(filename, bbox, width=None, height=None):
     """
     Reproject raster to EPSG:4326, crop to bbox, and save as COG
 
     Args:
-        mosaic: 2D numpy array of raster data
-        profile: rasterio profile dict
-        transform: rasterio transform
         filename: output filename
         bbox: [minx, miny, maxx, maxy] in EPSG:4326 coordinates
+        width: target width
+        height: target height
     """
     # Extract bbox coordinates
     minx, miny, maxx, maxy = bbox
     # Create bbox geometry
     bbox_geom = box(minx, miny, maxx, maxy)
     clip_geom = gpd.GeoDataFrame({'geometry': [bbox_geom]}, crs='EPSG:4326')
-    # Set up reprojection to EPSG:4326
-    dst_crs = "EPSG:4326"
 
-    with MemoryFile() as memfile, rasterio.open(filename) as raster:
-        with memfile.open(**raster.profile) as dst:
-            dst.write(raster.read(1), 1)
-            # Clip to bbox
-            out_image, out_transform = mask(dst, clip_geom.geometry, crop=True)
-            out_meta = dst.meta.copy()
-    # Update metadata for clipped raster
+    with rasterio.open(filename) as src:
+        out_image, out_transform = mask(src, clip_geom.geometry, crop=True)
+        out_meta = src.meta.copy()
+
     out_meta.update({
         "height": out_image.shape[1],
         "width": out_image.shape[2],
         "transform": out_transform
     })
-    # Write final result
-    with rasterio.open(filename, 'w', **out_meta) as raster:
-        raster.write(out_image)
+
+    with rasterio.open(filename, "w", **out_meta) as dest:
+        if width and height:
+            # Reshape the output image to the target width and height
+            out_image = np.transpose(out_image, (1, 2, 0)) # HWC
+            out_image = np.resize(out_image, (height, width, out_image.shape[2]))
+            out_image = np.transpose(out_image, (2, 0, 1)) # CHW
+            out_meta.update({
+                "height": height,
+                "width": width,
+            })
+
+        dest.write(out_image)
+
     return filename
 
 
@@ -322,9 +327,9 @@ def infer(filename, scale, model_id, bounding_box, date):
     prediction_filename = f"{PREDICTION_FOLDER}/{start_time}-predictions.tif"
 
     prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename)
-    prediction_filename = crop_file(prediction_filename, bounding_box)
-    with rasterio.open(prediction_filename) as prediction_file:
-        bbox = prediction_file.bounds
+    with rasterio.open(filename) as src:
+        width, height = src.width, src.height
+    prediction_filename = crop_file(prediction_filename, bounding_box, width, height)
     postprocessed_filename = inference.postprocess(bbox, date, prediction_filename, filename)
     s3_link = upload_to_s3(prediction_filename)
 

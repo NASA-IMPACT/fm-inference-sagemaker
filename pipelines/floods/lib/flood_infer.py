@@ -9,6 +9,8 @@ class FloodInfer(Infer):
     def postprocess(self, bbox, date, prediction, image):
         dem_downloader = DEMDownloader(bbox, date)
         dem_files = dem_downloader.download_dem_tiles()
-        dem_file = dem_downloader.merge_and_clip_dems(dem_files)
+        with open(image) as src:
+            width, height = src.width, src.height
+        dem_file = dem_downloader.merge_and_clip_dems(dem_files, width, height)
         final_prediction = dem_downloader.apply_all_postprocessing(prediction, image, dem_file)
         return final_prediction
