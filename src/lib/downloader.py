@@ -215,8 +215,8 @@ class Downloader:
 
             out_meta = src.meta.copy()
             out_meta.update({
-                "height": out_image.shape[1],
-                "width": out_image.shape[2],
+                "height": out_image.shape[2],
+                "width": out_image.shape[1],
                 "transform": out_transform
             })
 
