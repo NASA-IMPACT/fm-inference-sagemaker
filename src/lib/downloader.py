@@ -131,7 +131,7 @@ class Downloader:
             if batch:
                 yield batch
 
-    def merge_bands(self, filenames):
+    def merge_bands(self, filenames, uuid):
         """
         Merge input files into a single 7-band TIFF, cropped to the bbox.
         Args:
@@ -139,7 +139,7 @@ class Downloader:
             output_name: output file name
         """
 
-        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}.tif"
+        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}-uuid.tif"
         if os.path.exists(output_name):
             print(f"File {output_name} already exists. Skipping merge.")
             return output_name
@@ -304,7 +304,7 @@ class Downloader:
             ]
             if all(band in ' '.join(links) for band in BANDS[layer]):
                 filenames = self.download_bands(links)
-                merged_file = self.merge_bands(filenames)
+                merged_file = self.merge_bands(filenames, granule.uuid)
                 merged_files.append(merged_file)
         # stitch together multiple merged files
         mosaic, transform = merge(merged_files, method='first')
