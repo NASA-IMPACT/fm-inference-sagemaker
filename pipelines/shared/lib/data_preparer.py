@@ -61,14 +61,14 @@ class DataPreparer:
                         win_width = 0
                     window = Window(col_off, row_off, win_width, win_height)
                     tile = src.read(window=window)
+                    if self.scale:
+                        tile = tile / 10000.0
+                        tile = np.clip(tile, 0, 1)
 
                     # Zero pad if needed
                     if win_height < height or win_width < width:
                         pad_shape = (tile.shape[0], height, width)
                         padded = np.zeros(pad_shape, dtype=tile.dtype)
-                        if self.scale:
-                            tile = tile / 10000.0
-                            tile = np.clip(tile, 0, 1)
                         padded[:, :win_height, :win_width] = tile
                         tile = padded
 
