@@ -170,7 +170,13 @@ def save_cog(mosaic, profile, transform, filename):
             src.write(mosaic, 1)
 
             # Reproject
+            if src.crs == 'EPSG:4326':
+                # Directly save as COG if already in EPSG:4326
+                with rasterio.open(filename, 'w', **src.profile) as out_raster:
+                    out_raster.write(src.read())
+                return filename
             dst_crs = 'EPSG:4326'
+
             dst_transform, dst_width, dst_height = calculate_default_transform(
                 src.crs, dst_crs, src.width, src.height, *src.bounds)
 
