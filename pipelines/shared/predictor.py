@@ -302,7 +302,7 @@ def infer(filename, scale, model_id, bounding_box, date):
     results = list()
     profiles = list()
     s3_link = ''
-    tiles_generator = DataPreparer(filename, overlap=20, scale=scale).generate_tiles()
+    tiles_generator = DataPreparer(filename, overlap=100, scale=scale).generate_tiles()
     torch.cuda.synchronize()
     with torch.no_grad():
         for tiles in tiles_generator:
