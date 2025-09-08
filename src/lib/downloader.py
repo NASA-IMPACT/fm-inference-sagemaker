@@ -241,7 +241,7 @@ class Downloader:
             'transform': transform,
             'count': mosaic.shape[0],
             'dtype': mosaic.dtype,
-            'crs': crs # Assuming default CRS if not provided
+            'crs': crs
         }
         dst_crs = 'EPSG:4326'
 
@@ -250,8 +250,9 @@ class Downloader:
                 src.write(mosaic)
 
                 # Calculate the optimal transform and dimensions for the destination
+                dst_bounds = rasterio.warp.transform_bounds(src.crs, dst_crs, *src.bounds)
                 dst_transform, dst_width, dst_height = calculate_default_transform(
-                    src.crs, dst_crs, src.width, src.height, *src.bounds
+                    src.crs, dst_crs, src.width, src.height, *dst_bounds
                 )
 
                 # Create the destination profile
