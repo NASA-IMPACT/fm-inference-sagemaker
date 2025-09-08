@@ -243,41 +243,9 @@ class Downloader:
             'dtype': mosaic.dtype,
             'crs': crs
         }
-        dst_crs = 'EPSG:4326'
-
-        with MemoryFile() as memfile:
-            with memfile.open(**src_profile) as src:
-                src.write(mosaic)
-
-                # Calculate the optimal transform and dimensions for the destination
-                dst_bounds = rasterio.warp.transform_bounds(src.crs, dst_crs, *src.bounds)
-                dst_transform, dst_width, dst_height = calculate_default_transform(
-                    src.crs, dst_crs, src.width, src.height, *dst_bounds
-                )
-
-                # Create the destination profile
-                dst_profile = src.profile.copy()
-                dst_profile.update({
-                    'crs': dst_crs,
-                    'transform': dst_transform,
-                    'width': dst_width,
-                    'height': dst_height,
-                    'nodata': src.nodata
-                })
-
-                # Write the reprojected data to the destination file
-                with rasterio.open(filename, 'w', **dst_profile) as dst:
-                    reproject(
-                        source=rasterio.band(src, list(range(1, src.count + 1))),
-                        destination=rasterio.band(dst, list(range(1, dst.count + 1))),
-                        src_transform=src.transform,
-                        src_crs=src.crs,
-                        src_nodata=src.nodata,
-                        dst_transform=dst_transform,
-                        dst_crs=dst_crs,
-                        dst_nodata=dst.nodata,
-                        resampling=Resampling.bilinear
-                    )
+        # Since merge_bands already reprojects, we just need to save the mosaic
+        with rasterio.open(filename, 'w', **src_profile) as dst:
+            dst.write(mosaic)
         return filename
 
     def find_and_prepare_data(self):
