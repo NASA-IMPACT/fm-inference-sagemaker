@@ -247,39 +247,36 @@ class Downloader:
 
         with MemoryFile() as memfile:
             with memfile.open(**src_profile) as src:
-                for band in range(mosaic.shape[0]):
-                    src.write(mosaic[band], band + 1)
+                src.write(mosaic)
 
+                # Calculate the optimal transform and dimensions for the destination
                 dst_transform, dst_width, dst_height = calculate_default_transform(
                     src.crs, dst_crs, src.width, src.height, *src.bounds
                 )
 
+                # Create the destination profile
                 dst_profile = src.profile.copy()
                 dst_profile.update({
                     'crs': dst_crs,
                     'transform': dst_transform,
                     'width': dst_width,
-                    'height': dst_height
+                    'height': dst_height,
+                    'nodata': src.nodata
                 })
 
-                print(f"Reprojecting raster to {dst_profile}", flush=True)
-
-            with MemoryFile() as dst_memfile, memfile.open() as src:
-                with dst_memfile.open(**dst_profile) as dst:
-                    for band in range(1, src.count + 1):
-                        reproject(
-                            source=src.read(band),
-                            destination=rasterio.band(dst, band),
-                            src_transform=src.transform,
-                            src_crs=src.crs,
-                            dst_transform=dst_transform,
-                            dst_crs=dst_crs,
-                            resampling=Resampling.bilinear
-                        )
-                print(f"Saving reprojected file to {filename}", flush=True)
-                with dst_memfile.open() as reprojected_raster:
-                    with rasterio.open(filename, 'w', **reprojected_raster.profile) as out_raster:
-                        out_raster.write(reprojected_raster.read())
+                # Write the reprojected data to the destination file
+                with rasterio.open(filename, 'w', **dst_profile) as dst:
+                    reproject(
+                        source=rasterio.band(src, list(range(1, src.count + 1))),
+                        destination=rasterio.band(dst, list(range(1, dst.count + 1))),
+                        src_transform=src.transform,
+                        src_crs=src.crs,
+                        src_nodata=src.nodata,
+                        dst_transform=dst_transform,
+                        dst_crs=dst_crs,
+                        dst_nodata=dst.nodata,
+                        resampling=Resampling.bilinear
+                    )
         return filename
 
     def find_and_prepare_data(self):
