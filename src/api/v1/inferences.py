@@ -86,7 +86,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
             url = f"http://{model_id}-service:8080/api/v1/invocations"
             response = requests.post(url, json={
                 'filename': merged_file,
-                'scale': finetuend_model.data_config.get('scaled', False),
+                'scale': finetuned_model.data_config.get('scaled', False),
                 'model_id': model_id,
                 'qa_flags': finetuned_model.data_config.get('qa_flags', ['cloud', 'shadow', 'adjacent_cloud']),
                 'bounding_box': inference.query['bounding_box'],
