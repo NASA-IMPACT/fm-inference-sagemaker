@@ -54,7 +54,7 @@ def get_inference_preloaded_events(inference_id: str, db: Session = Depends(get_
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@router.post("/", status_code=status.HTTP_201_CREATED, response_model=List[InferenceRead], status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED, response_model=List[InferenceRead])
 def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
     """Create a new finetuned model."""
     try:
