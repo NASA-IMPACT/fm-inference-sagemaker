@@ -13,6 +13,7 @@ class Infer:
         with open(self.config_filename) as config:
             self.config = yaml.safe_load(config)
         self.checkpoint_filename = checkpoint
+        self.model = None
         self.load_model()
         # Use proper mean and std from consts if not in config.
         self.means = np.asarray(self.config['data']['init_args'].get('means', MEANS))
@@ -23,6 +24,7 @@ class Infer:
 
     def load_model(self):
         if not(self.model):
+            print("INFER: !!!Loading model...")
             inference_model = LightningInferenceModel.from_config(self.config_filename, self.checkpoint_filename)
             self.model = inference_model.model
             self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
