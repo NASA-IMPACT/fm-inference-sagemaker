@@ -121,4 +121,4 @@ def delete_inference(inference_id: str, db: Session = Depends(get_db)):
         db.commit()
         return {"message": "Inference deleted successfully"}
     except Exception as e:
-        return HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
