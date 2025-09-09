@@ -20,7 +20,7 @@ class InferenceRead(InferenceBase):
 
 
 class InferenceUpdate(BaseModel):
-    name: Optional[str]
+    name: Optional[str] = None
     query: dict
-    results: Optional[dict]
-    finetuned_model_ids: Optional[List[UUID]]
+    results: Optional[dict] = None
+    finetuned_model_ids: Optional[List[UUID]] = None
