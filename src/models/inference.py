@@ -7,8 +7,7 @@ class InferenceBase(BaseModel):
     id: Optional[UUID]
     name: str
     query: Optional[dict]
-    result_s3_path: Optional[str]
-    result_geojson: Optional[List[dict]]
+    results: Optional[dict]
     created_at: Optional[datetime]
 
     class Config:
