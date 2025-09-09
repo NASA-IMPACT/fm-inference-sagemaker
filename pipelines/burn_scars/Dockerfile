@@ -1,4 +1,5 @@
-FROM 244822573120.dkr.ecr.region.amazonaws.com/base:latest
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
