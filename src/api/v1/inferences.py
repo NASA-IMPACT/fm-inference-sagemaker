@@ -102,11 +102,13 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
             "s3_link": floods['s3_link']
         }
 
-    db.add(inference)
+    # Convert Pydantic model to ORM model before adding to DB
+    inference_orm = Inference(**inference.dict())
+    db.add(inference_orm)
     db.commit()
-    db.refresh(inference)
+    db.refresh(inference_orm)
 
-    return inference
+    return inference_orm
     # except Exception as e:
     #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
