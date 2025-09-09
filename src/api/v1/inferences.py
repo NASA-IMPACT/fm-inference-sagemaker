@@ -77,7 +77,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
             downloader = Downloader(
                 inference.query['date'],
                 inference.query['bounding_box'],
-                model.data_config['sources']
+                finetuned_model.data_config['sources']
             )
             merged_file = downloader.find_and_prepare_data()
             # download extra data if needed here
