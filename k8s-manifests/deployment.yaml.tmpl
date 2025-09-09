@@ -29,7 +29,7 @@ spec:
           - name: BUCKET_NAME
             value: "r2o-models"
           - name: USECASE
-            value: "burn_scars"
+            value: "burn-scars"
           - name: API_KEY_VALIDATION_URL
             value: "https://dev.fm.dsig.net/api/validate"
           - name: DOWNLOAD_FOLDER
@@ -109,23 +109,23 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: burn_scars-app
+  name: burn-scars-app
   labels:
-    app: burn_scars-app
+    app: burn-scars-app
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: burn_scars-app
+      app: burn-scars-app
   template:
     metadata:
       labels:
-        app: burn_scars-app
+        app: burn-scars-app
     spec:
       imagePullSecrets:
         - name: ecr-registry-key
       containers:
-        - name: pipeline-burn_scars-container
+        - name: pipeline-burn-scars-container
           image: ${ECR_URL}/${ECR_BURN_IMAGE_NAME}
           imagePullPolicy: Always
           ports:
@@ -137,7 +137,7 @@ spec:
           - name: BUCKET_NAME
             value: "r2o-models"
           - name: USECASE
-            value: "burn_scars"
+            value: "burn-scars"
           - name: API_KEY_VALIDATION_URL
             value: "https://dev.fm.dsig.net/api/validate"
           - name: DOWNLOAD_FOLDER
