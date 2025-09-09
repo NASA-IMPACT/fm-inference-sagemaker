@@ -7,8 +7,8 @@ class InferenceBase(BaseModel):
     id: Optional[UUID] = None
     name: Optional[str] = None
     query: Optional[dict] = {}
-    results: Optional[dict]
-    created_at: Optional[datetime]
+    results: Optional[dict] = {}
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
