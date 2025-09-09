@@ -65,7 +65,6 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
         finetuned_models = db.query(FinetunedModel).filter(FinetunedModel.id.in_(inference.finetuned_model_ids)).all()
         if not finetuned_models or len(finetuned_models) != len(inference.finetuned_model_ids):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more finetuned models not found")
-        inference.finetuned_models = finetuned_models
 
         # better to upload merged_file to s3 and pass the s3 path to the inference pipeline
         # for now, we will just pass the local file path
