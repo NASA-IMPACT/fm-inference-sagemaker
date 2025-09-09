@@ -80,10 +80,11 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
                 finetuned_model.data_config['sources']
             )
             merged_file = downloader.find_and_prepare_data()
+            port = finetuned_model.source_details['port']
             # download extra data if needed here
             # also calculate any indices if needed here
             # pass these extra files to the inference pipeline as needed
-            url = f"http://{model_id}-service:8080/api/v1/invocations"
+            url = f"http://{model_id}-service:{port}/api/v1/invocations"
             response = requests.post(url, json={
                 'filename': merged_file,
                 'scale': finetuned_model.data_config.get('scaled', False),
