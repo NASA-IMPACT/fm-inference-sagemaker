@@ -151,42 +151,20 @@ class Downloader:
         stacked = np.stack(arrays, axis=0)
         out_meta = srcs[0].meta.copy()
         transform = srcs[0].transform
+
         out_meta.update({
-            "height": stacked.shape[1],
-            "width": stacked.shape[2],
-            "transform": transform,
+            "driver": "GTiff",
             "count": len(filenames),
-            "dtype": 'float32',
-            "nodata": -9999
-        })
-        # Reproject the stacked array to EPSG:4326
-        dst_crs = 'EPSG:4326'
-        dst_transform, dst_width, dst_height = calculate_default_transform(
-            srcs[0].crs, dst_crs, stacked.shape[2], stacked.shape[1], *srcs[0].bounds
-        )
-
-        reprojected = np.empty((len(filenames), dst_height, dst_width), dtype=np.float32)
-
-        reproject(
-            source=stacked.astype(np.float32),
-            destination=reprojected,
-            src_transform=transform,
-            src_crs=srcs[0].crs,
-            dst_transform=dst_transform,
-            dst_crs=dst_crs,
-            resampling=Resampling.bilinear
-        )
-
-        out_meta.update({
-            "height": dst_height,
-            "width": dst_width,
-            "transform": dst_transform,
-            "crs": dst_crs,
-            "count": len(filenames)
+            'compress': 'lzw',  # Use a lossless compression
+            'tiled': True  # Required for COG,
+            'blockxsize': 512,
+            'blockysize': 512,
+            'dtype': 'float32'
+            'nodata': -9999
         })
 
         with rasterio.open(output_name, "w", **out_meta) as dst:
-            dst.write(reprojected)
+            dst.write(stacked)
         # Close all sources
         for s in srcs:
             s.close()
@@ -226,7 +204,7 @@ class Downloader:
 
         return output_name
 
-    def save_cog(self, mosaic, transform, filename, crs):
+      def save_cog(self, mosaic, transform, filename, crs):
         """
         Reproject raster to EPSG:4326 and save as a file.
         Args:
@@ -241,11 +219,42 @@ class Downloader:
             'transform': transform,
             'count': mosaic.shape[0],
             'dtype': mosaic.dtype,
-            'crs': crs
+            'crs': crs # Assuming default CRS if not provided
         }
-        # Since merge_bands already reprojects, we just need to save the mosaic
-        with rasterio.open(filename, 'w', **src_profile) as dst:
-            dst.write(mosaic)
+        dst_crs = 'EPSG:4326'
+
+        with MemoryFile() as memfile:
+            with memfile.open(**src_profile) as src:
+                src.write(mosaic)
+
+                # Calculate the optimal transform and dimensions for the destination
+                dst_transform, dst_width, dst_height = calculate_default_transform(
+                    src.crs, dst_crs, src.width, src.height, *src.bounds
+                )
+
+                # Create the destination profile
+                dst_profile = src.profile.copy()
+                dst_profile.update({
+                    'crs': dst_crs,
+                    'transform': dst_transform,
+                    'width': dst_width,
+                    'height': dst_height,
+                    'nodata': src.nodata
+                })
+
+                # Write the reprojected data to the destination file
+                with rasterio.open(filename, 'w', **dst_profile) as dst:
+                    reproject(
+                        source=rasterio.band(src, list(range(1, src.count + 1))),
+                        destination=rasterio.band(dst, list(range(1, dst.count + 1))),
+                        src_transform=src.transform,
+                        src_crs=src.crs,
+                        src_nodata=src.nodata,
+                        dst_transform=dst_transform,
+                        dst_crs=dst_crs,
+                        dst_nodata=dst.nodata,
+                        resampling=Resampling.bilinear
+                    )
         return filename
 
     def find_and_prepare_data(self):
