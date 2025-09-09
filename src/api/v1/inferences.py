@@ -96,6 +96,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
         results[model_id] = response.json()[model_id]
 
         floods = results[model_id]
+        inference.results = inference.results if inference.results else {}
         inference.results[model_id] = {
             "geojson": floods['geojson'],
             "s3_link": floods['s3_link']
