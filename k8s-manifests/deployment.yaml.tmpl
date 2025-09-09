@@ -105,3 +105,51 @@ spec:
         - name: cache-volume
           persistentVolumeClaim:
             claimName: service-cache-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: burn_scars-app
+  labels:
+    app: burn_scars-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: burn_scars-app
+  template:
+    metadata:
+      labels:
+        app: burn_scars-app
+    spec:
+      imagePullSecrets:
+        - name: ecr-registry-key
+      containers:
+        - name: pipeline-burn_scars-container
+          image: ${ECR_URL}/${ECR_BURN_IMAGE_NAME}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+          env:
+          - name: BUCKET_NAME
+            value: "r2o-models"
+          - name: USECASE
+            value: "burn_scars"
+          - name: API_KEY_VALIDATION_URL
+            value: "https://dev.fm.dsig.net/api/validate"
+          - name: DOWNLOAD_FOLDER
+            value: "/root/.cache/data"
+          - name: MODEL_WEIGHT_PATH
+            value: "${BURN_WEIGHT}"
+          - name: CONFIG_PATH
+            value: "${BURN_CONFIG}"
+          envFrom:
+            - configMapRef:
+                name: oidc-envs
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: service-cache-pvc
