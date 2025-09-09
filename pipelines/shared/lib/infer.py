@@ -22,10 +22,11 @@ class Infer:
             self.stds = torch.from_numpy(self.stds).view(-1, 1, 1)
 
     def load_model(self):
-        inference_model = LightningInferenceModel.from_config(self.config_filename, self.checkpoint_filename)
-        self.model = inference_model.model
-        self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model = self.model.eval()
+        if not(self.model):
+            inference_model = LightningInferenceModel.from_config(self.config_filename, self.checkpoint_filename)
+            self.model = inference_model.model
+            self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
+            self.model = self.model.eval()
 
     def postprocess(self, bbox, date, predictions, images):
         return predictions
