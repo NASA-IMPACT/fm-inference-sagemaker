@@ -107,7 +107,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
 
         return inference
     except Exception as e:
-        return {"error": str(e)}
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @router.delete("/{inference_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_inference(inference_id: str, db: Session = Depends(get_db)):
