@@ -54,76 +54,60 @@ def get_inference_preloaded_events(inference_id: str, db: Session = Depends(get_
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED, response_model=List[InferenceRead], status_code=status.HTTP_201_CREATED)
 def create_model(inference: InferenceUpdate): #, db: Session = Depends(get_db)):
     """Create a new finetuned model."""
-    # try:
+    try:
     # TODO: handle db session properly
     # handle large requests properly with background tasks
     # send back a job id and let the client poll for status/results
-    # inference_name = inference.name if inference.name else
-    inference.name = time.strftime("inference_%Y%m%d_%H%M%S")
-    # inference = Inference(
-    #     name=time.strftime("inference_%Y%m%d_%H%M%S"),
-    #     query=inference.query
-    # )
-    # finetuned_models = db.query(FinetunedModel).filter(FinetunedModel.id.in_(inference.finetuned_model_ids)).all()
-    # if not finetuned_models or len(finetuned_models) != len(inference.finetuned_model_ids):
-    #     return {"error": "One or more finetuned models not found"}
-    # inference.finetuned_models = finetuned_models
+        inference_name = inference.name if inference.name else time.strftime("inference_%Y%m%d_%H%M%S")
+        finetuned_models = db.query(FinetunedModel).filter(FinetunedModel.id.in_(inference.finetuned_model_ids)).all()
+        if not finetuned_models or len(finetuned_models) != len(inference.finetuned_model_ids):
+            return {"error": "One or more finetuned models not found"}
+        inference.finetuned_models = finetuned_models
 
-    # better to upload merged_file to s3 and pass the s3 path to the inference pipeline
-    # for now, we will just pass the local file path
-    # call specific model inference pipeline with the file name/path here.
-    # create a dict with model names and their inference results
-    print("________________________________________________")
-    print(inference.name, inference.query)
-    print("________________________________________________")
-    results = {}
-    for model_id in ['floods']:
-        # print(f"Running inference for model: {model.name} on data: {merged_file}")
-        downloader = Downloader(
-            inference.query['date'],
-            inference.query['bounding_box'],
-            layers=['HLSS30', 'HLSL30']
-        )#model.data_config['sources'])
-        print('Downloading files')
-        merged_files = downloader.find_and_prepare_data()
-        # download extra data if needed here
-        # also calculate any indices if needed here
-        # pass these extra files to the inference pipeline as needed
-        print(f'Downloaded and merged file at: {merged_files}')
-        url = f"http://{model_id}-service:8080/api/v1/invocations"
-        print(f'Calling model endpoint at: {url}')
-        # Todo why it is a list?
-        merged_files = merged_files if isinstance(merged_files, list) else [merged_files]
-        for merged_file in merged_files:
+        # better to upload merged_file to s3 and pass the s3 path to the inference pipeline
+        # for now, we will just pass the local file path
+        # call specific model inference pipeline with the file name/path here.
+        # create a dict with model names and their inference results
+        results = {}
+        for finetuned_model in finetuned_models:
+            # print(f"Running inference for model: {model.name} on data: {merged_file}")
+            model_id = str(finetuned_model.source_details.get('model_id'))
+            downloader = Downloader(
+                inference.query['date'],
+                inference.query['bounding_box'],
+                model.data_config['sources']
+            )
+            merged_file = downloader.find_and_prepare_data()
+            # download extra data if needed here
+            # also calculate any indices if needed here
+            # pass these extra files to the inference pipeline as needed
+            url = f"http://{model_id}-service:8080/api/v1/invocations"
             response = requests.post(url, json={
                 'filename': merged_file,
-                'scale': False,
+                'scale': finetuend_model.data_config.get('scaled', False),
                 'model_id': model_id,
-                'qa_flags': ['cloud', 'shadow', 'adjacent_cloud'],
+                'qa_flags': finetuned_model.data_config.get('qa_flags', ['cloud', 'shadow', 'adjacent_cloud']),
                 'bounding_box': inference.query['bounding_box'],
                 'date': inference.query['date']
-            }) #model.data_config['scaled']})
-            print(f'Model response: {response.status_code}, {response.text}')
+            })
             results[model_id] = response.json()[model_id]
+
             floods = results[model_id]
-            inference.result_geojson.append([floods['geojson']])
-            inference.result_s3_path.append(floods['s3_link'])
-        # build model pipeline url here
-        # call the model endpoint with the merged_file
-        # update results dict with the inference results
-    # store the s3 results and geojson in inference object
+            inference.results[model_id] = {
+                "geojson": floods['geojson'],
+                "s3_link": floods['s3_link']
+            }
 
-
-        # db.add(inference)
-        # db.commit()
-        # db.refresh(inference)
+        db.add(inference)
+        db.commit()
+        db.refresh(inference)
 
         return inference
-    # except Exception as e:
-    #     return {"error": str(e)}
+    except Exception as e:
+        return {"error": str(e)}
 
 @router.delete("/{inference_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_inference(inference_id: str, db: Session = Depends(get_db)):
