@@ -4,9 +4,9 @@ from uuid import UUID
 from datetime import datetime
 
 class InferenceBase(BaseModel):
-    id: Optional[UUID]
-    name: str
-    query: Optional[dict]
+    id: Optional[UUID] = None
+    name: Optional[str] = None
+    query: Optional[dict] = {}
     results: Optional[dict]
     created_at: Optional[datetime]
 
@@ -19,8 +19,6 @@ class InferenceRead(InferenceBase):
     preloaded_events: Optional[List["PreloadedEventRead"]]
 
 
-class InferenceUpdate(BaseModel):
-    name: Optional[str] = None
+class InferenceUpdate(InferenceBase):
     query: dict
-    results: Optional[dict] = {}
     finetuned_model_ids: Optional[List[UUID]] = []
