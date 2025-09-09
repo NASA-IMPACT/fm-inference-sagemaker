@@ -14,6 +14,7 @@ class FloodInfer(Infer):
         self.load_model()
 
     def load_model(self):
+        print("!!!Loading model...")
         num_classes = 2
         indices = [7, 15, 23, 31]  # for prithvi_eo_v2_600
         model_args = {
