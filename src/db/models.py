@@ -35,15 +35,15 @@ class Inference(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
-    query = Column(String, nullable=True) # contains bbox, date, or date range
-    result_s3_path = Column(String, nullable=True)
-    result_geojson = Column(JSON, nullable=True)
+    query = Column(JSON, nullable=True) # contains bbox, date, or date range
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     finetuned_models = relationship(
         "FinetunedModel",
-        secondary="inference_finetuned_model",
+        secondary=inference_finetuned_model,
         backref="inferences"
     )
+
+    results = Column(JSON, nullable=True)  # Store results as JSON
 
 class PreloadedEvent(Base):
     __tablename__ = "preloaded_events"
