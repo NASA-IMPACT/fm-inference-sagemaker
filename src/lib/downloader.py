@@ -156,7 +156,7 @@ class Downloader:
             "driver": "GTiff",
             "count": len(filenames),
             'compress': 'lzw',  # Use a lossless compression
-            'tiled': True  # Required for COG,
+            'tiled': True,  # Required for COG,
             'blockxsize': 512,
             'blockysize': 512,
             'dtype': 'float32'
