@@ -159,7 +159,7 @@ class Downloader:
             'tiled': True,  # Required for COG,
             'blockxsize': 512,
             'blockysize': 512,
-            'dtype': 'float32'
+            'dtype': 'float32',
             'nodata': -9999
         })
 
@@ -204,7 +204,7 @@ class Downloader:
 
         return output_name
 
-      def save_cog(self, mosaic, transform, filename, crs):
+    def save_cog(self, mosaic, transform, filename, crs):
         """
         Reproject raster to EPSG:4326 and save as a file.
         Args:
