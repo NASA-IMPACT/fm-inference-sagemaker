@@ -15,11 +15,25 @@ docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME .
 
 cd pipelines
 
+# Docker login to ECR
+ECR_PASSWORD=$(aws ecr get-login-password --region us-west-2)
+echo $ECR_PASSWORD | docker login --username AWS --password-stdin $ECR_URL
+
+# Build and push base image first
+BASE_IMAGE_NAME="inference:temp"
+echo "Building temporary image to get digest: $BASE_IMAGE_NAME"
+docker buildx build --platform linux/amd64 -t $BASE_IMAGE_NAME . -f Dockerfile.base
+BASE_DIGEST=$(docker inspect --format='{{.Id}}' $BASE_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
+export ECR_BASE_IMAGE_NAME="inference_pipelines/base:${BASE_DIGEST}"
+docker tag $BASE_IMAGE_NAME $ECR_URL/$ECR_BASE_IMAGE_NAME
+docker push $ECR_URL/$ECR_BASE_IMAGE_NAME
+
+# Build floods and burn scars images
 TEMP_FLOOD_IMAGE_NAME="floods:temp"
 echo "Building temporary image to get digest: $TEMP_FLOOD_IMAGE_NAME"
 docker buildx build --platform linux/amd64 -t $TEMP_FLOOD_IMAGE_NAME . -f floods/Dockerfile
 
-TEMP_BURN_IMAGE_NAME="floods:temp"
+TEMP_BURN_IMAGE_NAME="burn_scars:temp"
 echo "Building temporary image to get digest: $TEMP_BURN_IMAGE_NAME"
 docker buildx build --platform linux/amd64 -t $TEMP_BURN_IMAGE_NAME . -f burn_scars/Dockerfile
 
@@ -44,14 +58,13 @@ echo "Final image: $ECR_URL/$ECR_IMAGE_NAME"
 echo "Using ingress host: $INGRESS_HOST"
 
 # Push to ECR
-ECR_PASSWORD=$(aws ecr get-login-password --region us-west-2)
-echo $ECR_PASSWORD | docker login --username AWS --password-stdin $ECR_URL
 docker push $ECR_URL/$ECR_IMAGE_NAME
 docker push $ECR_URL/$ECR_FLOOD_IMAGE_NAME
 docker push $ECR_URL/$ECR_BURN_IMAGE_NAME
 
 # Clean up temporary image
 docker rmi $TEMP_IMAGE_NAME
+docker rmi $BASE_IMAGE_NAME
 docker rmi $TEMP_FLOOD_IMAGE_NAME
 docker rmi $TEMP_BURN_IMAGE_NAME
 
