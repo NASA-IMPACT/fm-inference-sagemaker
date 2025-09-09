@@ -1,7 +1,7 @@
 """Create related models
 
 Revision ID: de28ddce0e07
-Revises: 5de2554bb5f2
+Revises: None
 Create Date: 2025-08-28 05:38:30.491716
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'de28ddce0e07'
-down_revision = '5de2554bb5f2'
+down_revision = None
 branch_labels = None
 depends_on = None
 
