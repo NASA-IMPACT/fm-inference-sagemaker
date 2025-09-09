@@ -73,7 +73,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
     results = {}
     for finetuned_model in finetuned_models:
         # print(f"Running inference for model: {model.name} on data: {merged_file}")
-        model_id = str(finetuned_model.source_details.get('model_id')).replace('_', '-')
+        model_id = str(finetuned_model.source_details.get('model_id'))
         downloader = Downloader(
             inference.query['date'],
             inference.query['bounding_box'],
@@ -84,7 +84,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
         # download extra data if needed here
         # also calculate any indices if needed here
         # pass these extra files to the inference pipeline as needed
-        url = f"http://{model_id}-service:{port}/api/v1/invocations"
+        url = f"http://{model_id.replace('_', '-')}-service:{port}/api/v1/invocations"
         response = requests.post(url, json={
             'filename': merged_file,
             'scale': finetuned_model.data_config.get('scaled', False),
