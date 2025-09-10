@@ -24,7 +24,6 @@ class Infer:
 
     def load_model(self):
         if not(self.model):
-            print("INFER: !!!Loading model...")
             inference_model = LightningInferenceModel.from_config(self.config_filename, self.checkpoint_filename)
             self.model = inference_model.model
             self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
