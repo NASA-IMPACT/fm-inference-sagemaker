@@ -105,6 +105,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
     # Convert Pydantic model to ORM model before adding to DB
     inference_details = inference.dict()
     inference_details['finetuned_models'] = finetuned_models
+    print("!!!!!!!inference_details:", inference_details)
     del(inference_details['finetuned_model_ids'])
     inference_orm = Inference(**inference_details)
     db.add(inference_orm)
