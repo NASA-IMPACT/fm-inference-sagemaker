@@ -74,10 +74,12 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
     for finetuned_model in finetuned_models:
         # print(f"Running inference for model: {model.name} on data: {merged_file}")
         model_id = str(finetuned_model.source_details.get('model_id'))
+        timeseries = finetuned_model.data_config.get('timeseries', False)
         downloader = Downloader(
             inference.query['date'],
             inference.query['bounding_box'],
-            finetuned_model.data_config['sources']
+            finetuned_model.data_config['sources'],
+            timeseries=timeseries
         )
         merged_file = downloader.find_and_prepare_data()
         port = finetuned_model.source_details['port']
@@ -91,7 +93,8 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
             'model_id': model_id,
             'qa_flags': finetuned_model.data_config.get('qa_flags', ['cloud', 'shadow', 'adjacent_cloud']),
             'bounding_box': inference.query['bounding_box'],
-            'date': inference.query['date']
+            'date': inference.query['date'],
+            'timeseries': timeseries
         })
         results[model_id] = response.json()[model_id]
 
