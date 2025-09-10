@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+import json
+from pydantic import BaseModel, Field, validator
 from typing import Optional, List
 from uuid import UUID
 from datetime import datetime
@@ -22,3 +23,12 @@ class InferenceRead(InferenceBase):
 class InferenceUpdate(InferenceBase):
     query: dict
     finetuned_model_ids: Optional[List[UUID]] = []
+
+    @validator('query', pre=True)
+    def validate_query(cls, value):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                raise ValueError("Invalid JSON string for query")
+        return value

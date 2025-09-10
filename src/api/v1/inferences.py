@@ -106,8 +106,6 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
     inference_details = inference.dict()
     inference_details['name'] = inference_name
     inference_details['finetuned_models'] = finetuned_models
-    print("!!!!!!!inference_details:", inference_details)
-    print("!!!!!!!inference_query:", inference.query, type(inference.query))
     del(inference_details['finetuned_model_ids'])
     inference_orm = Inference(**inference_details)
     db.add(inference_orm)
