@@ -153,3 +153,51 @@ spec:
         - name: cache-volume
           persistentVolumeClaim:
             claimName: service-cache-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crop-classification-app
+  labels:
+    app: crop-classification-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crop-classification-app
+  template:
+    metadata:
+      labels:
+        app: crop-classification-app
+    spec:
+      imagePullSecrets:
+        - name: ecr-registry-key
+      containers:
+        - name: pipeline-crop-classification-container
+          image: ${ECR_URL}/${ECR_CROP_IMAGE_NAME}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+          env:
+          - name: BUCKET_NAME
+            value: "r2o-models"
+          - name: USECASE
+            value: "crop_classification"
+          - name: API_KEY_VALIDATION_URL
+            value: "https://dev.fm.dsig.net/api/validate"
+          - name: DOWNLOAD_FOLDER
+            value: "/root/.cache/data"
+          - name: MODEL_WEIGHT_PATH
+            value: "${CROP_WEIGHT}"
+          - name: CONFIG_PATH
+            value: "${CROP_CONFIG}"
+          envFrom:
+            - configMapRef:
+                name: oidc-envs
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: service-cache-pvc
