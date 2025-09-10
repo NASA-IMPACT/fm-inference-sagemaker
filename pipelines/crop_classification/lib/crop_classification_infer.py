@@ -38,7 +38,7 @@ class CropClassificationInfer(Infer):
                 "head_dropout": 0.1,
                 "num_classes": 13,
             }
-        self.model = terratorch.tasks.SemanticSegmentationTask.load_from_checkpoint(
+        self.model = SemanticSegmentationTask.load_from_checkpoint(
                 self.checkpoint_filename,
                 model_factory="EncoderDecoderFactory",
                 model_args=model_args
