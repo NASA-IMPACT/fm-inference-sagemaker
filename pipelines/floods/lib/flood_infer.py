@@ -11,10 +11,10 @@ from terratorch.tasks import SemanticSegmentationTask
 class FloodInfer(Infer):
     def __init__(self, config, checkpoint):
         super().__init__(config, checkpoint)
-        self.load_model()
 
     def load_model(self):
-        print("!!!Loading model...")
+        if self.model:
+            return
         num_classes = 2
         indices = [7, 15, 23, 31]  # for prithvi_eo_v2_600
         model_args = {
