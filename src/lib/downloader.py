@@ -1,4 +1,5 @@
 import earthaccess
+import geopandas as gpd
 import hashlib
 import json
 import morecantile
@@ -6,12 +7,13 @@ import numpy as np
 import os
 import rasterio
 import requests
-import geopandas as gpd
-from shapely.geometry import box
 import time
+
 
 from earthaccess import search_data, download
 from pyproj import Transformer
+
+from shapely.geometry import box
 
 from rasterio.io import MemoryFile
 from rasterio.merge import merge

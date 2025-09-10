@@ -1,8 +1,8 @@
 import rasterio
 import torch
 
+from datetime import datetime
 from lib.infer import Infer
-
 from terratorch.tasks import SemanticSegmentationTask
 
 
