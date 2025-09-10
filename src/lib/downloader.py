@@ -259,8 +259,8 @@ class Downloader:
     def find_and_prepare_data(self):
         # TODO:
         # will also need to update to have timeseries support as needed.
-        output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_merged_cropped.tif"
-        if os.path.exists(output_filename):
+        output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_merged.tif"
+        if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
             return output_filename
 
         merged_files = []
