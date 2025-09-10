@@ -19,7 +19,7 @@ QA_INDICES = {
 }
 
 class DataPreparer:
-    def __init__(self, filename, batch_size=120, overlap=0, scale=False, qa_flags=['cloud', 'shadow', 'snow', 'water']):
+    def __init__(self, filename, batch_size=120, overlap=0, scale=False, qa_flags=['cloud', 'shadow', 'snow', 'water'], timeseries=False):
         """
         Initialize Downloader
         Args:
@@ -31,6 +31,32 @@ class DataPreparer:
         self.overlap = overlap
         self.qa_flags = qa_flags
         self.scale = scale
+        self.timeseries = timeseries
+
+    def handle_qa(self, tile):
+        def get_qa_mask(tile):
+            combined = np.zeros_like(tile).astype('uint')
+            for qa_flag in self.qa_flags:
+                qa_index = QA_INDICES.get(qa_flag)
+                flag = tile[6].astype('uint') & (1 << qa_index) != 0
+                combined |= flag
+            return combined
+        if self.timeseries:
+            pre_combined = get_qa_mask(tile[:7])
+            for index in range(6):
+                tile[index][pre_combined] = 0.0001
+            combined = get_qa_mask(tile[9:16])
+            for index in range(9, 15):
+                tile[index][combined] = 0.0001
+            post_combined = get_qa_mask(tile[18:25])
+            for index in range(18, 24):
+                tile[index][post_combined] = 0.0001
+        else:
+            combined = get_qa_mask(tile)
+            for index in range(6):
+                tile[index][combined] = 0.0001
+        return tile
+
 
     def generate_tiles(self):
         """
@@ -65,20 +91,14 @@ class DataPreparer:
                         tile = tile / 10000.0
                         tile = np.clip(tile, 0, 1)
 
+                    tile = self.handle_qa(tile)
+
                     # Zero pad if needed
                     if win_height < height or win_width < width:
                         pad_shape = (tile.shape[0], height, width)
                         padded = np.zeros(pad_shape, dtype=tile.dtype)
                         padded[:, :win_height, :win_width] = tile
                         tile = padded
-
-                    combined = np.zeros_like(tile).astype('uint')
-                    for qa_flag in self.qa_flags:
-                        qa_index = QA_INDICES.get(qa_flag)
-                        flag = tile[6].astype('uint') & (1 << qa_index) != 0
-                        combined |= flag
-                    for index in range(6):
-                        tile[index][combined] = 0.0001
 
                     # Prepare metadata for memory file
                     meta = src.meta.copy()
