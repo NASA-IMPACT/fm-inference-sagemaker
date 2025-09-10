@@ -36,9 +36,10 @@ DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", '/root/.cache/')
 
 
 WIDTH, HEIGHT = (512, 512)
+DELTA = 90
 
 class Downloader:
-    def __init__(self, date, bbox, layers=LAYERS['HLS']):
+    def __init__(self, date, bbox, layers=LAYERS['HLS'], timeseries=False):
         """
         Initialize Downloader
         Args:
@@ -49,6 +50,7 @@ class Downloader:
         self.date_range = (f"{date}T00:00:00Z", f"{date}T23:59:59Z")
         self.layers = layers
         self.bbox = bbox
+        self.timeseries = timeseries
         self.links = []
 
     @staticmethod
@@ -218,7 +220,12 @@ class Downloader:
             'transform': transform,
             'count': mosaic.shape[0],
             'dtype': mosaic.dtype,
-            'crs': crs # Assuming default CRS if not provided
+            'crs': crs,
+            'nodata': -9999,
+            'compress': 'lzw',
+            'tiled': True,
+            'blockxsize': 512,
+            'blockysize': 512
         }
         dst_crs = 'EPSG:4326'
 
@@ -256,20 +263,26 @@ class Downloader:
                     )
         return filename
 
-    def find_and_prepare_data(self):
-        # TODO:
-        # will also need to update to have timeseries support as needed.
-        output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_merged.tif"
+    def prepare_date_range(self, date, delta=DELTA):
+        date_obj = time.strptime(date, '%Y-%m-%d')
+        start_time = date_obj + time.timedelta(days=delta)
+        start_date = time.strftime('%Y-%m-%d', start_time)
+        return (f"{start_date}T00:00:00Z", f"{start_date}T23:59:59Z")
+
+    def prepare_merged_file(self, date_range, bbox, layers):
+        # prepare merged file for given date range and bbox
+        date = date_range[0].split('T')[0]
+        output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, bbox)}_merged.tif"
         if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
             return output_filename
 
         merged_files = []
-        # check if files exist before downloading again
-        for layer in self.layers:
+
+        for layer in layers:
             granules = search_data(
                 short_name=layer,
-                temporal=self.date_range,
-                bounding_box=tuple(map(float, self.bbox)),
+                temporal=date_range,
+                bounding_box=tuple(map(float, bbox)),
                 cloud_hosted=True,
                 count=1000
             )
@@ -283,11 +296,41 @@ class Downloader:
                     filenames = self.download_bands(links)
                     merged_file = self.merge_bands(filenames, granule.uuid)
                     merged_files.append(merged_file)
-        # stitch together multiple merged files
         mosaic, transform = merge(merged_files, method='first')
         with rasterio.open(merged_files[0], 'r') as src:
             crs = src.crs
         merged_file = self.save_cog(mosaic, transform, output_filename, crs)
         cropped_file = self.crop_to_bbox(merged_file)
+        return cropped_file
 
+    def find_and_prepare_data(self):
+        if self.timeseries:
+            output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_timeseries_merged.tif"
+            if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
+                return output_filename
+            timeseries_files = []
+
+            pre_date_range = self.prepare_date_range(self.date, delta=-DELTA)
+            post_date_range = self.prepare_date_range(self.date, delta=DELTA)
+            current_date_range = self.date_range
+
+            pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers)
+            current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
+            post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers)
+
+            timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
+
+            stacked_arrays = []
+            for file in timeseries_files:
+                with rasterio.open(file) as src:
+                    array = src.read()
+                    stacked_arrays.append(array)
+            mosaic = np.concatenate(stacked_arrays, axis=0)
+            with rasterio.open(timeseries_files[0]) as src:
+                transform = src.transform
+                crs = src.crs
+            merged_file = self.save_cog(mosaic, transform, output_filename, crs)
+            cropped_file = self.crop_to_bbox(merged_file)
+        else:
+            cropped_file = self.prepare_merged_file(self.date_range, self.bbox, self.layers)
         return cropped_file
