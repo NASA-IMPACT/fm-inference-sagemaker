@@ -19,6 +19,15 @@ class InferenceRead(InferenceBase):
     finetuned_models: Optional[List["FinetunedModelRead"]]
     preloaded_events: Optional[List["PreloadedEventRead"]]
 
+    @validator('query', pre=True)
+    def validate_query(cls, value):
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                raise ValueError("Invalid JSON string for query")
+        return value
+
 
 class InferenceUpdate(InferenceBase):
     query: dict
