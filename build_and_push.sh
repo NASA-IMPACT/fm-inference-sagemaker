@@ -37,9 +37,9 @@ TEMP_BURN_IMAGE_NAME="burn_scars:temp"
 echo "Building temporary image to get digest: $TEMP_BURN_IMAGE_NAME"
 docker buildx build --platform linux/amd64 -t $TEMP_BURN_IMAGE_NAME . -f burn_scars/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
 
-TEMP_CROP_IMAGE="crop_classification:temp"
-echo "Building temporary image to get digest: $TEMP_CROP_IMAGE"
-docker buildx build --platform linux/amd64 -t $TEMP_CROP_IMAGE . -f crop_classification/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
+TEMP_CROP_IMAGE_NAME="crop_classification:temp"
+echo "Building temporary image to get digest: $TEMP_CROP_IMAGE_NAME"
+docker buildx build --platform linux/amd64 -t $TEMP_CROP_IMAGE_NAME . -f crop_classification/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
 
 # Get the image digest (content-based hash) - extract only the hash portion
 IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
