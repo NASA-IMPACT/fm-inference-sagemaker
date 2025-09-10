@@ -20,7 +20,7 @@ from rasterio.windows import from_bounds, Window
 from rasterio.mask import mask
 
 BANDS = {
-    "HLSL30": ["B02", "B03", "B04", "B08", "B11", "B12", "Fmask", "SAA", "SZA"],
+    "HLSL30": ["B02", "B03", "B04", "B05", "B06", "B07", "Fmask", "SAA", "SZA"],
     "HLSS30": ["B02", "B03", "B04", "B8A", "B11", "B12", "Fmask", "SAA", "SZA"],
 }
 
@@ -138,7 +138,6 @@ class Downloader:
             filenames: list of file paths for each band
             output_name: output file name
         """
-
         output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}-{uuid}.tif"
         if os.path.exists(output_name):
             print(f"File {output_name} already exists. Skipping merge.")
@@ -260,8 +259,12 @@ class Downloader:
     def find_and_prepare_data(self):
         # TODO:
         # will also need to update to have timeseries support as needed.
+        output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_merged_cropped.tif"
+        if os.path.exists(output_filename):
+            return output_filename
+
         merged_files = []
-        all_granules = []
+        # check if files exist before downloading again
         for layer in self.layers:
             granules = search_data(
                 short_name=layer,
@@ -270,22 +273,21 @@ class Downloader:
                 cloud_hosted=True,
                 count=1000
             )
-            all_granules.extend(granules)
-        for granule in all_granules:
-            all_bands_available = False
-            links = [link
-                for band in BANDS[layer] for link in granule.data_links(access='external')
-                if f".{band}." in link
-            ]
-            if all(band in ' '.join(links) for band in BANDS[layer]):
-                filenames = self.download_bands(links)
-                merged_file = self.merge_bands(filenames, granule.uuid)
-                merged_files.append(merged_file)
+            for granule in granules:
+                all_bands_available = False
+                links = [link
+                    for band in BANDS[layer] for link in granule.data_links(access='external')
+                    if f".{band}." in link
+                ]
+                if all(band in ' '.join(links) for band in BANDS[layer]):
+                    filenames = self.download_bands(links)
+                    merged_file = self.merge_bands(filenames, granule.uuid)
+                    merged_files.append(merged_file)
         # stitch together multiple merged files
         mosaic, transform = merge(merged_files, method='first')
         with rasterio.open(merged_files[0], 'r') as src:
             crs = src.crs
-        merged_file = self.save_cog(mosaic, transform, f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_merged.tif", crs)
+        merged_file = self.save_cog(mosaic, transform, output_filename, crs)
         cropped_file = self.crop_to_bbox(merged_file)
 
         return cropped_file
