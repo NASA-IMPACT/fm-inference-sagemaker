@@ -94,7 +94,7 @@ class CropClassificationInfer(Infer):
             images, profiles, coords, temporal = self.preprocess(images, date)
             result = self.model(
                 images.to('cuda' if torch.cuda.is_available() else 'cpu'),
-                torch.tensor(temporal).to('cuda' if torch.cuda.is_available() else 'cpu')
+                torch.tensor(temporal).to('cuda' if torch.cuda.is_available() else 'cpu'),
                 torch.tensor(coords).to('cuda' if torch.cuda.is_available() else 'cpu'),
                 0.75 # default mask ratio
             )
