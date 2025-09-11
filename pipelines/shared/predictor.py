@@ -368,6 +368,7 @@ class InvocationData(BaseModel):
 @public_router.post('/invocations')
 async def infer_from_model(invocation_data: InvocationData = Body(...)):
     filename = invocation_data.filename
+    print(f"Received inference request for model: {invocation_data.model_id} on data: {filename}")
     final_geojson = infer(
         filename=filename,
         scale=invocation_data.scale,
