@@ -323,12 +323,12 @@ class Downloader:
 
             timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
             print(pre_cropped_file, current_cropped_file, post_cropped_file)
-            print('shapes:', pre_cropped_file.shape, current_cropped_file.shape, post_cropped_file.shape)
+            with rasterio.open(pre_cropped_file) as src, rasterio.open(current_cropped_file) as src2, rasterio.open(post_cropped_file) as src3:
+                print('shapes:', src.shape, src2.shape, src3.shape)
             stacked_arrays = []
             for file in timeseries_files:
                 with rasterio.open(file) as src:
-                    array = src.read()
-                    stacked_arrays.append(array)
+                    stacked_arrays.append(src.read())
             mosaic = np.concatenate(stacked_arrays, axis=0)
             with rasterio.open(timeseries_files[0]) as src:
                 transform = src.transform
