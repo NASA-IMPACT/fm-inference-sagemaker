@@ -98,6 +98,7 @@ class CropClassificationInfer(Infer):
         # forward the model
         with torch.no_grad():
             images, profiles, coords, temporal = self.preprocess(images, date)
+            print("shape of processed images after unsqueeze:", images.shape)
             images = rearrange(images, 'b (c t) h w -> b c t h w', c=6, t=3)
             result = self.model(
                 images.to('cuda' if torch.cuda.is_available() else 'cpu')
