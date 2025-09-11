@@ -2,7 +2,7 @@ import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GzipMiddleware
+from starlette.middleware.gzip import GzipMiddleware
 from contextlib import asynccontextmanager
 
 from .api.v1 import (
