@@ -84,8 +84,7 @@ class CropClassificationInfer(Infer):
         imgs_tensor = imgs_tensor.float()
 
         # increase dimensions to match input size
-        processed_images = imgs_tensor
-        processed_images = rearrange(images, 'b (c t) h w -> b c t h w', c=6, t=3)
+        processed_images = rearrange(imgs_tensor, 'b (c t) h w -> b c t h w', c=6, t=3)
         return processed_images, profiles, coords, temporal
 
     def infer(self, images, date):
