@@ -1,3 +1,4 @@
+import datetime
 import earthaccess
 import geopandas as gpd
 import hashlib
@@ -267,7 +268,7 @@ class Downloader:
 
     def prepare_date_range(self, date, delta=DELTA):
         date_obj = time.strptime(date, '%Y-%m-%d')
-        start_time = date_obj + time.timedelta(days=delta)
+        start_time = date_obj + datetime.timedelta(days=delta)
         start_date = time.strftime('%Y-%m-%d', start_time)
         return (f"{start_date}T00:00:00Z", f"{start_date}T23:59:59Z")
 
