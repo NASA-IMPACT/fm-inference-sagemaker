@@ -74,7 +74,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
     for finetuned_model in finetuned_models:
         # print(f"Running inference for model: {model.name} on data: {merged_file}")
         model_id = str(finetuned_model.source_details.get('model_id'))
-        timeseries = finetuned_model.data_config.get('timeseries', False)
+        timeseries = finetuned_model.source_details.get('timeseries', False)
         downloader = Downloader(
             inference.query['date'],
             inference.query['bounding_box'],
