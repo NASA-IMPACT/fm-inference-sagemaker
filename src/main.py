@@ -2,6 +2,7 @@ import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GzipMiddleware
 from contextlib import asynccontextmanager
 
 from .api.v1 import (
@@ -52,6 +53,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Add Gzip middleware
+app.add_middleware(GzipMiddleware, minimum_size=1000)
 
 # Include v1 API routers
 app.include_router(inference_router)
