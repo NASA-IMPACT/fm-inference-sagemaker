@@ -82,3 +82,40 @@ class CropClassificationInfer(Infer):
         print("shape of processed images:", processed_images.shape)
         processed_images = imgs_tensor.unsqueeze(2)
         return processed_images, profiles, coords, temporal
+
+    def infer(self, images, date):
+        """
+        Infer on provided images
+        Args:
+            images (list): List of images
+        """
+        # forward the model
+        with torch.no_grad():
+            images, profiles, coords, temporal = self.preprocess(images, date)
+            result = self.model(
+                images.to('cuda' if torch.cuda.is_available() else 'cpu'),
+                coords=torch.tensor(coords).to('cuda' if torch.cuda.is_available() else 'cpu'),
+                temporal=torch.tensor(temporal).to('cuda' if torch.cuda.is_available() else 'cpu')
+            )
+            predicted_masks = list()
+            results = result.output.detach().cpu()
+            for index, mask in enumerate(results):
+                output = mask.cpu()  # [n_segmentation_class, 224, 224]
+                if self.config['model']['init_args']['model_args']['num_classes'] == 1:
+                    updated_mask = torch.sigmoid(output.clone()).squeeze(0)
+                    predicted_mask = (updated_mask > self.config.get('threshold', 0.5)).int()
+                else:
+                    # predicted_mask = mask.argmax(dim=0)
+                    probabilities = torch.softmax(output, dim=0)
+                    predicted_mask = torch.argmax(probabilities, dim=0).cpu().numpy()
+                    # flood_prob = predicted_mask[0, 1].cpu().numpy()
+                    # img_size = profiles[index]['height']
+                    # predicted_mask = torch.nn.functional.interpolate(
+                    #         predicted_mask.unsqueeze(0).float(),
+                    #         size=img_size,
+                    #         mode="nearest"
+                    #     )
+                    print("Shape of predicted mask:", predicted_mask.shape)
+                    print("max and min of predicted mask:", predicted_mask.max(), predicted_mask.min())
+                predicted_masks.append(predicted_mask)
+            return predicted_masks, profiles
