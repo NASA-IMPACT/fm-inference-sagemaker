@@ -45,6 +45,8 @@ class CropClassificationInfer(Infer):
                 model_factory="EncoderDecoderFactory",
                 model_args=model_args
             )
+        self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = self.model.eval()
 
     def preprocess(self, images, date):
         images_array = []
