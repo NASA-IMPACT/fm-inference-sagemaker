@@ -1,7 +1,8 @@
+import os
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-import os
 
 from .api.v1 import (
     inference_router,
@@ -30,6 +31,10 @@ async def lifespan(app: FastAPI):
 
 
 root_path = os.environ.get("FASTAPI_ROOT_PATH", "/api/predict")
+DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", "/root/.cache/data")
+
+for subpath in ['config', 'models', 'predictions']:
+    os.makedirs(f"{DOWNLOAD_FOLDER.rstrip('/')}/{subpath}", exist_ok=True)
 
 app = FastAPI(
     title="FM Inference Service",
