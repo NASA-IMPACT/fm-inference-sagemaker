@@ -4,6 +4,7 @@ import torch
 
 from datetime import datetime
 from lib.infer import Infer
+from lib.consts import NO_DATA, NO_DATA_FLOAT, MEANS, STDS
 from terratorch.tasks import SemanticSegmentationTask
 
 
