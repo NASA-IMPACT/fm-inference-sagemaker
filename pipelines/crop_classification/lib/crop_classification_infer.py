@@ -2,7 +2,11 @@ import numpy as np
 import rasterio
 import torch
 
+
+
 from datetime import datetime
+from einops import rearrange
+
 from lib.infer import Infer
 from lib.consts import NO_DATA, NO_DATA_FLOAT, MEANS, STDS
 from terratorch.tasks import SemanticSegmentationTask
@@ -94,6 +98,7 @@ class CropClassificationInfer(Infer):
         # forward the model
         with torch.no_grad():
             images, profiles, coords, temporal = self.preprocess(images, date)
+            images = rearrange(images, 'b (c t) h w -> b c t h w', channels=6)
             result = self.model(
                 images.to('cuda' if torch.cuda.is_available() else 'cpu')
                 # torch.tensor(temporal).to('cuda' if torch.cuda.is_available() else 'cpu'),
