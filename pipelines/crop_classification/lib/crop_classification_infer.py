@@ -85,8 +85,7 @@ class CropClassificationInfer(Infer):
 
         # increase dimensions to match input size
         processed_images = imgs_tensor
-        print("shape of processed images:", processed_images.shape)
-        processed_images = imgs_tensor.unsqueeze(2)
+        processed_images = rearrange(images, 'b (c t) h w -> b c t h w', c=6, t=3)
         return processed_images, profiles, coords, temporal
 
     def infer(self, images, date):
@@ -98,8 +97,7 @@ class CropClassificationInfer(Infer):
         # forward the model
         with torch.no_grad():
             images, profiles, coords, temporal = self.preprocess(images, date)
-            print("shape of processed images after unsqueeze:", images.shape)
-            images = rearrange(images, 'b (c t) h w -> b c t h w', c=6, t=3)
+
             result = self.model(
                 images.to('cuda' if torch.cuda.is_available() else 'cpu')
                 # torch.tensor(temporal).to('cuda' if torch.cuda.is_available() else 'cpu'),
