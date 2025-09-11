@@ -73,3 +73,5 @@ WORKDIR /app
 COPY shared/requirements.txt /app/
 
 RUN uv pip install -r /app/requirements.txt --system
+
+RUN mkdir /root/.cache/data/config; mkdir /root/.cache/data/models; mkdir /root/.cache/data/predictions
