@@ -93,10 +93,10 @@ class CropClassificationInfer(Infer):
         with torch.no_grad():
             images, profiles, coords, temporal = self.preprocess(images, date)
             result = self.model(
-                images.to('cuda' if torch.cuda.is_available() else 'cpu'),
-                torch.tensor(temporal).to('cuda' if torch.cuda.is_available() else 'cpu'),
-                torch.tensor(coords).to('cuda' if torch.cuda.is_available() else 'cpu'),
-                0.75 # default mask ratio
+                images.to('cuda' if torch.cuda.is_available() else 'cpu')
+                # torch.tensor(temporal).to('cuda' if torch.cuda.is_available() else 'cpu'),
+                # torch.tensor(coords).to('cuda' if torch.cuda.is_available() else 'cpu'),
+                # 0.75 # default mask ratio
             )
             predicted_masks = list()
             results = result.output.detach().cpu()
