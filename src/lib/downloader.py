@@ -322,7 +322,8 @@ class Downloader:
             post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers)
 
             timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
-
+            print(pre_cropped_file, current_cropped_file, post_cropped_file)
+            print('shapes:', pre_cropped_file.shape, current_cropped_file.shape, post_cropped_file.shape)
             stacked_arrays = []
             for file in timeseries_files:
                 with rasterio.open(file) as src:
