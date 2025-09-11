@@ -58,16 +58,18 @@ class CropClassificationInfer(Infer):
         for image in images:
             with rasterio.open(image) as raster_file:
                 stacked = []
-                stacked.append(raster_file.read()[:6])  # Read pre bands
-                stacked.append(raster_file.read()[9:15])  # Read current bands
-                stacked.append(raster_file.read()[18:24])  # Read post bands
+                src = raster_file.read()
+                stacked.append(src[:6])  # Read pre bands
+                stacked.append(src[9:15])  # Read current bands
+                stacked.append(src[18:24])  # Read post bands
                 image = np.concatenate(stacked, axis=0)
                 image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
                 image = torch.from_numpy(image)
                 if len(self.means) > 0 and len(self.stds) > 0:
                     for band in range(image.shape[0]):
                         band_mask = image[band] == NO_DATA_FLOAT
-                        image[band][~band_mask] = ((image[band][~band_mask].float() - self.means[band]) / self.stds[band]).to(image.dtype)
+                        band_index = band % len(MEANS)
+                        image[band][~band_mask] = ((image[band][~band_mask].float() - self.means[band_index]) / self.stds[band_index]).to(image.dtype)
                 images_array.append(image)
                 coords.append(raster_file.lnglat())
                 temporal.append([julian_year, julian_day])
