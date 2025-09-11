@@ -267,9 +267,9 @@ class Downloader:
         return filename
 
     def prepare_date_range(self, date, delta=DELTA):
-        date_obj = time.strptime(date, '%Y-%m-%d')
+        date_obj = datetime.datetime.strptime(date, '%Y-%m-%d')
         start_time = date_obj + datetime.timedelta(days=delta)
-        start_date = time.strftime('%Y-%m-%d', start_time)
+        start_date = datetime.datetime.strftime('%Y-%m-%d', start_time)
         return (f"{start_date}T00:00:00Z", f"{start_date}T23:59:59Z")
 
     def prepare_merged_file(self, date_range, bbox, layers):
