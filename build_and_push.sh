@@ -11,7 +11,7 @@ fi
 # Build the image first to get the digest
 TEMP_IMAGE_NAME="inference:temp"
 echo "Building temporary image to get digest: $TEMP_IMAGE_NAME"
-docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME .
+docker build -t $TEMP_IMAGE_NAME .
 
 cd pipelines
 
@@ -22,7 +22,7 @@ echo $ECR_PASSWORD | docker login --username AWS --password-stdin $ECR_URL
 # Build and push base image first
 BASE_IMAGE_NAME="inference_pipelines:temp"
 echo "Building temporary image to get digest: $BASE_IMAGE_NAME"
-docker buildx build --platform linux/amd64 -t $BASE_IMAGE_NAME . -f Dockerfile.base
+docker build -t $BASE_IMAGE_NAME . -f Dockerfile.base
 BASE_DIGEST=$(docker inspect --format='{{.Id}}' $BASE_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 export ECR_BASE_IMAGE_NAME="inference_pipelines/base:${BASE_DIGEST}"
 docker tag $BASE_IMAGE_NAME $ECR_URL/$ECR_BASE_IMAGE_NAME
@@ -31,15 +31,15 @@ docker push $ECR_URL/$ECR_BASE_IMAGE_NAME
 # Build floods and burn scars images
 TEMP_FLOOD_IMAGE_NAME="floods:temp"
 echo "Building temporary image to get digest: $TEMP_FLOOD_IMAGE_NAME"
-docker buildx build --platform linux/amd64 -t $TEMP_FLOOD_IMAGE_NAME . -f floods/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
+docker build -t $TEMP_FLOOD_IMAGE_NAME . -f floods/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
 
 TEMP_BURN_IMAGE_NAME="burn_scars:temp"
 echo "Building temporary image to get digest: $TEMP_BURN_IMAGE_NAME"
-docker buildx build --platform linux/amd64 -t $TEMP_BURN_IMAGE_NAME . -f burn_scars/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
+docker build -t $TEMP_BURN_IMAGE_NAME . -f burn_scars/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
 
 TEMP_CROP_IMAGE_NAME="crop_classification:temp"
 echo "Building temporary image to get digest: $TEMP_CROP_IMAGE_NAME"
-docker buildx build --platform linux/amd64 -t $TEMP_CROP_IMAGE_NAME . -f crop_classification/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
+docker build -t $TEMP_CROP_IMAGE_NAME . -f crop_classification/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
 
 # Get the image digest (content-based hash) - extract only the hash portion
 IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
