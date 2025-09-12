@@ -10,11 +10,11 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/client-max-body-size: "50m"
-    # Disable compression to prevent content decoding errors
+    # Enable CORS but disable compression to prevent content decoding errors
     nginx.ingress.kubernetes.io/enable-cors: "true"
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      gzip off;
-      proxy_set_header Accept-Encoding "";
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "*"
 spec:
   tls:
   - hosts:
