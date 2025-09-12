@@ -2,7 +2,11 @@ import os
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
 from starlette.middleware.gzip import GZipMiddleware
+from starlette.requests import Request
+from starlette.types import ASGIApp
+
 from contextlib import asynccontextmanager
 
 from .api.v1 import (
@@ -10,6 +14,18 @@ from .api.v1 import (
     models_router,
     preloaded_events_router
 )
+
+class CustomGZipMiddleware(GZipMiddleware):
+    def __init__(self, app: ASGIApp, **kwargs):
+        super().__init__(app, **kwargs)
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path.startswith("/docs") or path.startswith("/openapi.json"):
+            # Skip compression for docs + OpenAPI schema
+            return await call_next(request)
+        return await super().dispatch(request, call_next)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -54,13 +70,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def should_compress(request):
-    # Do not compress the Swagger UI and OpenAPI paths
-    return not request.url.path.startswith("/docs") and not request.url.path.startswith("/openapi.json")
-
-
 # Add Gzip middleware
-app.add_middleware(GZipMiddleware, minimum_size=1000, compress_predicate=should_compress)
+app.add_middleware(
+    CustomGZipMiddleware,
+    minimum_size=1000
+)
 
 # Include v1 API routers
 app.include_router(inference_router)
