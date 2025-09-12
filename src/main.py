@@ -54,8 +54,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def should_compress(request):
+    # Do not compress the Swagger UI and OpenAPI paths
+    return not request.url.path.startswith("/docs") and not request.url.path.startswith("/openapi.json")
+
+
 # Add Gzip middleware
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(GZipMiddleware, minimum_size=1000, compress_predicate=should_compress)
 
 # Include v1 API routers
 app.include_router(inference_router)
