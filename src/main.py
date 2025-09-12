@@ -16,15 +16,20 @@ from .api.v1 import (
 )
 
 class CustomGZipMiddleware(GZipMiddleware):
-    def __init__(self, app: ASGIApp, **kwargs):
-        super().__init__(app, **kwargs)
+    def __init__(self, app: ASGIApp, minimum_size: int = 500, **kwargs):
+        super().__init__(app, minimum_size=minimum_size, **kwargs)
 
-    async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-        if path.startswith("/docs") or path.startswith("/openapi.json"):
-            # Skip compression for docs + OpenAPI schema
-            return await call_next(request)
-        return await super().dispatch(request, call_next)
+    async def __call__(self, scope, receive, send):
+        # Skip compression for docs and OpenAPI schema
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if path.startswith("/docs") or path.startswith("/openapi.json") or path.startswith("/redoc"):
+                # Pass through without compression
+                await self.app(scope, receive, send)
+                return
+
+        # Use parent's compression logic for other routes
+        await super().__call__(scope, receive, send)
 
 
 @asynccontextmanager
