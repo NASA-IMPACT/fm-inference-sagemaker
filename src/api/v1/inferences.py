@@ -101,7 +101,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
             results[model_id][date] = results[model_id].get(date, {})
             results[model_id][date] = response.json()[model_id]
 
-            infered_results = results[model_id]
+            infered_results = results[model_id][date]
             inference.results = inference.results if inference.results else {}
             inference.results[model_id] = inference.results.get(model_id, {})
             inference.results[model_id][date] = {
