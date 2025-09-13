@@ -42,15 +42,14 @@ WIDTH, HEIGHT = (512, 512)
 DELTA = 90
 
 class Downloader:
-    def __init__(self, date, bbox, layers=LAYERS['HLS'], timeseries=False):
+    def __init__(self, dates, bbox, layers=LAYERS['HLS'], timeseries=False):
         """
         Initialize Downloader
         Args:
             date (str): Date in the format of 'yyyy-mm-dd'
             layer (str): any of HLSL30, HLSS30
         """
-        self.date = date
-        self.date_range = (f"{date}T00:00:00Z", f"{date}T23:59:59Z")
+        self.dates = self.prepare_dates(dates)
         self.layers = layers
         self.bbox = bbox
         self.timeseries = timeseries
@@ -67,6 +66,37 @@ class Downloader:
         key = f"{date}|{','.join(map(str, bbox))}"
         digest = hashlib.sha256(key.encode('utf-8')).hexdigest()
         return digest
+
+    def prepare_start_end_date(self, date):
+        return (f"{date}T00:00:00Z", f"{date}T23:59:59Z")
+
+    def prepare_dates(self, dates):
+        date_list = []
+        if ':' in dates:
+            start_date, end_date = dates.split(':')
+            # validate date format
+            end_date_str = start_date.strip()
+            try:
+                while(end_date_str != end_date.strip()):
+                    end_date_str = (datetime.datetime.strptime(end_date_str, '%Y-%m-%d') + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+                    if end_date_str != end_date.strip():
+                        date_list.append(end_date_str)
+            except ValueError:
+                raise ValueError("Incorrect date format, should be YYYY-MM-DD")
+        elif ',' in dates:
+            date_list = dates.split(',')
+            for date in date_list:
+                try:
+                    datetime.datetime.strptime(date, '%Y-%m-%d')
+                except ValueError:
+                    raise ValueError("Incorrect date format, should be YYYY-MM-DD")
+        else:
+            date_list = [dates]
+            try:
+                datetime.datetime.strptime(dates, '%Y-%m-%d')
+            except ValueError:
+                raise ValueError("Incorrect date format, should be YYYY-MM-DD")
+        return date_list
 
     def login(self):
         self.auth = earthaccess.login(strategy="environment")
@@ -143,7 +173,7 @@ class Downloader:
             filenames: list of file paths for each band
             output_name: output file name
         """
-        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}-{uuid}.tif"
+        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, self.bbox)}-{uuid}.tif"
         if os.path.exists(output_name):
             print(f"File {output_name} already exists. Skipping merge.")
             return output_name
@@ -270,7 +300,7 @@ class Downloader:
         date_obj = datetime.datetime.strptime(date, '%Y-%m-%d')
         start_time = date_obj + datetime.timedelta(days=delta)
         start_date = datetime.datetime.strftime(start_time, '%Y-%m-%d')
-        return (f"{start_date}T00:00:00Z", f"{start_date}T23:59:59Z")
+        return self.prepare_start_end_date(start_date)
 
     def prepare_merged_file(self, date_range, bbox, layers):
         # prepare merged file for given date range and bbox
@@ -307,34 +337,37 @@ class Downloader:
         return cropped_file
 
     def find_and_prepare_data(self):
-        if self.timeseries:
-            output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_timeseries_merged.tif"
-            if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
-                return output_filename
-            timeseries_files = []
+        prepared_data = {}
+        for date in self.dates:
+            if self.timeseries:
+                output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, self.bbox)}_timeseries_merged.tif"
+                if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
+                    return output_filename
+                timeseries_files = []
 
-            pre_date_range = self.prepare_date_range(self.date, delta=-DELTA)
-            post_date_range = self.prepare_date_range(self.date, delta=DELTA)
-            current_date_range = self.date_range
+                pre_date_range = self.prepare_date_range(date, delta=-DELTA)
+                post_date_range = self.prepare_date_range(date, delta=DELTA)
+                current_date_range = self.prepare_date_range(date, delta=DELTA)
 
-            pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers)
-            current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
-            post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers)
+                pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers)
+                current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
+                post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers)
 
-            timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
-            print(pre_cropped_file, current_cropped_file, post_cropped_file)
-            with rasterio.open(pre_cropped_file) as src, rasterio.open(current_cropped_file) as src2, rasterio.open(post_cropped_file) as src3:
-                print('shapes:', src.shape, src2.shape, src3.shape)
-            stacked_arrays = []
-            for file in timeseries_files:
-                with rasterio.open(file) as src:
-                    stacked_arrays.append(src.read())
-            mosaic = np.concatenate(stacked_arrays, axis=0)
-            with rasterio.open(timeseries_files[0]) as src:
-                transform = src.transform
-                crs = src.crs
-            merged_file = self.save_cog(mosaic, transform, output_filename, crs)
-            cropped_file = self.crop_to_bbox(merged_file)
-        else:
-            cropped_file = self.prepare_merged_file(self.date_range, self.bbox, self.layers)
-        return cropped_file
+                timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
+                print(pre_cropped_file, current_cropped_file, post_cropped_file)
+                with rasterio.open(pre_cropped_file) as src, rasterio.open(current_cropped_file) as src2, rasterio.open(post_cropped_file) as src3:
+                    print('shapes:', src.shape, src2.shape, src3.shape)
+                stacked_arrays = []
+                for file in timeseries_files:
+                    with rasterio.open(file) as src:
+                        stacked_arrays.append(src.read())
+                mosaic = np.concatenate(stacked_arrays, axis=0)
+                with rasterio.open(timeseries_files[0]) as src:
+                    transform = src.transform
+                    crs = src.crs
+                merged_file = self.save_cog(mosaic, transform, output_filename, crs)
+                cropped_file = self.crop_to_bbox(merged_file)
+            else:
+                cropped_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers)
+            prepared_data[date] = cropped_file
+        return prepared_data

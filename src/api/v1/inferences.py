@@ -76,34 +76,37 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
         model_id = str(finetuned_model.source_details.get('model_id'))
         timeseries = finetuned_model.source_details.get('timeseries', False)
         downloader = Downloader(
-            inference.query['date'],
+            inference.query['dates'],
             inference.query['bounding_box'],
             finetuned_model.data_config['sources'],
             timeseries=timeseries
         )
-        merged_file = downloader.find_and_prepare_data()
-        port = finetuned_model.source_details['port']
-        # download extra data if needed here
-        # also calculate any indices if needed here
-        # pass these extra files to the inference pipeline as needed
-        url = f"http://{model_id.replace('_', '-')}-service:{port}/api/v1/invocations"
-        response = requests.post(url, json={
-            'filename': merged_file,
-            'scale': finetuned_model.data_config.get('scaled', False),
-            'model_id': model_id,
-            'qa_flags': finetuned_model.data_config.get('qa_flags', ['cloud', 'shadow', 'adjacent_cloud']),
-            'bounding_box': inference.query['bounding_box'],
-            'date': inference.query['date'],
-            'timeseries': timeseries
-        })
-        results[model_id] = response.json()[model_id]
+        prepared_data = downloader.find_and_prepare_data()
+        for date, merged_file in prepared_data.items():
+            port = finetuned_model.source_details['port']
+            # download extra data if needed here
+            # also calculate any indices if needed here
+            # pass these extra files to the inference pipeline as needed
+            url = f"http://{model_id.replace('_', '-')}-service:{port}/api/v1/invocations"
+            response = requests.post(url, json={
+                'filename': merged_file,
+                'scale': finetuned_model.data_config.get('scaled', False),
+                'model_id': model_id,
+                'qa_flags': finetuned_model.data_config.get('qa_flags', ['cloud', 'shadow', 'adjacent_cloud']),
+                'bounding_box': inference.query['bounding_box'],
+                'date': date,
+                'timeseries': timeseries
+            })
+            results[model_id][date] = results[model_id].get(date, {})
+            results[model_id][date] = response.json()[model_id]
 
-        floods = results[model_id]
-        inference.results = inference.results if inference.results else {}
-        inference.results[model_id] = {
-            "geojson": floods['geojson'],
-            "s3_link": floods['s3_link']
-        }
+            infered_results = results[model_id]
+            inference.results = inference.results if inference.results else {}
+            inference.results[model_id] = inference.results.get(model_id, {})
+            inference.results[model_id][date] = {
+                "geojson": infered_results['geojson'],
+                "s3_link": infered_results['s3_link']
+            }
 
     # Convert Pydantic model to ORM model before adding to DB
     inference_details = inference.dict()
