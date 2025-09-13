@@ -97,6 +97,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
                 'date': date,
                 'timeseries': timeseries
             })
+            results[model_id] = results.get(model_id, {})
             results[model_id][date] = results[model_id].get(date, {})
             results[model_id][date] = response.json()[model_id]
 
