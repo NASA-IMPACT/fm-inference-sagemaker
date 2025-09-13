@@ -166,7 +166,7 @@ class Downloader:
             if batch:
                 yield batch
 
-    def merge_bands(self, filenames, uuid):
+    def merge_bands(self, filenames, date, uuid):
         """
         Merge input files into a single 7-band TIFF, cropped to the bbox.
         Args:
@@ -327,7 +327,7 @@ class Downloader:
                 ]
                 if all(band in ' '.join(links) for band in BANDS[layer]):
                     filenames = self.download_bands(links)
-                    merged_file = self.merge_bands(filenames, granule.uuid)
+                    merged_file = self.merge_bands(filenames, date, granule.uuid)
                     merged_files.append(merged_file)
         mosaic, transform = merge(merged_files, method='first')
         with rasterio.open(merged_files[0], 'r') as src:
