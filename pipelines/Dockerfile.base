@@ -44,7 +44,7 @@ RUN cd /tmp && \
     rm -rf proj-9.3.0*
 
 # Install GDAL from source (minimal build)
-RUN wget http://download.osgeo.org/gdal/CURRENT/gdal-3.11.3.tar.gz
+RUN wget https://download.osgeo.org/gdal/3.11.3/gdal-3.11.3.tar.gz
 RUN tar zxvf gdal-3.11.3.tar.gz
 RUN mkdir -p gdal-3.11.3/build && \
     cd gdal-3.11.3/build && \
