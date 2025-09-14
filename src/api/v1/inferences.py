@@ -1,8 +1,8 @@
 import time
 import requests
 
-from typing import Dict, List, Any
-from fastapi import APIRouter, Depends, Callable, status, HTTPException
+from typing import Dict, List, Any, Callable
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from datetime import datetime, timezone
