@@ -29,3 +29,5 @@ torchvision
 tqdm
 transitions>=0.9.0
 uvicorn
+python-jose[cryptography]
+

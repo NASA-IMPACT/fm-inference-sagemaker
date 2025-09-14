@@ -1,13 +1,24 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
 import os
+from jose import JWTError, jwt
+import logging
+from typing import Any, Optional, Dict
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from .api.v1 import (
-    inference_router,
+    create_inference_router,
     models_router,
     preloaded_events_router
 )
+
+
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "676b780b2067723bef14910a7ad9e0ae5e3a14725dc1d7f08bb6fec6ff1e0e6a")
+ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -48,7 +59,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Authentication functions (keep these in main.py) ---
+oauth2_scheme = HTTPBearer(auto_error=False)
+
+async def verify_custom_token(
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(oauth2_scheme)
+) -> Optional[Dict[str, Any]]:
+    """Dependency to validate the custom-generated bearer token."""
+    if not creds:
+        return None
+    
+    token = creds.credentials
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        return None
+    
+async def general_access_dependency(
+    custom_token_payload: Optional[Dict[str, Any]] = Depends(verify_custom_token),
+) -> Dict[str, Any]:
+    """General authentication dependency that doesn't require a specific group."""
+    if custom_token_payload:
+        logger.info(f"Authenticating via custom JWT for user '{custom_token_payload.get('sub')}'.")
+        return custom_token_payload
+
+
+
 # Include v1 API routers
+inference_router = create_inference_router(general_access_dependency)
 app.include_router(inference_router)
 app.include_router(models_router)
 app.include_router(preloaded_events_router)
