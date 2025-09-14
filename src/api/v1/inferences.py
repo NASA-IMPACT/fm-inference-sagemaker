@@ -107,7 +107,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
             inference.results[model_id][date] = {
                 "qa_geojson": infered_results['qa_geojson'],
                 "s3_link": infered_results['s3_link'],
-                "stats": infered_results.get['stats']
+                "stats": infered_results['stats']
             }
 
     # Convert Pydantic model to ORM model before adding to DB
