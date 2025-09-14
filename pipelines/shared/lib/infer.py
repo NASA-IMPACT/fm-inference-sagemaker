@@ -105,7 +105,7 @@ class Infer:
             print(f"An error occurred: {e}")
             return None
 
-    def qa_flags_to_geojson(self, image_file, qa_flags):
+    def qa_flags_to_geojson(self, image_file, qa_flags, timeseries=False):
         """
         Convert predicted masks to GeoJSON format.
         Args:
@@ -125,7 +125,7 @@ class Infer:
         with rasterio.open(image_file) as src:
             profile = src.profile
             tile = src.read()
-            if self.timeseries:
+            if timeseries:
                 mask = get_qa_mask(tile[9:16], qa_flags)
             else:
                 mask = get_qa_mask(tile, qa_flags)
