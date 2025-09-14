@@ -17,7 +17,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
 
-from lib.consts import BUCKET_NAME, LAYERS, CONFIG_PATH, MODEL_WEIGHT_PATH, USECASE, DOWNLOAD_FOLDER
+from lib.consts import BUCKET_NAME, LAYERS, CONFIG_PATH, MODEL_WEIGHT_PATH, USECASE, DOWNLOAD_FOLDER, NUM_CLASSES
 from lib.data_preparer import DataPreparer
 from lib.post_process import PostProcess
 from lib.utils import get_boto3_session
@@ -295,7 +295,7 @@ def subset_geojson(geojson, bounding_box):
     bbox = gpd.GeoDataFrame({'geometry': [bbox]})
     return json.loads(geom.overlay(bbox, how='intersection').to_json())
 
-def infer(filename, scale, model_id, bounding_box, date, timeseries=False):
+def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=False):
     if model_id not in MODEL:
         response = {'statusCode': 422}
         return JSONResponse(content=jsonable_encoder(response))
@@ -308,7 +308,7 @@ def infer(filename, scale, model_id, bounding_box, date, timeseries=False):
     results = list()
     profiles = list()
     s3_link = ''
-    tiles_generator = DataPreparer(filename, overlap=0, scale=scale, timeseries=timeseries).generate_tiles()
+    tiles_generator = DataPreparer(filename, overlap=0, scale=scale, qa_flags=qa_flags, timeseries=timeseries).generate_tiles()
     torch.cuda.synchronize()
     with torch.no_grad():
         for tiles in tiles_generator:
@@ -337,20 +337,15 @@ def infer(filename, scale, model_id, bounding_box, date, timeseries=False):
         bounds = src.bounds
     prediction_filename = crop_file(prediction_filename, bounds)
     postprocessed_filename = inference.postprocess(bounding_box, date, prediction_filename, filename)
-    s3_link = upload_to_s3(prediction_filename)
-
-    geojson = post_process(mosaic[0], transform)
-
-    for geometry in geojson:
-        updated_geometry = PostProcess.convert_geojson(geometry)
-        geojson_list.append(updated_geometry)
-    geojson = subset_geojson(geojson_list, bounding_box)
+    s3_link = upload_to_s3(postprocessed_filename)
+    qa_geojson = inference.qa_flags_to_geojson(filename, qa_flags)
+    stats = inference.calculate_area_from_mask(postprocessed_filename, mask_values=range(1, NUM_CLASSES))
     print("!!! Infer Time:", time.time() - start_time)
     del inference
     gc.collect()
 
     return {
-        model_id: {'s3_link': s3_link, 'geojson': geojson}
+        model_id: {'s3_link': s3_link, 'qa_geojson': qa_geojson, 'stats': stats}
     }
 
 # Define a model for the POST request body
@@ -375,6 +370,7 @@ async def infer_from_model(invocation_data: InvocationData = Body(...)):
         model_id=invocation_data.model_id,
         bounding_box=invocation_data.bounding_box,
         date=invocation_data.date,
+        qa_flags=invocation_data.qa_flags,
         timeseries=invocation_data.timeseries
     )
     return JSONResponse(content=jsonable_encoder(final_geojson))
