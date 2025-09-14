@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Depends, status
+from fastapi import FastAPI, Request, Depends, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
@@ -84,7 +84,10 @@ async def general_access_dependency(
         logger.info(f"Authenticating via custom JWT for user '{custom_token_payload.get('sub')}'.")
         return custom_token_payload
 
-
+    raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated. Provide a valid bearer token."
+        )
 
 # Include v1 API routers
 inference_router = create_inference_router(general_access_dependency)
