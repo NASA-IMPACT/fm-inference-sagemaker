@@ -147,3 +147,4 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
             return {"message": "Inference deleted successfully"}
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return router
