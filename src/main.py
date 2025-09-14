@@ -3,9 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
 import os
+from datetime import datetime, timezone, timedelta
 from jose import JWTError, jwt
 import logging
 from typing import Any, Optional, Dict
+from pydantic import BaseModel, Field
+import base64
+import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -16,9 +20,36 @@ from .api.v1 import (
     preloaded_events_router
 )
 
+class TokenRequest(BaseModel):
+    grouplist: list[str]
+    expires_in_days: int = Field(default=1, ge=1)
+                                 
 
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "676b780b2067723bef14910a7ad9e0ae5e3a14725dc1d7f08bb6fec6ff1e0e6a")
 ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
+
+
+async def require_alb_authentication(request: Request) -> Dict[str, Any]:
+    """Dependency to ensure a user is authenticated by the ALB."""
+    access_token = request.headers.get("x-amzn-oidc-accesstoken")
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User is not authenticated via ALB/Cognito."
+        )
+    return get_jwt_payload(access_token)
+
+
+def get_jwt_payload(token: str) -> Dict[str, Any]:
+    """Decodes the payload from a JWT without verification (trusting the ALB)."""
+    try:
+        _, payload_b64, _ = token.split('.')
+        payload_b64 += '=' * (-len(payload_b64) % 4)
+        decoded_payload = base64.b64decode(payload_b64).decode('utf-8')
+        return json.loads(decoded_payload)
+    except Exception as e:
+        logger.error(f"Error decoding ALB JWT payload: {e}")
+        raise HTTPException(status_code=401, detail="Invalid ALB token format")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -95,6 +126,39 @@ app.include_router(inference_router)
 app.include_router(models_router)
 app.include_router(preloaded_events_router)
 
+
+@app.post("/create-token", tags=["Authentication"])
+async def create_token(
+    body: TokenRequest,
+    claims: Dict[str, Any] = Depends(require_alb_authentication),
+    
+):
+    """
+    Create a token to access the API.
+    Only users belonging to the specified groups are allowed to create tokens for one or more of that groups.
+    """
+    username = claims.get("username")
+    groups = claims.get("cognito:groups", [])
+    # Maximum 90 days
+    expiration_days = min(90, body.expiration_days)
+    expire = datetime.now(timezone.utc) + timedelta(days=expiration_days)
+    allowed_groups = list(set(groups) & set(body.grouplist))
+    if not allowed_groups:
+        raise HTTPException(status_code=403, detail="User does not belong to any of the groups they want to access the API.")
+
+    to_encode = {
+        "sub": username,
+        "groups": allowed_groups,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc)
+    }
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    
+    return {
+        "access_token": encoded_jwt,
+        "token_type": "bearer",
+        "expires_in_days": expiration_days
+    }
 
 @app.get("/")
 def read_root():
