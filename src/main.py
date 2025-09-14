@@ -140,8 +140,8 @@ async def create_token(
     username = claims.get("username")
     groups = claims.get("cognito:groups", [])
     # Maximum 90 days
-    expiration_days = min(90, body.expiration_days)
-    expire = datetime.now(timezone.utc) + timedelta(days=expiration_days)
+    expires_in_days = min(90, body.expires_in_days)
+    expire = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
     allowed_groups = list(set(groups) & set(body.grouplist))
     if not allowed_groups:
         raise HTTPException(status_code=403, detail="User does not belong to any of the groups they want to access the API.")
@@ -157,7 +157,7 @@ async def create_token(
     return {
         "access_token": encoded_jwt,
         "token_type": "bearer",
-        "expires_in_days": expiration_days
+        "expires_in_days": expires_in_days
     }
 
 @app.get("/")
