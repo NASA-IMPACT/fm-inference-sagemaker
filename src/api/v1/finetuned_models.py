@@ -27,26 +27,22 @@ def get_models(db: Session = Depends(get_db)):
     except Exception as e:
         return {"error": str(e)}
 
-@router.post("/")
-def create_model():
-    return {"message": "Model created successfully"}
-
-# @router.post("/", response_model=FinetunedModelRead, status_code=status.HTTP_201_CREATED)
-# def create_model(model: FinetunedModelUpdate, db: Session = Depends(get_db)):
-#     """Create a new finetuned model."""
-#     try:
-#         db_model = FinetunedModel(
-#             name=model.name,
-#             source_type=model.source_type,
-#             source_details=model.source_details,
-#             data_config=model.data_config
-#         )
-#         db.add(db_model)
-#         db.commit()
-#         db.refresh(db_model)
-#         return db_model
-#     except Exception as e:
-#         return {"error": str(e)}
+@router.post("/", response_model=FinetunedModelRead, status_code=status.HTTP_201_CREATED)
+def create_model(model: FinetunedModelUpdate, db: Session = Depends(get_db)):
+    """Create a new finetuned model."""
+    try:
+        db_model = FinetunedModel(
+            name=model.name,
+            source_type=model.source_type,
+            source_details=model.source_details,
+            data_config=model.data_config
+        )
+        db.add(db_model)
+        db.commit()
+        db.refresh(db_model)
+        return db_model
+    except Exception as e:
+        return {"error": str(e)}
 
 
 
