@@ -13,8 +13,8 @@ class FinetunedModelBase(BaseModel):
     id: UUID
     name: str
     source_type: SourceType
-    source_details: dict
-    created_at: datetime
+    source_details: Optional[dict]
+    created_at: Optional[datetime]
     data_config: Optional[dict]
 
     class Config:
@@ -23,8 +23,7 @@ class FinetunedModelBase(BaseModel):
 class FinetunedModelRead(FinetunedModelBase):
     pass
 
-class FinetunedModelUpdate(BaseModel):
+class FinetunedModelUpdate(FinetunedModelBase):
     name: Optional[str] = None
     source_type: Optional[SourceType] = SourceType.s3
-    source_details: Optional[dict] = None
-    data_config: Optional[dict] = None
+
