@@ -11,7 +11,8 @@ from pydantic import BaseModel, Field
 import base64
 import json
 import boto3
-
+import hmac
+import hashlib
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,10 @@ class TokenRequest(BaseModel):
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "676b780b2067723bef14910a7ad9e0ae5e3a14725dc1d7f08bb6fec6ff1e0e6a")
 ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL")
+COGNITO_CLIENT_SECRET = os.environ.get("COGNITO_CLIENT_SECRET")
+COGNITO_CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID")
 AWS_REGION = os.environ.get("AWS_REGION", "us-west-2")
+cognito_client = boto3.client('cognito-idp', region_name=AWS_REGION)
 
 async def require_alb_authentication(request: Request) -> dict[str, Any]:
     """Dependency to ensure a user is authenticated by the ALB."""
@@ -233,35 +237,121 @@ async def create_token(
     }
 
 
-@app.post("/token", tags=["Authentication"])
-async def get_token(
-    claims: dict[str, Any] = Depends(require_alb_authentication)
-):
-    """
-    Get a JWT for any authenticated user. The token will contain
-    the user's group memberships and can be used to authenticate subsequent requests.
-    """
-    ACCESS_TOKEN_EXPIRE_DAYS = 7
-    username = claims.get("username")
-    groups = claims.get("cognito:groups", [])
-    email = claims.get("email", None)
-    
-    expire = datetime.now(timezone.utc) + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def get_secret_hash(username: str, client_id: str, client_secret: str) -> str:
+    """Generate secret hash for Cognito authentication (only needed if client has secret)"""
+    message = username + client_id
+    dig = hmac.new(
+        client_secret.encode('utf-8'),
+        message.encode('utf-8'),
+        hashlib.sha256
+    ).digest()
+    return base64.b64encode(dig).decode()
+
+async def authenticate_with_cognito(username: str, password: str) -> dict:
+    """Authenticate user with Cognito and return user attributes"""
+    try:
+        auth_params = {
+            'USERNAME': username,
+            'PASSWORD': password,
+        }
+        
+        # Add SECRET_HASH if your app client has a secret
+        if COGNITO_CLIENT_SECRET:
+            auth_params['SECRET_HASH'] = get_secret_hash(username, COGNITO_CLIENT_ID, COGNITO_CLIENT_SECRET)
+        
+        auth_response = cognito_client.admin_initiate_auth(
+            UserPoolId=COGNITO_USER_POOL_ID,
+            ClientId=COGNITO_CLIENT_ID,
+            AuthFlow='ADMIN_NO_SRP_AUTH',
+            AuthParameters=auth_params
+        )
+        
+        # Extract access token from auth response
+        access_token = auth_response['AuthenticationResult']['AccessToken']
+        
+        # Get user info using the access token (more efficient than admin_get_user)
+        user_response = cognito_client.get_user(AccessToken=access_token)
+        
+        # Extract user attributes
+        user_attributes = {}
+        for attr in user_response['UserAttributes']:
+            user_attributes[attr['Name']] = attr['Value']
+        
+        # Get user groups
+        groups_response = cognito_client.admin_list_groups_for_user(
+            UserPoolId=COGNITO_USER_POOL_ID,
+            Username=username
+        )
+        
+        groups = [group['GroupName'] for group in groups_response['Groups']]
+        
+        return {
+            'username': username,
+            'email': user_attributes.get('email'),
+            'cognito:groups': groups,
+            'user_attributes': user_attributes,
+            'access_token': access_token,  # Include the Cognito access token if needed
+            'id_token': auth_response['AuthenticationResult'].get('IdToken'),
+            'refresh_token': auth_response['AuthenticationResult'].get('RefreshToken')
+        }
+        
+    except cognito_client.exceptions.NotAuthorizedException:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    except cognito_client.exceptions.UserNotFoundException:
+        raise HTTPException(status_code=401, detail="User not found")
+    except cognito_client.exceptions.UserNotConfirmedException:
+        raise HTTPException(status_code=401, detail="User account not confirmed")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Authentication failed: {str(e)}")
+
+def create_jwt_token(user_data: dict, expire_days: int = 7) -> dict:
+    """Create JWT token from user data"""
+    expire = datetime.now(timezone.utc) + timedelta(days=expire_days)
     
     to_encode = {
-        "sub": username,
-        "groups": groups,
+        "sub": user_data["username"],
+        "groups": user_data.get("cognito:groups", []),
         "exp": expire,
-        "email": email,
+        "email": user_data.get("email"),
         "iat": datetime.now(timezone.utc)
     }
+    
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     
     return {
         "access_token": encoded_jwt,
         "token_type": "bearer",
-        "expires_in_days": ACCESS_TOKEN_EXPIRE_DAYS
+        "expires_in_days": expire_days
     }
+
+# New endpoint for username/password authentication
+@app.post("/login", tags=["Authentication"])
+async def login_with_credentials(login_request: LoginRequest):
+    """
+    Authenticate with username and password to get a JWT token.
+    """
+    user_data = await authenticate_with_cognito(
+        login_request.username, 
+        login_request.password
+    )
+    
+    return create_jwt_token(user_data)
+
+# Your existing ALB authentication endpoint (modified to use the helper function)
+@app.post("/token", tags=["Authentication"])
+async def get_token(
+    claims: dict[str, Any] = Depends(require_alb_authentication)
+):
+    """
+    Get a JWT for any authenticated user via ALB. The token will contain
+    the user's group memberships and can be used to authenticate subsequent requests.
+    """
+    return create_jwt_token(claims)
 
 @app.get("/")
 def read_root():
