@@ -71,7 +71,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         # send back a job id and let the client poll for status/results
         
         user_groups = claims.get("groups") or claims.get("cognito:groups", [])
-        
+        user_email = claims.get("email")
         inference_name = inference.name if inference.name else time.strftime("inference_%Y%m%d_%H%M%S")
         finetuned_models = db.query(FinetunedModel).filter(FinetunedModel.id.in_(inference.finetuned_model_ids)).all()
         if not finetuned_models or len(finetuned_models) != len(inference.finetuned_model_ids):
@@ -124,6 +124,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         inference_details = inference.dict()
         inference_details['name'] = inference_name
         inference_details['finetuned_models'] = finetuned_models
+        inference_details['user_email'] = user_email
         del(inference_details['finetuned_model_ids'])
         inference_orm = Inference(**inference_details)
         db.add(inference_orm)

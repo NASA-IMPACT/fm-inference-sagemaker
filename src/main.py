@@ -10,6 +10,7 @@ from typing import Any, Optional, Dict
 from pydantic import BaseModel, Field
 import base64
 import json
+import boto3
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,7 +28,8 @@ class TokenRequest(BaseModel):
 
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "676b780b2067723bef14910a7ad9e0ae5e3a14725dc1d7f08bb6fec6ff1e0e6a")
 ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-
+COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL")
+AWS_REGION = os.environ.get("AWS_REGION", "us-west-2")
 
 async def require_alb_authentication(request: Request) -> Dict[str, Any]:
     """Dependency to ensure a user is authenticated by the ALB."""
@@ -93,6 +95,61 @@ app.add_middleware(
 # --- Authentication functions (keep these in main.py) ---
 oauth2_scheme = HTTPBearer(auto_error=False)
 
+
+def get_user_groups_from_cognito(username: str) -> List[str]:
+    """Get user's groups from Cognito User Pool."""
+    try:
+        if not COGNITO_USER_POOL_ID:
+            logger.error("COGNITO_USER_POOL_ID not set, cannot fetch groups")
+            return []
+            
+        client = boto3.client('cognito-idp', region_name=AWS_REGION)
+        
+        logger.info(f"Fetching groups for user: {username} from pool: {COGNITO_USER_POOL_ID}")
+        
+        response = client.admin_list_groups_for_user(
+            UserPoolId=COGNITO_USER_POOL_ID,
+            Username=username
+        )
+        
+        groups = [group['GroupName'] for group in response.get('Groups', [])]
+        logger.info(f"User {username} belongs to groups: {groups}")
+        return groups
+        
+    except Exception as e:
+        logger.error(f"Error fetching user groups from Cognito: {type(e).__name__}: {str(e)}")
+        return []
+
+async def verify_cognito_token(
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(oauth2_scheme)
+) -> Optional[Dict[str, Any]]:
+    """Dependency to validate Cognito access tokens directly."""
+    if not creds:
+        return None
+    
+    token = creds.credentials
+    try:
+        client = boto3.client('cognito-idp', region_name=AWS_REGION)
+        response = client.get_user(AccessToken=token)
+        
+        username = response['Username']
+        groups = get_user_groups_from_cognito(username)
+        
+        logger.info(f"Successfully authenticated user '{username}' via Cognito token")
+        
+        return {
+            "sub": username,
+            "username": username,
+            "groups": groups,
+            "cognito:groups": groups,
+            "auth_method": "cognito_direct"
+        }
+    except Exception as e:
+        logger.debug(f"Token is not a valid Cognito token: {e}")
+        return None
+
+
+
 async def verify_custom_token(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(oauth2_scheme)
 ) -> Optional[Dict[str, Any]]:
@@ -108,17 +165,29 @@ async def verify_custom_token(
         return None
     
 async def general_access_dependency(
+    request: Request,
     custom_token_payload: Optional[Dict[str, Any]] = Depends(verify_custom_token),
+    cognito_token_payload: Optional[Dict[str, Any]] = Depends(verify_cognito_token)
+
 ) -> Dict[str, Any]:
     """General authentication dependency that doesn't require a specific group."""
     if custom_token_payload:
         logger.info(f"Authenticating via custom JWT for user '{custom_token_payload.get('sub')}'.")
         return custom_token_payload
-
-    raise HTTPException(
+    if cognito_token_payload:
+        logger.info(f"Authenticating via Cognito token for user '{cognito_token_payload.get('username')}'.")
+        return cognito_token_payload
+    logger.info("No valid JWT or Cognito token found. Falling back to Header authentication.")
+    try:
+        alb_claims = await require_alb_authentication(request)
+        logger.info(f"User '{alb_claims.get('username')}' authorized via Headers.")
+        return alb_claims
+    except HTTPException as e:
+        logger.warning("Header authentication failed.")
+        raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated. Provide a valid bearer token."
-        )
+            detail="Not authenticated. Provide a valid bearer token (custom JWT or Cognito) or authenticate via ALB.",
+        ) from e
 
 # Include v1 API routers
 inference_router = create_inference_router(general_access_dependency)
@@ -138,17 +207,19 @@ async def create_token(
     Only users belonging to the specified groups are allowed to create tokens for one or more of that groups.
     """
     username = claims.get("username")
+    email = claims.get("email")
     groups = claims.get("cognito:groups", [])
     # Maximum 90 days
     expires_in_days = min(90, body.expires_in_days)
     expire = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
     allowed_groups = list(set(groups) & set(body.grouplist))
     if not allowed_groups:
-        raise HTTPException(status_code=403, detail="User does not belong to any of the groups they want to access the API.")
+        raise HTTPException(status_code=403, detail="The user does not belong to any of the groups required to access the API.")
 
     to_encode = {
         "sub": username,
         "groups": allowed_groups,
+        "email": email,
         "exp": expire,
         "iat": datetime.now(timezone.utc)
     }
