@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone, timedelta
 from jose import JWTError, jwt
 import logging
-from typing import Any, Optional, Dict
+from typing import Any, Optional
 from pydantic import BaseModel, Field
 import base64
 import json
@@ -31,7 +31,7 @@ ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL")
 AWS_REGION = os.environ.get("AWS_REGION", "us-west-2")
 
-async def require_alb_authentication(request: Request) -> Dict[str, Any]:
+async def require_alb_authentication(request: Request) -> dict[str, Any]:
     """Dependency to ensure a user is authenticated by the ALB."""
     access_token = request.headers.get("x-amzn-oidc-accesstoken")
     if not access_token:
@@ -96,7 +96,7 @@ app.add_middleware(
 oauth2_scheme = HTTPBearer(auto_error=False)
 
 
-def get_user_groups_from_cognito(username: str) -> List[str]:
+def get_user_groups_from_cognito(username: str) -> list[str]:
     """Get user's groups from Cognito User Pool."""
     try:
         if not COGNITO_USER_POOL_ID:
