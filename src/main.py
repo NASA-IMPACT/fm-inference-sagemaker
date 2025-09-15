@@ -42,7 +42,7 @@ async def require_alb_authentication(request: Request) -> dict[str, Any]:
     return get_jwt_payload(access_token)
 
 
-def get_jwt_payload(token: str) -> Dict[str, Any]:
+def get_jwt_payload(token: str) -> dict[str, Any]:
     """Decodes the payload from a JWT without verification (trusting the ALB)."""
     try:
         _, payload_b64, _ = token.split('.')
@@ -122,7 +122,7 @@ def get_user_groups_from_cognito(username: str) -> list[str]:
 
 async def verify_cognito_token(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(oauth2_scheme)
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """Dependency to validate Cognito access tokens directly."""
     if not creds:
         return None
@@ -152,7 +152,7 @@ async def verify_cognito_token(
 
 async def verify_custom_token(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(oauth2_scheme)
-) -> Optional[Dict[str, Any]]:
+) -> Optional[dict[str, Any]]:
     """Dependency to validate the custom-generated bearer token."""
     if not creds:
         return None
@@ -164,12 +164,13 @@ async def verify_custom_token(
     except JWTError:
         return None
     
+
 async def general_access_dependency(
     request: Request,
-    custom_token_payload: Optional[Dict[str, Any]] = Depends(verify_custom_token),
-    cognito_token_payload: Optional[Dict[str, Any]] = Depends(verify_cognito_token)
+    custom_token_payload: Optional[dict[str, Any]] = Depends(verify_custom_token),
+    cognito_token_payload: Optional[dict[str, Any]] = Depends(verify_cognito_token)
 
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """General authentication dependency that doesn't require a specific group."""
     if custom_token_payload:
         logger.info(f"Authenticating via custom JWT for user '{custom_token_payload.get('sub')}'.")
@@ -199,7 +200,7 @@ app.include_router(preloaded_events_router)
 @app.post("/create-token", tags=["Authentication"])
 async def create_token(
     body: TokenRequest,
-    claims: Dict[str, Any] = Depends(require_alb_authentication),
+    claims: dict[str, Any] = Depends(require_alb_authentication),
     
 ):
     """
