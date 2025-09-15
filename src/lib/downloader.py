@@ -16,6 +16,7 @@ from pyproj import Transformer
 
 from shapely.geometry import box
 
+from rasterio.crs import CRS
 from rasterio.io import MemoryFile
 from rasterio.merge import merge
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -221,7 +222,7 @@ class Downloader:
             # Create bbox geometry in WGS84
             minx, miny, maxx, maxy = self.bbox
             bbox_geom = box(minx, miny, maxx, maxy)
-            bbox_gdf = gpd.GeoDataFrame([1], geometry=[bbox_geom], crs='EPSG:4326')
+            bbox_gdf = gpd.GeoDataFrame([1], geometry=[bbox_geom], crs=CRS.from_epsg(4326))
 
             out_image, out_transform = mask(src, bbox_gdf.geometry, crop=True)
 
@@ -260,7 +261,7 @@ class Downloader:
             'blockxsize': 512,
             'blockysize': 512
         }
-        dst_crs = 'EPSG:4326'
+        dst_crs = CRS.from_epsg('EPSG:4326')
 
         with MemoryFile() as memfile:
             with memfile.open(**src_profile) as src:
