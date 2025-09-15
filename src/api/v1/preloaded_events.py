@@ -62,7 +62,7 @@ def create_model(preloaded_event: PreloadedEventUpdate, db: Session = Depends(ge
         db.add(preloaded_event)
         db.commit()
         db.refresh(preloaded_event)
-        return db_model
+        return preloaded_event
     except Exception as e:
         return {"error": str(e)}
 

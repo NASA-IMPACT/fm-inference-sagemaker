@@ -28,7 +28,7 @@ def get_models(db: Session = Depends(get_db)):
         return {"error": str(e)}
 
 
-@router.post("/", response_model=FinetunedModelRead, status_code=status.HTTP_201_CREATED)
+@router.post("/", status_code=status.HTTP_201_CREATED)
 def create_model(model: FinetunedModelUpdate, db: Session = Depends(get_db)):
     """Create a new finetuned model."""
     try:
@@ -41,7 +41,7 @@ def create_model(model: FinetunedModelUpdate, db: Session = Depends(get_db)):
         db.add(db_model)
         db.commit()
         db.refresh(db_model)
-        return db_model
+        return {"message": f"Model {model.name} was created successfully!"}
     except Exception as e:
         return {"error": str(e)}
 
