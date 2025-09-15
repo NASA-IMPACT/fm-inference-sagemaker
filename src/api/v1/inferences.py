@@ -59,7 +59,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @router.post("/", status_code=status.HTTP_201_CREATED, response_model=InferenceRead)
-    def create_model(
+    def create_inference(
         inference: InferenceUpdate,
         claims: Dict[str, Any] = Depends(auth_dependency),
         db: Session = Depends(get_db)
