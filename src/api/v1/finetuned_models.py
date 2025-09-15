@@ -69,7 +69,7 @@ def get_model_preloaded_events(model_id: str, db: Session = Depends(get_db)):
 @router.post("/", response_model=FinetunedModelRead, status_code=status.HTTP_201_CREATED)
 def create_model(model: FinetunedModelUpdate, db: Session = Depends(get_db)):
     """Create a new finetuned model."""
-    try:
+    if True: # try
         db_model = FinetunedModel(
             name=model.name,
             source_type=model.source_type,
@@ -80,7 +80,7 @@ def create_model(model: FinetunedModelUpdate, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(db_model)
         return db_model
-    except Exception as e:
+    else: #except Exception as e:
         return {"error": str(e)}
 
 @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
