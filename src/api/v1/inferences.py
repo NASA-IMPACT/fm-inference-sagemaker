@@ -114,6 +114,8 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
     inference_details = inference.dict()
     inference_details['name'] = inference_name
     inference_details['finetuned_models'] = finetuned_models
+    #TODO add user_email to inference_details from cognito
+    inference_details['user_email'] = "example@example.com"
     del(inference_details['finetuned_model_ids'])
     inference_orm = Inference(**inference_details)
     db.add(inference_orm)

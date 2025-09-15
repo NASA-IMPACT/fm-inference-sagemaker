@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    Column, String, DateTime, Enum, ForeignKey, Boolean, Table, JSON
+    Column, String, DateTime, Enum, ForeignKey, Boolean, Table, JSON, CheckConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
@@ -29,14 +29,20 @@ class FinetunedModel(Base):
     source_details = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     data_config = Column(JSON, nullable=True)
-
 class Inference(Base):
     __tablename__ = "inferences"
+    __table_args__ = (
+        CheckConstraint(
+            "user_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'",
+            name='valid_email_format'
+        ),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     query = Column(JSON, nullable=True) # contains bbox, date, or date range
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
+    user_email = Column(String(254), nullable=False)
     finetuned_models = relationship(
         "FinetunedModel",
         secondary=inference_finetuned_model,
