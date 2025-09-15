@@ -232,6 +232,37 @@ async def create_token(
         "expires_in_days": expires_in_days
     }
 
+
+@app.post("/token", tags=["Authentication"])
+async def get_token(
+    claims: dict[str, Any] = Depends(require_alb_authentication)
+):
+    """
+    Get a JWT for any authenticated user. The token will contain
+    the user's group memberships and can be used to authenticate subsequent requests.
+    """
+    ACCESS_TOKEN_EXPIRE_MINUTES = 60
+    username = claims.get("username")
+    groups = claims.get("cognito:groups", [])
+    email = claims.get("email", None)
+    
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    to_encode = {
+        "sub": username,
+        "groups": groups,
+        "exp": expire,
+        "email": email,
+        "iat": datetime.now(timezone.utc)
+    }
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    
+    return {
+        "access_token": encoded_jwt,
+        "token_type": "bearer",
+        "expires_in_seconds": ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    }
+
 @app.get("/")
 def read_root():
     """Health check endpoint."""
