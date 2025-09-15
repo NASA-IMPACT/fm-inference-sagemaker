@@ -261,7 +261,7 @@ class Downloader:
             'blockxsize': 512,
             'blockysize': 512
         }
-        dst_crs = CRS.from_epsg('EPSG:4326')
+        dst_crs = CRS.from_epsg(4326)
 
         with MemoryFile() as memfile:
             with memfile.open(**src_profile) as src:
