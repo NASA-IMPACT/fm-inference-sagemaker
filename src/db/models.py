@@ -43,7 +43,7 @@ class Inference(Base):
     name = Column(String, nullable=False)
     query = Column(JSON, nullable=True) # contains bbox, date, or date range
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
-    user_email = Column(String(254), nullable=False, unique=True)
+    user_email = Column(String(254), nullable=False)
     finetuned_models = relationship(
         "FinetunedModel",
         secondary=inference_finetuned_model,
