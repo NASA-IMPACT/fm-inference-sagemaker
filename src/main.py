@@ -241,12 +241,12 @@ async def get_token(
     Get a JWT for any authenticated user. The token will contain
     the user's group memberships and can be used to authenticate subsequent requests.
     """
-    ACCESS_TOKEN_EXPIRE_MINUTES = 60
+    ACCESS_TOKEN_EXPIRE_DAYS = 7
     username = claims.get("username")
     groups = claims.get("cognito:groups", [])
     email = claims.get("email", None)
     
-    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     
     to_encode = {
         "sub": username,
@@ -260,7 +260,7 @@ async def get_token(
     return {
         "access_token": encoded_jwt,
         "token_type": "bearer",
-        "expires_in_seconds": ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        "expires_in_days": ACCESS_TOKEN_EXPIRE_DAYS
     }
 
 @app.get("/")

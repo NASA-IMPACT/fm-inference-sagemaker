@@ -10,11 +10,11 @@ class SourceType(str, enum.Enum):
     s3 = "s3"
 
 class FinetunedModelBase(BaseModel):
-    id: Optional[UUID]
+    id: UUID
     name: str
     source_type: SourceType
     source_details: dict
-    created_at: Optional[datetime]
+    created_at: datetime
     data_config: Optional[dict]
 
     class Config:
@@ -24,6 +24,8 @@ class FinetunedModelRead(FinetunedModelBase):
     pass
 
 class FinetunedModelUpdate(FinetunedModelBase):
+    id: Optional[UUID]
+    created_at: Optional[datetime]
     name: Optional[str] = None
     source_type: Optional[SourceType] = SourceType.s3
 
