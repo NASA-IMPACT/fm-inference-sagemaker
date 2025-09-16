@@ -339,7 +339,7 @@ class Downloader:
         start_date = datetime.datetime.strftime(start_time, '%Y-%m-%d')
         return self.prepare_start_end_date(start_date)
 
-    def prepare_merged_file(self, date_range, bbox, layers):
+    def prepare_merged_file(self, date_range, bbox, layers, empty=False, current_merged_file=None):
         # prepare merged file for given date range and bbox
         date = date_range[0].split('T')[0]
         output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, bbox)}_merged.tif"
@@ -383,6 +383,28 @@ class Downloader:
                             merged_files.append(merged_file)
 
         if not merged_files:
+            if empty:
+                # create empty file that has the same shapes and crs as current_merged_file
+                if current_merged_file:
+                    cropped_file = output_filename.replace('.tif', '_cropped.tif')
+                    with rasterio.open(current_merged_file) as src:
+                        meta = src.meta.copy()
+                        meta.update({
+                            "driver": "GTiff",
+                            "count": src.count,
+                            'compress': 'lzw',  # Use a lossless compression
+                            'tiled': True,  # Required for COG,
+                            'blockxsize': 512,
+                            'blockysize': 512,
+                            'dtype': 'float32',
+                            'nodata': -9999
+                        })
+                        empty_data = np.zeros_like((src.count, src.height, src.width), -9999, dtype='float32')
+                        with rasterio.open(cropped_file, "w", **meta) as dst:
+                            dst.write(empty_data)
+                    return cropped_file
+                else:
+                    print("No current merged file provided for empty output.")
             return ''
 
         mosaic, transform = merge(merged_files, method='first')
@@ -403,9 +425,9 @@ class Downloader:
                 post_date_range = self.prepare_date_range(date, delta=DELTA)
                 current_date_range = self.prepare_date_range(date, delta=DELTA)
 
-                pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers)
                 current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
-                post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers)
+                pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
+                post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
 
                 timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
                 print(pre_cropped_file, current_cropped_file, post_cropped_file)
