@@ -58,8 +58,8 @@ def create_preloaded_event(preloaded_event: PreloadedEventUpdate, db: Session = 
     """Create a new preloaded event."""
     try:
         preloaded_event = PreloadedEvent(
-            name=preloaded_event.event_name,
-            details=preloaded_event.event_details,
+            event_name=preloaded_event.event_name,
+            event_details=preloaded_event.event_details,
             inference_id=preloaded_event.inference_id
         )
         db.add(preloaded_event)
