@@ -54,12 +54,12 @@ def get_models_preloaded_events(preloaded_event_id: str, db: Session = Depends(g
         return {"error": str(e)}
 
 @router.post("/", response_model=PreloadedEventRead, status_code=status.HTTP_201_CREATED)
-def create_model(preloaded_event: PreloadedEventUpdate, db: Session = Depends(get_db)):
-    """Create a new finetuned model."""
+def create_preloaded_event(preloaded_event: PreloadedEventUpdate, db: Session = Depends(get_db)):
+    """Create a new preloaded event."""
     try:
         preloaded_event = PreloadedEvent(
             name=preloaded_event.name,
-            details=preloaded_event.details,
+            details=preloaded_event.event_details,
             inference_id=preloaded_event.inference_id
         )
         db.add(preloaded_event)
@@ -71,7 +71,7 @@ def create_model(preloaded_event: PreloadedEventUpdate, db: Session = Depends(ge
 
 @router.delete("/{preloaded_event_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_preloaded_event(preloaded_event_id: str, db: Session = Depends(get_db)):
-    """Delete a finetuned model by ID."""
+    """Delete a preloaded event by ID."""
     # TODO: soft delete and handle related objects
     try:
         preloaded_event = db.query(PreloadedEvent).filter(PreloadedEvent.id == preloaded_event_id).first()

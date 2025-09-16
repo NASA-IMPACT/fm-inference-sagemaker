@@ -17,7 +17,9 @@ class PreloadedEventBase(BaseModel):
 class PreloadedEventRead(PreloadedEventBase):
     inference: Optional["InferenceRead"]
 
-class PreloadedEventUpdate(BaseModel):
-    event_name: Optional[str]
-    event_details: Optional[dict]
+class PreloadedEventUpdate(PreloadedEventBase):
+    event_name: Optional[str] = ''
+    event_details: Optional[dict] = {}
     inference_id: Optional[UUID]
+    created_at: Optional[datetime] = None
+    id: Optional[UUID] = None
