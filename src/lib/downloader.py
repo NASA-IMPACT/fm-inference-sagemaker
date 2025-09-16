@@ -383,7 +383,7 @@ class Downloader:
                             merged_files.append(merged_file)
 
         if not merged_files:
-            raise ValueError("No files found to merge")
+            return ''
 
         mosaic, transform = merge(merged_files, method='first')
         merged_file = self.save_cog(mosaic, transform, output_filename, target_crs)
