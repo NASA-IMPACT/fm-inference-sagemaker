@@ -344,7 +344,7 @@ class Downloader:
         date = date_range[0].split('T')[0]
         output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, bbox)}_merged.tif"
         if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
-            return output_filename
+            return output_filename.replace('.tif', '_cropped.tif')
 
         merged_files = []
         target_crs = None
@@ -445,6 +445,5 @@ class Downloader:
                 cropped_file = self.crop_to_bbox(merged_file)
             else:
                 merged_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers)
-                cropped_file = self.crop_to_bbox(merged_file)
             prepared_data[date] = cropped_file
         return prepared_data
