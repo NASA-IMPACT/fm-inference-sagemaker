@@ -444,6 +444,6 @@ class Downloader:
                 merged_file = self.save_cog(mosaic, transform, output_filename, crs)
                 cropped_file = self.crop_to_bbox(merged_file)
             else:
-                merged_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers)
+                cropped_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers)
             prepared_data[date] = cropped_file
         return prepared_data
