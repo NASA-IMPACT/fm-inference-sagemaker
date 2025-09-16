@@ -384,7 +384,6 @@ class Downloader:
 
         if not merged_files:
             if empty:
-                print(merged_files, empty, current_merged_file)
                 # create empty file that has the same shapes and crs as current_merged_file
                 if current_merged_file:
                     cropped_file = output_filename.replace('.tif', '_cropped.tif')
@@ -400,7 +399,7 @@ class Downloader:
                             'dtype': 'float32',
                             'nodata': -9999
                         })
-                        empty_data = np.zeros_like((src.count, src.height, src.width), -9999, dtype='float32')
+                        empty_data = np.zeros_like(src.read())
                         with rasterio.open(cropped_file, "w", **meta) as dst:
                             dst.write(empty_data)
                     return cropped_file
@@ -424,14 +423,11 @@ class Downloader:
 
                 pre_date_range = self.prepare_date_range(date, delta=-DELTA)
                 post_date_range = self.prepare_date_range(date, delta=DELTA)
-                current_date_range = self.prepare_date_range(date, delta=DELTA)
+                current_date_range = self.prepare_date_range(date, delta=0)
 
                 current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
-                print(current_cropped_file)
                 pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
-                print(pre_cropped_file)
                 post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
-                print(post_cropped_file)
 
                 timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
                 print(pre_cropped_file, current_cropped_file, post_cropped_file)
