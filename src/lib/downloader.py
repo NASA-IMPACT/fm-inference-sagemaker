@@ -205,6 +205,42 @@ class Downloader:
             s.close()
         return output_name
 
+    def reproject_to_crs(self, src_file, dst_file, target_crs):
+        """
+        Reproject a raster file to a target CRS.
+        Args:
+            src_file: Source file path
+            dst_file: Destination file path
+            target_crs: Target CRS to reproject to
+        """
+        with rasterio.open(src_file) as src:
+            # Calculate the transform and dimensions for the target CRS
+            transform, width, height = calculate_default_transform(
+                src.crs, target_crs, src.width, src.height, *src.bounds
+            )
+
+            # Create the destination profile
+            kwargs = src.meta.copy()
+            kwargs.update({
+                'crs': target_crs,
+                'transform': transform,
+                'width': width,
+                'height': height
+            })
+
+            # Reproject and save
+            with rasterio.open(dst_file, 'w', **kwargs) as dst:
+                for i in range(1, src.count + 1):
+                    reproject(
+                        source=rasterio.band(src, i),
+                        destination=rasterio.band(dst, i),
+                        src_transform=src.transform,
+                        src_crs=src.crs,
+                        dst_transform=transform,
+                        dst_crs=target_crs,
+                        resampling=Resampling.nearest
+                    )
+
     def crop_to_bbox(self, filename):
         """
         Crop the input file to the bounding box and resample to 512x512.
@@ -311,6 +347,7 @@ class Downloader:
             return output_filename
 
         merged_files = []
+        target_crs = None
 
         for layer in layers:
             granules = search_data(
@@ -329,11 +366,27 @@ class Downloader:
                 if all(band in ' '.join(links) for band in BANDS[layer]):
                     filenames = self.download_bands(links)
                     merged_file = self.merge_bands(filenames, date, granule.uuid)
-                    merged_files.append(merged_file)
+
+                    # Set target CRS from the first file
+                    if target_crs is None:
+                        with rasterio.open(merged_file) as src:
+                            target_crs = src.crs
+
+                    # Check if the file has the same CRS as target
+                    with rasterio.open(merged_file) as src:
+                        if src.crs != target_crs:
+                            # Reproject to target CRS
+                            reprojected_file = merged_file.replace('.tif', '_reprojected.tif')
+                            self.reproject_to_crs(merged_file, reprojected_file, target_crs)
+                            merged_files.append(reprojected_file)
+                        else:
+                            merged_files.append(merged_file)
+
+        if not merged_files:
+            raise ValueError("No files found to merge")
+
         mosaic, transform = merge(merged_files, method='first')
-        with rasterio.open(merged_files[0], 'r') as src:
-            crs = src.crs
-        merged_file = self.save_cog(mosaic, transform, output_filename, crs)
+        merged_file = self.save_cog(mosaic, transform, output_filename, target_crs)
         cropped_file = self.crop_to_bbox(merged_file)
         return cropped_file
 
@@ -369,6 +422,7 @@ class Downloader:
                 merged_file = self.save_cog(mosaic, transform, output_filename, crs)
                 cropped_file = self.crop_to_bbox(merged_file)
             else:
-                cropped_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers)
+                merged_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers)
+                cropped_file = self.crop_to_bbox(merged_file)
             prepared_data[date] = cropped_file
         return prepared_data
