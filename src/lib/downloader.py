@@ -384,6 +384,7 @@ class Downloader:
 
         if not merged_files:
             if empty:
+                print(merged_files, empty, current_merged_file)
                 # create empty file that has the same shapes and crs as current_merged_file
                 if current_merged_file:
                     cropped_file = output_filename.replace('.tif', '_cropped.tif')
@@ -426,8 +427,11 @@ class Downloader:
                 current_date_range = self.prepare_date_range(date, delta=DELTA)
 
                 current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
+                print(current_cropped_file)
                 pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
+                print(pre_cropped_file)
                 post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
+                print(post_cropped_file)
 
                 timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
                 print(pre_cropped_file, current_cropped_file, post_cropped_file)
