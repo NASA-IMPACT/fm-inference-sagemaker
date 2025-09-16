@@ -418,7 +418,8 @@ class Downloader:
             if self.timeseries:
                 output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, self.bbox)}_timeseries_merged.tif"
                 if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
-                    return output_filename
+                    prepared_data[date] = output_filename
+                    continue
                 timeseries_files = []
 
                 pre_date_range = self.prepare_date_range(date, delta=-DELTA)
