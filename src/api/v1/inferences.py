@@ -83,7 +83,7 @@ def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
         )
         prepared_data = downloader.find_and_prepare_data()
         for date, merged_file in prepared_data.items():
-            if not merged_file:
+            if '.tif' not in merged_file:
                 results[model_id] = results.get(model_id, {})
                 results[model_id][date] = results[model_id].get(date, {})
                 results[model_id][date] = {}
