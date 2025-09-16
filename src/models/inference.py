@@ -17,7 +17,7 @@ class InferenceBase(BaseModel):
 
 class InferenceRead(InferenceBase):
     finetuned_models: Optional[List["FinetunedModelRead"]]
-    preloaded_events: Optional[List["PreloadedEventRead"]]
+    # preloaded_events: Optional[List["PreloadedEventRead"]]
 
     @validator('query', pre=True)
     def validate_query(cls, value):
