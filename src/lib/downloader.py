@@ -74,14 +74,14 @@ class Downloader:
     def prepare_dates(self, dates):
         date_list = []
         if ':' in dates:
-            start_date, end_date = dates.split(':')
+            start_date, end_date = [_date.strip() for _date in dates.split(':')]
             # validate date format
-            end_date_str = start_date.strip()
+            date_list.append(start_date)
+            end_date_str = start_date
             try:
-                while(end_date_str != end_date.strip()):
+                while(end_date_str != end_date):
                     end_date_str = (datetime.datetime.strptime(end_date_str, '%Y-%m-%d') + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-                    if end_date_str != end_date.strip():
-                        date_list.append(end_date_str)
+                    date_list.append(end_date_str)
             except ValueError:
                 raise ValueError("Incorrect date format, should be YYYY-MM-DD")
         elif ',' in dates:
@@ -412,36 +412,54 @@ class Downloader:
         cropped_file = self.crop_to_bbox(merged_file)
         return cropped_file
 
+    def find_first_available_file(self, base_date, buffer, delta=DELTA, direction=1):
+        """Find the earliest (chronologically closest) available merged file going backward (-1) or forward (+1).
+        direction: -1 for pre, +1 for post.
+        Returns path or '' if nothing found within window.
+        """
+        min_delta = delta
+        max_delta = delta + buffer
+        if direction < 0:
+            min_delta, max_delta = max_delta, min_delta
+        base_dt = datetime.datetime.strptime(base_date, '%Y-%m-%d')
+        for step in range(min_delta, max_delta + 1, direction):
+            candidate_dt = base_dt + datetime.timedelta(days=step * direction)
+            candidate_str = candidate_dt.strftime('%Y-%m-%d')
+            date_range = self.prepare_start_end_date(candidate_str)
+            path = self.prepare_merged_file(date_range, self.bbox, self.layers)
+            if path:  # non-empty string means data found
+                return path
+        return ''
+
     def find_and_prepare_data(self):
         prepared_data = {}
         for date in self.dates:
             if self.timeseries:
-                output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, self.bbox)}_timeseries_merged.tif"
-                if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
-                    prepared_data[date] = output_filename
-                    continue
-                timeseries_files = []
-
-                pre_date_range = self.prepare_date_range(date, delta=-DELTA)
-                post_date_range = self.prepare_date_range(date, delta=DELTA)
-                current_date_range = self.prepare_date_range(date, delta=0)
-
+                # First get current date file; if not present skip entirely
+                current_date_range = self.prepare_start_end_date(date)
                 current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
-                pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
-                post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
-
+                if not current_cropped_file:
+                    # Skip this date entirely as per requirement
+                    continue
+                # Find pre and post within window (earliest match)
+                pre_cropped_file = self.find_first_available_file(date, buffer=15, max_delta=DELTA, direction=-1)
+                post_cropped_file = self.find_first_available_file(date, buffer=15, max_delta=DELTA, direction=1)
+                # If none found, create zero (empty) only then
+                if not pre_cropped_file:
+                    pre_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
+                if not post_cropped_file:
+                    post_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
                 timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
-                print(pre_cropped_file, current_cropped_file, post_cropped_file)
-                with rasterio.open(pre_cropped_file) as src, rasterio.open(current_cropped_file) as src2, rasterio.open(post_cropped_file) as src3:
-                    print('shapes:', src.shape, src2.shape, src3.shape)
+                # Build stack
                 stacked_arrays = []
                 for file in timeseries_files:
                     with rasterio.open(file) as src:
                         stacked_arrays.append(src.read())
                 mosaic = np.concatenate(stacked_arrays, axis=0)
-                with rasterio.open(timeseries_files[0]) as src:
-                    transform = src.transform
-                    crs = src.crs
+                output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, self.bbox)}_timeseries_merged.tif"
+                with rasterio.open(current_cropped_file) as src_ref:
+                    transform = src_ref.transform
+                    crs = src_ref.crs
                 merged_file = self.save_cog(mosaic, transform, output_filename, crs)
                 cropped_file = self.crop_to_bbox(merged_file)
             else:
