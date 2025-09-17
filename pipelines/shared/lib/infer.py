@@ -1,9 +1,13 @@
+import json
 import numpy as np
 import rasterio
 import torch
 import yaml
 
 from datetime import datetime
+from rasterio.features import shapes
+
+from lib.data_preparer import QA_INDICES
 from lib.consts import NO_DATA, NO_DATA_FLOAT, MEANS, STDS
 from terratorch.cli_tools import LightningInferenceModel
 
@@ -62,6 +66,86 @@ class Infer:
         print("shape of processed images:", processed_images.shape)
         processed_images = imgs_tensor.unsqueeze(2)
         return processed_images, profiles, coords, temporal
+
+    def calculate_area_from_mask(self, prediction_file, mask_values=[1]):
+        """
+        Calculates the area in square kilometers of a mask in a GeoTIFF file.
+
+        Args:
+            tiff_file_path (str): The path to the GeoTIFF file.
+            mask_value (int): The pixel value representing the masked area.
+                            Defaults to 1 for binary masks.
+
+        Returns:
+            float: The calculated area in square kilometers.
+        """
+        try:
+            # Open the GeoTIFF file
+            areas = {}
+            with rasterio.open(prediction_file) as src:
+                for mask_value in mask_values:
+                    # Read the raster data into a NumPy array
+                    data = src.read(1)  # Assuming the mask is in the first band
+                    # Get the cell size (resolution) in the file's units (e.g., meters)
+                    cell_width, cell_height = src.res
+                    # Calculate the area of a single cell in square meters
+                    cell_area_sqm = abs(cell_width * cell_height)
+                    # Count the number of pixels that match the mask_value
+                    masked_pixel_count = np.sum(data == mask_value)
+                    # Calculate the total area in square meters
+                    total_area_sqm = masked_pixel_count * cell_area_sqm
+                    # Convert the area from square meters to square kilometers
+                    total_area_sqkm = total_area_sqm / 1_000_000
+                    areas[mask_value] = total_area_sqkm
+                return areas
+        except rasterio.errors.RasterioIOError as e:
+            print(f"Error opening or reading file: {e}")
+            return None
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return None
+
+    def qa_flags_to_geojson(self, image_file, qa_flags, timeseries=False):
+        """
+        Convert predicted masks to GeoJSON format.
+        Args:
+            image_files (list): List of input image file paths.
+
+        Returns:
+            list: List of GeoJSON features.
+        """
+        geojson_features = []
+        def get_qa_mask(tile, qa_flags):
+            combined = np.zeros_like(tile).astype('uint')
+            for qa_flag in qa_flags:
+                qa_index = QA_INDICES.get(qa_flag)
+                flag = tile[6].astype('uint') & (1 << qa_index) != 0
+                combined |= flag
+            return combined
+        with rasterio.open(image_file) as src:
+            profile = src.profile
+            tile = src.read()
+            if timeseries:
+                mask = get_qa_mask(tile[9:16], qa_flags)
+            else:
+                mask = get_qa_mask(tile, qa_flags)
+            transform = profile['transform']
+            mask = mask.astype('uint8')  # Ensure mask is in uint8 format
+
+            for shape, value in shapes(mask, transform=transform):
+                if value != 0:  # Ignore background
+                    feature = {
+                        "type": "Feature",
+                        "geometry": shape,
+                        "properties": {"value": int(value)}
+                    }
+                    geojson_features.append(feature)
+        geojson = {
+            "type": "FeatureCollection",
+            "features": geojson_features
+        }
+        return geojson
+
 
     def infer(self, images, date):
         """
