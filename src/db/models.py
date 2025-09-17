@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, DateTime, Enum, ForeignKey, CheckConstraint, Table, JSON
+    Column, String, DateTime, Enum, ForeignKey, Boolean, Table, JSON, CheckConstraint
+
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
@@ -29,7 +30,6 @@ class FinetunedModel(Base):
     source_details = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     data_config = Column(JSON, nullable=True)
-
 class Inference(Base):
     __tablename__ = "inferences"
     __table_args__ = (

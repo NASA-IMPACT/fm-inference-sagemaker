@@ -16,6 +16,7 @@ from pyproj import Transformer
 
 from shapely.geometry import box
 
+from rasterio.crs import CRS
 from rasterio.io import MemoryFile
 from rasterio.merge import merge
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -42,15 +43,14 @@ WIDTH, HEIGHT = (512, 512)
 DELTA = 90
 
 class Downloader:
-    def __init__(self, date, bbox, layers=LAYERS['HLS'], timeseries=False):
+    def __init__(self, dates, bbox, layers=LAYERS['HLS'], timeseries=False):
         """
         Initialize Downloader
         Args:
             date (str): Date in the format of 'yyyy-mm-dd'
             layer (str): any of HLSL30, HLSS30
         """
-        self.date = date
-        self.date_range = (f"{date}T00:00:00Z", f"{date}T23:59:59Z")
+        self.dates = self.prepare_dates(dates)
         self.layers = layers
         self.bbox = bbox
         self.timeseries = timeseries
@@ -67,6 +67,37 @@ class Downloader:
         key = f"{date}|{','.join(map(str, bbox))}"
         digest = hashlib.sha256(key.encode('utf-8')).hexdigest()
         return digest
+
+    def prepare_start_end_date(self, date):
+        return (f"{date}T00:00:00Z", f"{date}T23:59:59Z")
+
+    def prepare_dates(self, dates):
+        date_list = []
+        if ':' in dates:
+            start_date, end_date = dates.split(':')
+            # validate date format
+            end_date_str = start_date.strip()
+            try:
+                while(end_date_str != end_date.strip()):
+                    end_date_str = (datetime.datetime.strptime(end_date_str, '%Y-%m-%d') + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+                    if end_date_str != end_date.strip():
+                        date_list.append(end_date_str)
+            except ValueError:
+                raise ValueError("Incorrect date format, should be YYYY-MM-DD")
+        elif ',' in dates:
+            date_list = dates.split(',')
+            for date in date_list:
+                try:
+                    datetime.datetime.strptime(date, '%Y-%m-%d')
+                except ValueError:
+                    raise ValueError("Incorrect date format, should be YYYY-MM-DD")
+        else:
+            date_list = [dates]
+            try:
+                datetime.datetime.strptime(dates, '%Y-%m-%d')
+            except ValueError:
+                raise ValueError("Incorrect date format, should be YYYY-MM-DD")
+        return date_list
 
     def login(self):
         self.auth = earthaccess.login(strategy="environment")
@@ -136,14 +167,14 @@ class Downloader:
             if batch:
                 yield batch
 
-    def merge_bands(self, filenames, uuid):
+    def merge_bands(self, filenames, date, uuid):
         """
         Merge input files into a single 7-band TIFF, cropped to the bbox.
         Args:
             filenames: list of file paths for each band
             output_name: output file name
         """
-        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}-{uuid}.tif"
+        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, self.bbox)}-{uuid}.tif"
         if os.path.exists(output_name):
             print(f"File {output_name} already exists. Skipping merge.")
             return output_name
@@ -174,6 +205,42 @@ class Downloader:
             s.close()
         return output_name
 
+    def reproject_to_crs(self, src_file, dst_file, target_crs):
+        """
+        Reproject a raster file to a target CRS.
+        Args:
+            src_file: Source file path
+            dst_file: Destination file path
+            target_crs: Target CRS to reproject to
+        """
+        with rasterio.open(src_file) as src:
+            # Calculate the transform and dimensions for the target CRS
+            transform, width, height = calculate_default_transform(
+                src.crs, target_crs, src.width, src.height, *src.bounds
+            )
+
+            # Create the destination profile
+            kwargs = src.meta.copy()
+            kwargs.update({
+                'crs': target_crs,
+                'transform': transform,
+                'width': width,
+                'height': height
+            })
+
+            # Reproject and save
+            with rasterio.open(dst_file, 'w', **kwargs) as dst:
+                for i in range(1, src.count + 1):
+                    reproject(
+                        source=rasterio.band(src, i),
+                        destination=rasterio.band(dst, i),
+                        src_transform=src.transform,
+                        src_crs=src.crs,
+                        dst_transform=transform,
+                        dst_crs=target_crs,
+                        resampling=Resampling.nearest
+                    )
+
     def crop_to_bbox(self, filename):
         """
         Crop the input file to the bounding box and resample to 512x512.
@@ -191,7 +258,7 @@ class Downloader:
             # Create bbox geometry in WGS84
             minx, miny, maxx, maxy = self.bbox
             bbox_geom = box(minx, miny, maxx, maxy)
-            bbox_gdf = gpd.GeoDataFrame([1], geometry=[bbox_geom], crs='EPSG:4326')
+            bbox_gdf = gpd.GeoDataFrame([1], geometry=[bbox_geom], crs=CRS.from_epsg(4326))
 
             out_image, out_transform = mask(src, bbox_gdf.geometry, crop=True)
 
@@ -230,7 +297,7 @@ class Downloader:
             'blockxsize': 512,
             'blockysize': 512
         }
-        dst_crs = 'EPSG:4326'
+        dst_crs = CRS.from_epsg(4326)
 
         with MemoryFile() as memfile:
             with memfile.open(**src_profile) as src:
@@ -270,16 +337,17 @@ class Downloader:
         date_obj = datetime.datetime.strptime(date, '%Y-%m-%d')
         start_time = date_obj + datetime.timedelta(days=delta)
         start_date = datetime.datetime.strftime(start_time, '%Y-%m-%d')
-        return (f"{start_date}T00:00:00Z", f"{start_date}T23:59:59Z")
+        return self.prepare_start_end_date(start_date)
 
-    def prepare_merged_file(self, date_range, bbox, layers):
+    def prepare_merged_file(self, date_range, bbox, layers, empty=False, current_merged_file=None):
         # prepare merged file for given date range and bbox
         date = date_range[0].split('T')[0]
         output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, bbox)}_merged.tif"
         if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
-            return output_filename
+            return output_filename.replace('.tif', '_cropped.tif')
 
         merged_files = []
+        target_crs = None
 
         for layer in layers:
             granules = search_data(
@@ -297,44 +365,86 @@ class Downloader:
                 ]
                 if all(band in ' '.join(links) for band in BANDS[layer]):
                     filenames = self.download_bands(links)
-                    merged_file = self.merge_bands(filenames, granule.uuid)
-                    merged_files.append(merged_file)
+                    merged_file = self.merge_bands(filenames, date, granule.uuid)
+
+                    # Set target CRS from the first file
+                    if target_crs is None:
+                        with rasterio.open(merged_file) as src:
+                            target_crs = src.crs
+
+                    # Check if the file has the same CRS as target
+                    with rasterio.open(merged_file) as src:
+                        if src.crs != target_crs:
+                            # Reproject to target CRS
+                            reprojected_file = merged_file.replace('.tif', '_reprojected.tif')
+                            self.reproject_to_crs(merged_file, reprojected_file, target_crs)
+                            merged_files.append(reprojected_file)
+                        else:
+                            merged_files.append(merged_file)
+
+        if not merged_files:
+            if empty:
+                # create empty file that has the same shapes and crs as current_merged_file
+                if current_merged_file:
+                    cropped_file = output_filename.replace('.tif', '_cropped.tif')
+                    with rasterio.open(current_merged_file) as src:
+                        meta = src.meta.copy()
+                        meta.update({
+                            "driver": "GTiff",
+                            "count": src.count,
+                            'compress': 'lzw',  # Use a lossless compression
+                            'tiled': True,  # Required for COG,
+                            'blockxsize': 512,
+                            'blockysize': 512,
+                            'dtype': 'float32',
+                            'nodata': -9999
+                        })
+                        empty_data = np.zeros_like(src.read())
+                        with rasterio.open(cropped_file, "w", **meta) as dst:
+                            dst.write(empty_data)
+                    return cropped_file
+                else:
+                    print("No current merged file provided for empty output.")
+            return ''
+
         mosaic, transform = merge(merged_files, method='first')
-        with rasterio.open(merged_files[0], 'r') as src:
-            crs = src.crs
-        merged_file = self.save_cog(mosaic, transform, output_filename, crs)
+        merged_file = self.save_cog(mosaic, transform, output_filename, target_crs)
         cropped_file = self.crop_to_bbox(merged_file)
         return cropped_file
 
     def find_and_prepare_data(self):
-        if self.timeseries:
-            output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(self.date, self.bbox)}_timeseries_merged.tif"
-            if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
-                return output_filename
-            timeseries_files = []
+        prepared_data = {}
+        for date in self.dates:
+            if self.timeseries:
+                output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, self.bbox)}_timeseries_merged.tif"
+                if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
+                    prepared_data[date] = output_filename
+                    continue
+                timeseries_files = []
 
-            pre_date_range = self.prepare_date_range(self.date, delta=-DELTA)
-            post_date_range = self.prepare_date_range(self.date, delta=DELTA)
-            current_date_range = self.date_range
+                pre_date_range = self.prepare_date_range(date, delta=-DELTA)
+                post_date_range = self.prepare_date_range(date, delta=DELTA)
+                current_date_range = self.prepare_date_range(date, delta=0)
 
-            pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers)
-            current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
-            post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers)
+                current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
+                pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
+                post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
 
-            timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
-            print(pre_cropped_file, current_cropped_file, post_cropped_file)
-            with rasterio.open(pre_cropped_file) as src, rasterio.open(current_cropped_file) as src2, rasterio.open(post_cropped_file) as src3:
-                print('shapes:', src.shape, src2.shape, src3.shape)
-            stacked_arrays = []
-            for file in timeseries_files:
-                with rasterio.open(file) as src:
-                    stacked_arrays.append(src.read())
-            mosaic = np.concatenate(stacked_arrays, axis=0)
-            with rasterio.open(timeseries_files[0]) as src:
-                transform = src.transform
-                crs = src.crs
-            merged_file = self.save_cog(mosaic, transform, output_filename, crs)
-            cropped_file = self.crop_to_bbox(merged_file)
-        else:
-            cropped_file = self.prepare_merged_file(self.date_range, self.bbox, self.layers)
-        return cropped_file
+                timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
+                print(pre_cropped_file, current_cropped_file, post_cropped_file)
+                with rasterio.open(pre_cropped_file) as src, rasterio.open(current_cropped_file) as src2, rasterio.open(post_cropped_file) as src3:
+                    print('shapes:', src.shape, src2.shape, src3.shape)
+                stacked_arrays = []
+                for file in timeseries_files:
+                    with rasterio.open(file) as src:
+                        stacked_arrays.append(src.read())
+                mosaic = np.concatenate(stacked_arrays, axis=0)
+                with rasterio.open(timeseries_files[0]) as src:
+                    transform = src.transform
+                    crs = src.crs
+                merged_file = self.save_cog(mosaic, transform, output_filename, crs)
+                cropped_file = self.crop_to_bbox(merged_file)
+            else:
+                cropped_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers)
+            prepared_data[date] = cropped_file
+        return prepared_data
