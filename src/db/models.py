@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, DateTime, Enum, ForeignKey, Boolean, Table, JSON, CheckConstraint
+
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
@@ -27,7 +28,7 @@ class FinetunedModel(Base):
     name = Column(String, nullable=False)
     source_type = Column(Enum(SourceType), nullable=False)
     source_details = Column(JSON, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     data_config = Column(JSON, nullable=True)
 class Inference(Base):
     __tablename__ = "inferences"
@@ -57,6 +58,6 @@ class PreloadedEvent(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     event_name = Column(String, nullable=False)
     event_details = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     inference_id = Column(UUID(as_uuid=True), ForeignKey("inferences.id"), nullable=True)
     inference = relationship("Inference", backref="preloaded_events")

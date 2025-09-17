@@ -1,8 +1,5 @@
-import time
-from typing import Dict, List
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
 from datetime import datetime, timedelta
 
 from ...db.database import get_db
@@ -14,7 +11,7 @@ from ...models.preloaded_event import PreloadedEventRead, PreloadedEventUpdate
 
 router = APIRouter(prefix="/v1/preloaded_events", tags=["preloaded_events"])
 
-@router.get("/", response_model=List[PreloadedEventRead], status_code=status.HTTP_200_OK)
+@router.get("/", response_model=list[PreloadedEventRead], status_code=status.HTTP_200_OK)
 def get_preloaded_events(db: Session = Depends(get_db)):
     """Get all preloaded events."""
     try:
@@ -38,7 +35,7 @@ def get_preloaded_events(preloaded_events_id: str, db: Session = Depends(get_db)
     except Exception as e:
         return {"error": str(e)}
 
-@router.get("/{preloaded_event_id}/models", response_model=List[FinetunedModelRead], status_code=status.HTTP_200_OK)
+@router.get("/{preloaded_event_id}/models", response_model=list[FinetunedModelRead], status_code=status.HTTP_200_OK)
 def get_models_preloaded_events(preloaded_event_id: str, db: Session = Depends(get_db)):
     """Get preloaded events associated with a specific model."""
     try:

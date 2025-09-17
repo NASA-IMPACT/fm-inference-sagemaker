@@ -23,8 +23,9 @@ class FinetunedModelBase(BaseModel):
 class FinetunedModelRead(FinetunedModelBase):
     pass
 
-class FinetunedModelUpdate(BaseModel):
+class FinetunedModelUpdate(FinetunedModelBase):
+    id: Optional[UUID]
+    created_at: Optional[datetime]
     name: Optional[str] = None
     source_type: Optional[SourceType] = SourceType.s3
-    source_details: Optional[dict] = None
-    data_config: Optional[dict] = None
+

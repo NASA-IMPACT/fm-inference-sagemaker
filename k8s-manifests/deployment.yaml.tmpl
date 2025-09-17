@@ -50,6 +50,12 @@ spec:
             value: "${EARTHDATA_USERNAME}"
           - name: EARTHDATA_PASSWORD
             value: "${EARTHDATA_PASSWORD}"
+          - name: COGNITO_USER_POOL_ID
+            value: "${COGNITO_USER_POOL_ID}"
+          - name: COGNITO_CLIENT_SECRET
+            value: "${COGNITO_CLIENT_SECRET}"
+          - name: COGNITO_CLIENT_ID
+            value: "${COGNITO_CLIENT_ID}"
           envFrom:
             - configMapRef:
                 name: oidc-envs
