@@ -29,7 +29,7 @@ class TokenRequest(BaseModel):
 
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "676b780b2067723bef14910a7ad9e0ae5e3a14725dc1d7f08bb6fec6ff1e0e6a")
 ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL")
+COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID")
 COGNITO_CLIENT_SECRET = os.environ.get("COGNITO_CLIENT_SECRET")
 COGNITO_CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID")
 AWS_REGION = os.environ.get("AWS_REGION", "us-west-2")
