@@ -27,6 +27,28 @@ def get_models(db: Session = Depends(get_db)):
     except Exception as e:
         return {"error": str(e)}
 
+
+@router.post("/", status_code=status.HTTP_201_CREATED)
+def create_model(model: FinetunedModelUpdate, db: Session = Depends(get_db)):
+    """Create a new finetuned model."""
+    try:
+        db_model = FinetunedModel(
+            name=model.name,
+            source_type=model.source_type,
+            source_details=model.source_details,
+            data_config=model.data_config
+        )
+        db.add(db_model)
+        db.commit()
+        db.refresh(db_model)
+        return {"message": f"Model {model.name} was created successfully!"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+
+
+
 @router.get("/{model_id}", response_model=FinetunedModelRead, status_code=status.HTTP_200_OK)
 def get_model(model_id: str, db: Session = Depends(get_db)):
     """Get a specific model by ID."""
@@ -66,22 +88,7 @@ def get_model_preloaded_events(model_id: str, db: Session = Depends(get_db)):
     except Exception as e:
         return {"error": str(e)}
 
-@router.post("/", response_model=FinetunedModelRead, status_code=status.HTTP_201_CREATED)
-def create_model(model: FinetunedModelUpdate, db: Session = Depends(get_db)):
-    """Create a new finetuned model."""
-    try:
-        db_model = FinetunedModel(
-            name=model.name,
-            source_type=model.source_type,
-            source_details=model.source_details,
-            data_config=model.data_config
-        )
-        db.add(db_model)
-        db.commit()
-        db.refresh(db_model)
-        return db_model
-    except Exception as e:
-        return {"error": str(e)}
+
 
 @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_model(model_id: str, db: Session = Depends(get_db)):
