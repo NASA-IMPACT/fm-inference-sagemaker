@@ -96,8 +96,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Authentication functions (keep these in main.py) ---
-oauth2_scheme = HTTPBearer(auto_error=False)
+
+oauth2_scheme = HTTPBearer(auto_error=True)
 
 
 def get_user_groups_from_cognito(username: str) -> list[str]:
