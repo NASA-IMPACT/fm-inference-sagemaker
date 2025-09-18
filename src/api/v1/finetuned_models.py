@@ -29,7 +29,7 @@ def get_models(db: Session = Depends(get_db)):
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
-def create_model(model: FinetunedModelUpdate, db: Session = Depends(get_db)):
+def create_model(model: FinetunedModelCreate, db: Session = Depends(get_db)):
     """Create a new finetuned model."""
     try:
         db_model = FinetunedModel(

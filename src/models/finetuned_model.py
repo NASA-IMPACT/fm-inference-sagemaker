@@ -24,8 +24,8 @@ class FinetunedModelRead(FinetunedModelBase):
     pass
 
 class FinetunedModelUpdate(FinetunedModelBase):
-    id: Optional[UUID]
-    created_at: Optional[datetime]
+    id: Optional[UUID] = None
+    created_at: Optional[datetime] = None
     name: Optional[str] = None
     source_type: Optional[SourceType] = SourceType.s3
 
