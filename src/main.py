@@ -264,12 +264,19 @@ async def authenticate_with_cognito(username: str, password: str) -> dict:
         if COGNITO_CLIENT_SECRET:
             auth_params['SECRET_HASH'] = get_secret_hash(username, COGNITO_CLIENT_ID, COGNITO_CLIENT_SECRET)
         
-        auth_response = cognito_client.admin_initiate_auth(
-            UserPoolId=COGNITO_USER_POOL_ID,
+        # Use USER_PASSWORD_AUTH instead of USER_SRP_AUTH
+        auth_response = cognito_client.initiate_auth(
             ClientId=COGNITO_CLIENT_ID,
-            AuthFlow='ADMIN_NO_SRP_AUTH',
+            AuthFlow='USER_PASSWORD_AUTH',
             AuthParameters=auth_params
         )
+        
+        # Check if authentication completed or if there's a challenge
+        if 'ChallengeName' in auth_response:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Authentication challenge required: {auth_response['ChallengeName']}"
+            )
         
         # Extract access token from auth response
         access_token = auth_response['AuthenticationResult']['AccessToken']
