@@ -12,6 +12,8 @@ COPY requirements.txt /app/
 
 RUN pip install uv && uv pip install -r /app/requirements.txt --system
 
+# Dummy copy in case the migration needs to run 
+COPY alembic /tmp
 
 # Copy the db_migration
 COPY db_migration.sh /db_migration.sh
