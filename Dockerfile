@@ -12,6 +12,11 @@ COPY requirements.txt /app/
 
 RUN pip install uv && uv pip install -r /app/requirements.txt --system
 
+
+# Copy the db_migration
+COPY db_migration.sh /db_migration.sh
+RUN bash /db_migration.sh
+
 # Copy the rest of the application
 COPY . /app/
 
