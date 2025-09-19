@@ -2,16 +2,13 @@ import time
 import requests
 
 from typing import Dict, List, Callable, Any
-from fastapi import APIRouter, Depends, Query, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from ...db.database import get_db
 from ...db.models import FinetunedModel, Inference, PreloadedEvent
 from ...lib.downloader import Downloader
-from ...lib.utils import get_api_key
-from ...models.finetuned_model import FinetunedModelRead
 from ...models.inference import InferenceRead, InferenceUpdate
 from ...models.preloaded_event import PreloadedEventRead
 

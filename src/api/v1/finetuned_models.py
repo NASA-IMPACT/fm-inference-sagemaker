@@ -1,8 +1,6 @@
 from typing import Dict, List
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
-from datetime import datetime, timedelta
 
 from ...db.database import get_db
 from ...db.models import FinetunedModel, Inference, PreloadedEvent
