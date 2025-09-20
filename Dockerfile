@@ -12,15 +12,19 @@ COPY requirements.txt /app/
 
 RUN pip install uv && uv pip install -r /app/requirements.txt --system
 
-# Dummy copy in case the migration needs to run 
-COPY alembic /tmp
+COPY alembic /app
 
-# Copy the db_migration
-COPY db_migration.sh /db_migration.sh
-RUN bash /db_migration.sh
+ADD alembic.ini /app
+
+ARG DATABASE_URL
+
+ENV DATABASE_URL=$DATABASE_URL
+
+RUN alembic -x dburl="${DATABASE_URL}" revision --autogenerate -m "create tables" && \
+    alembic -x dburl="${DATABASE_URL}" upgrade head
 
 # Copy the rest of the application
-COPY . /app/
+COPY src /app/src
 
 # Expose port
 EXPOSE 8000

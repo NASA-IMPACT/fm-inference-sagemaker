@@ -8,10 +8,12 @@ if [[ -z "$ECR_URL" || -z "$INGRESS_HOST" ]]; then
     exit 1
 fi
 
+
 # Build the image first to get the digest
 TEMP_IMAGE_NAME="inference:temp"
 echo "Building temporary image to get digest: $TEMP_IMAGE_NAME"
-docker build -t $TEMP_IMAGE_NAME .
+# Run the migration during the build
+docker build --build-arg DATABASE_URL=$DATABASE_URL -t $TEMP_IMAGE_NAME .
 
 cd pipelines
 

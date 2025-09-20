@@ -11,7 +11,7 @@ fi
 # Build the image first to get the digest
 TEMP_IMAGE_NAME="inference_pipelines:temp"
 echo "Building temporary image to get digest: $TEMP_IMAGE_NAME"
-docker buildx build --platform linux/amd64 -t $TEMP_IMAGE_NAME . -f floods/Dockerfile
+docker build -t $TEMP_IMAGE_NAME . -f floods/Dockerfile
 
 # Get the image digest (content-based hash) - extract only the hash portion
 IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)

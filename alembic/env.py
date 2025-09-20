@@ -78,6 +78,17 @@ def run_migrations_online() -> None:
         with context.begin_transaction():
             context.run_migrations()
 
+def get_url():
+    url = context.get_x_argument(as_dictionary=True).get('dburl')
+    if url:
+        return url
+    
+    # Fallback to environment variable
+    return os.environ.get('DATABASE_URL', 
+                         config.get_main_option("sqlalchemy.url"))
+
+
+config.set_main_option('sqlalchemy.url', get_url())
 
 if context.is_offline_mode():
     run_migrations_offline()
