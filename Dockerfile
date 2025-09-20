@@ -20,8 +20,8 @@ ARG DATABASE_URL
 
 ENV DATABASE_URL=$DATABASE_URL
 
-RUN alembic -x dburl="${DATABASE_URL}" revision --autogenerate -m "create tables" && \
-    alembic -x dburl="${DATABASE_URL}" upgrade head
+# RUN alembic -x dburl="${DATABASE_URL}" revision --autogenerate -m "create tables" && \
+#     alembic -x dburl="${DATABASE_URL}" upgrade head
 
 # Copy the rest of the application
 COPY src /app/src
