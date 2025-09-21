@@ -204,16 +204,16 @@ app.include_router(preloaded_events_router)
 @app.post("/create-token", tags=["Authentication"])
 async def create_token(
     body: TokenRequest,
-    claims: dict[str, Any] = Depends(require_alb_authentication),
+    custom_token_payload: Optional[dict[str, Any]] = Depends(verify_custom_token),
     
 ):
     """
     Create a token to access the API.
     Only users belonging to the specified groups are allowed to create tokens for one or more of that groups.
     """
-    username = claims.get("username")
-    email = claims.get("email")
-    groups = claims.get("cognito:groups", [])
+    username = custom_token_payload.get("sub")
+    email = custom_token_payload.get("email")
+    groups = custom_token_payload.get("groups", [])
     # Maximum 90 days
     expires_in_days = min(90, body.expires_in_days)
     expire = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
@@ -235,6 +235,8 @@ async def create_token(
         "token_type": "bearer",
         "expires_in_days": expires_in_days
     }
+
+
 
 
 class LoginRequest(BaseModel):

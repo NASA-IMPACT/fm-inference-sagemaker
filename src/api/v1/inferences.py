@@ -127,13 +127,18 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         return inference_orm
 
     @router.delete("/{inference_id}", status_code=status.HTTP_204_NO_CONTENT)
-    def delete_inference(inference_id: str, db: Session = Depends(get_db)):
+    def delete_inference(inference_id: str,
+                        claims: Dict[str, Any] = Depends(auth_dependency), 
+                        db: Session = Depends(get_db)):
         """Delete a finetuned model by ID."""
         # TODO: soft delete and handle related objects
         try:
             inference = db.query(Inference).filter(Inference.id == inference_id).first()
             if not inference:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inference not found")
+            user_email = claims.get("email")
+            if user_email != inference.user_email:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Action not allowed")
             db.delete(inference)
             db.commit()
             return {"message": "Inference deleted successfully"}
