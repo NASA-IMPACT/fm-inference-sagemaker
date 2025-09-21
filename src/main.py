@@ -204,7 +204,7 @@ app.include_router(preloaded_events_router)
 @app.post("/create-token", tags=["Authentication"])
 async def create_token(
     body: TokenRequest,
-    custom_token_payload: Optional[dict[str, Any]] = Depends(verify_custom_token),
+    custom_token_payload: Optional[dict[str, Any]] = Depends(verify_custom_token)
     
 ):
     """
