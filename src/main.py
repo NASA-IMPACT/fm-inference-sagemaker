@@ -1,18 +1,22 @@
+import base64
+import boto3
+import hashlib
+import hmac
+import json
+import logging
+import os
+import
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
 from fastapi import FastAPI, Request, Depends, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from contextlib import asynccontextmanager
-import os
-from datetime import datetime, timezone, timedelta
+
 from jose import JWTError, jwt
-import logging
-from typing import Any, Optional
 from pydantic import BaseModel, Field
-import base64
-import json
-import boto3
-import hmac
-import hashlib
+from starlette.middleware.base import BaseHTTPMiddleware
+from typing import Any, Optional
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -25,7 +29,19 @@ from .api.v1 import (
 class TokenRequest(BaseModel):
     grouplist: list[str]
     expires_in_days: int = Field(default=1, ge=1)
-                                 
+
+
+class NormalizeTrailingSlashMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        # Normalize the path to always have a trailing slash
+        if not request.url.path.endswith("/") and request.url.path != "/":
+            url = request.url._replace(path=request.url.path + "/")
+            request.scope["path"] = url.path  # Normalize the path in the request scope
+
+        # Proceed with the regular response
+        response = await call_next(request)
+        return response
+
 
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "676b780b2067723bef14910a7ad9e0ae5e3a14725dc1d7f08bb6fec6ff1e0e6a")
 ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
@@ -96,6 +112,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.add_middleware(NormalizeTrailingSlashMiddleware)
+
 # --- Authentication functions (keep these in main.py) ---
 oauth2_scheme = HTTPBearer(auto_error=False)
 
@@ -106,20 +124,20 @@ def get_user_groups_from_cognito(username: str) -> list[str]:
         if not COGNITO_USER_POOL_ID:
             logger.error("COGNITO_USER_POOL_ID not set, cannot fetch groups")
             return []
-            
+
         client = boto3.client('cognito-idp', region_name=AWS_REGION)
-        
+
         logger.info(f"Fetching groups for user: {username} from pool: {COGNITO_USER_POOL_ID}")
-        
+
         response = client.admin_list_groups_for_user(
             UserPoolId=COGNITO_USER_POOL_ID,
             Username=username
         )
-        
+
         groups = [group['GroupName'] for group in response.get('Groups', [])]
         logger.info(f"User {username} belongs to groups: {groups}")
         return groups
-        
+
     except Exception as e:
         logger.error(f"Error fetching user groups from Cognito: {type(e).__name__}: {str(e)}")
         return []
@@ -130,17 +148,17 @@ async def verify_cognito_token(
     """Dependency to validate Cognito access tokens directly."""
     if not creds:
         return None
-    
+
     token = creds.credentials
     try:
         client = boto3.client('cognito-idp', region_name=AWS_REGION)
         response = client.get_user(AccessToken=token)
-        
+
         username = response['Username']
         groups = get_user_groups_from_cognito(username)
-        
+
         logger.info(f"Successfully authenticated user '{username}' via Cognito token")
-        
+
         return {
             "sub": username,
             "username": username,
@@ -160,14 +178,14 @@ async def verify_custom_token(
     """Dependency to validate the custom-generated bearer token."""
     if not creds:
         return None
-    
+
     token = creds.credentials
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except JWTError:
         return None
-    
+
 
 async def general_access_dependency(
     request: Request,
@@ -205,7 +223,7 @@ app.include_router(preloaded_events_router)
 async def create_token(
     body: TokenRequest,
     custom_token_payload: Optional[dict[str, Any]] = Depends(verify_custom_token)
-    
+
 ):
     """
     Create a token to access the API.
@@ -229,7 +247,7 @@ async def create_token(
         "iat": datetime.now(timezone.utc)
     }
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    
+
     return {
         "access_token": encoded_jwt,
         "token_type": "bearer",
@@ -261,44 +279,44 @@ async def authenticate_with_cognito(username: str, password: str) -> dict:
             'USERNAME': username,
             'PASSWORD': password,
         }
-        
+
         # Add SECRET_HASH if your app client has a secret
         if COGNITO_CLIENT_SECRET:
             auth_params['SECRET_HASH'] = get_secret_hash(username, COGNITO_CLIENT_ID, COGNITO_CLIENT_SECRET)
-        
+
         # Use USER_PASSWORD_AUTH instead of USER_SRP_AUTH
         auth_response = cognito_client.initiate_auth(
             ClientId=COGNITO_CLIENT_ID,
             AuthFlow='USER_PASSWORD_AUTH',
             AuthParameters=auth_params
         )
-        
+
         # Check if authentication completed or if there's a challenge
         if 'ChallengeName' in auth_response:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"Authentication challenge required: {auth_response['ChallengeName']}"
             )
-        
+
         # Extract access token from auth response
         access_token = auth_response['AuthenticationResult']['AccessToken']
-        
+
         # Get user info using the access token (more efficient than admin_get_user)
         user_response = cognito_client.get_user(AccessToken=access_token)
-        
+
         # Extract user attributes
         user_attributes = {}
         for attr in user_response['UserAttributes']:
             user_attributes[attr['Name']] = attr['Value']
-        
+
         # Get user groups
         groups_response = cognito_client.admin_list_groups_for_user(
             UserPoolId=COGNITO_USER_POOL_ID,
             Username=username
         )
-        
+
         groups = [group['GroupName'] for group in groups_response['Groups']]
-        
+
         return {
             'username': username,
             'email': user_attributes.get('email'),
@@ -308,7 +326,7 @@ async def authenticate_with_cognito(username: str, password: str) -> dict:
             'id_token': auth_response['AuthenticationResult'].get('IdToken'),
             'refresh_token': auth_response['AuthenticationResult'].get('RefreshToken')
         }
-        
+
     except cognito_client.exceptions.NotAuthorizedException:
         raise HTTPException(status_code=401, detail="Invalid username or password")
     except cognito_client.exceptions.UserNotFoundException:
@@ -321,7 +339,7 @@ async def authenticate_with_cognito(username: str, password: str) -> dict:
 def create_jwt_token(user_data: dict, expire_days: int = 7) -> dict:
     """Create JWT token from user data"""
     expire = datetime.now(timezone.utc) + timedelta(days=expire_days)
-    
+
     to_encode = {
         "sub": user_data["username"],
         "groups": user_data.get("cognito:groups", []),
@@ -329,9 +347,9 @@ def create_jwt_token(user_data: dict, expire_days: int = 7) -> dict:
         "email": user_data.get("email"),
         "iat": datetime.now(timezone.utc)
     }
-    
+
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    
+
     return {
         "access_token": encoded_jwt,
         "token_type": "bearer",
@@ -345,10 +363,10 @@ async def login_with_credentials(login_request: LoginRequest):
     Authenticate with username and password to get a JWT token.
     """
     user_data = await authenticate_with_cognito(
-        login_request.username, 
+        login_request.username,
         login_request.password
     )
-    
+
     return create_jwt_token(user_data)
 
 # Your existing ALB authentication endpoint (modified to use the helper function)
