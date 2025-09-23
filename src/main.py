@@ -20,6 +20,17 @@ from typing import Any, Optional
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
+AWS_REGION = os.environ.get("AWS_REGION", "us-west-2")
+
+COGNITO_CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID")
+COGNITO_CLIENT_SECRET = os.environ.get("COGNITO_CLIENT_SECRET")
+COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID")
+
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "676b780b2067723bef14910a7ad9e0ae5e3a14725dc1d7f08bb6fec6ff1e0e6a")
+
+cognito_client = boto3.client('cognito-idp', region_name=AWS_REGION)
+
 from .api.v1 import (
     create_inference_router,
     models_router,
@@ -42,14 +53,6 @@ class NormalizeTrailingSlashMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         return response
 
-
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "676b780b2067723bef14910a7ad9e0ae5e3a14725dc1d7f08bb6fec6ff1e0e6a")
-ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID")
-COGNITO_CLIENT_SECRET = os.environ.get("COGNITO_CLIENT_SECRET")
-COGNITO_CLIENT_ID = os.environ.get("COGNITO_CLIENT_ID")
-AWS_REGION = os.environ.get("AWS_REGION", "us-west-2")
-cognito_client = boto3.client('cognito-idp', region_name=AWS_REGION)
 
 async def require_alb_authentication(request: Request) -> dict[str, Any]:
     """Dependency to ensure a user is authenticated by the ALB."""
