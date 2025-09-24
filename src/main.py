@@ -116,7 +116,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.add_middleware(NormalizeTrailingSlashMiddleware)
+# app.add_middleware(NormalizeTrailingSlashMiddleware)
 
 # --- Authentication functions (keep these in main.py) ---
 oauth2_scheme = HTTPBearer(auto_error=False)
