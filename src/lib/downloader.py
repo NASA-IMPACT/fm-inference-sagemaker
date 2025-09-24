@@ -401,7 +401,6 @@ class Downloader:
                             'nodata': -9999
                         })
                         empty_data = np.zeros_like(src.read())
-                        print(f"Creating empty file {cropped_file} with shape {empty_data.shape} and crs {meta['crs']}")
                         with rasterio.open(cropped_file, "w", **meta) as dst:
                             dst.write(empty_data)
                     return cropped_file
@@ -444,8 +443,8 @@ class Downloader:
                     # Skip this date entirely as per requirement
                     continue
                 # Find pre and post within window (earliest match)
-                pre_cropped_file = self.find_first_available_file(date, buffer=15, max_delta=DELTA, direction=-1)
-                post_cropped_file = self.find_first_available_file(date, buffer=15, max_delta=DELTA, direction=1)
+                pre_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=-1)
+                post_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=1)
                 # If none found, create zero (empty) only then
                 if not pre_cropped_file:
                     pre_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file, cloud_cover=(0, 20))
