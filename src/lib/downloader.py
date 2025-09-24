@@ -339,7 +339,7 @@ class Downloader:
         start_date = datetime.datetime.strftime(start_time, '%Y-%m-%d')
         return self.prepare_start_end_date(start_date)
 
-    def prepare_merged_file(self, date_range, bbox, layers, empty=False, current_merged_file=None):
+    def prepare_merged_file(self, date_range, bbox, layers, empty=False, current_merged_file=None, cloud_cover=(0, 100)):
         # prepare merged file for given date range and bbox
         date = date_range[0].split('T')[0]
         output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, bbox)}_merged.tif"
@@ -355,6 +355,7 @@ class Downloader:
                 temporal=date_range,
                 bounding_box=tuple(map(float, bbox)),
                 cloud_hosted=True,
+                cloud_cover=cloud_cover,
                 count=1000
             )
             for granule in granules:
@@ -400,6 +401,7 @@ class Downloader:
                             'nodata': -9999
                         })
                         empty_data = np.zeros_like(src.read())
+                        print(f"Creating empty file {cropped_file} with shape {empty_data.shape} and crs {meta['crs']}")
                         with rasterio.open(cropped_file, "w", **meta) as dst:
                             dst.write(empty_data)
                     return cropped_file
@@ -427,8 +429,8 @@ class Downloader:
                 current_date_range = self.prepare_date_range(date, delta=0)
 
                 current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
-                pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
-                post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
+                pre_cropped_file = self.prepare_merged_file(pre_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file, cloud_cover=(0, 20))
+                post_cropped_file = self.prepare_merged_file(post_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file, cloud_cover=(0, 20))
 
                 timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
                 print(pre_cropped_file, current_cropped_file, post_cropped_file)
