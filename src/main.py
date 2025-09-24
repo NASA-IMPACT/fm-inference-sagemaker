@@ -46,7 +46,7 @@ class NormalizeTrailingSlashMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         # Normalize the path to always have a trailing slash
         if not request.url.path.endswith("/") and request.url.path != "/":
-            url = request.url._replace(path=request.url.path + "/")
+            url = request.url.replace(path=request.url.path + "/")
             request.scope["path"] = url.path  # Normalize the path in the request scope
 
         # Proceed with the regular response
