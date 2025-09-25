@@ -11,7 +11,7 @@ from ...models.preloaded_event import PreloadedEventRead, PreloadedEventUpdate
 
 router = APIRouter(prefix="/v1/preloaded_events", tags=["preloaded_events"])
 
-@router.get("/", response_model=list[PreloadedEventRead], status_code=status.HTTP_200_OK)
+@router.get("", response_model=list[PreloadedEventRead], status_code=status.HTTP_200_OK)
 def get_preloaded_events(db: Session = Depends(get_db)):
     """Get all preloaded events."""
     try:

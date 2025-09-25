@@ -21,7 +21,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         """Health check endpoint."""
         return {"status": "healthy", "timestamp": datetime.utcnow()}
 
-    @router.get("/", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
+    @router.get("", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
     def get_models(db: Session = Depends(get_db)):
         """Get all inferences."""
         try:
@@ -138,7 +138,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
 
     @router.delete("/{inference_id}", status_code=status.HTTP_204_NO_CONTENT)
     def delete_inference(inference_id: str,
-                        claims: Dict[str, Any] = Depends(auth_dependency), 
+                        claims: Dict[str, Any] = Depends(auth_dependency),
                         db: Session = Depends(get_db)):
         """Delete a finetuned model by ID."""
         # TODO: soft delete and handle related objects
@@ -155,4 +155,3 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     return router
-  

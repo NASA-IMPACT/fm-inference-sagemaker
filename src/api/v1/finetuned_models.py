@@ -11,7 +11,7 @@ from ...models.preloaded_event import PreloadedEventRead
 
 router = APIRouter(prefix="/v1/models", tags=["models"])
 
-@router.get("/", response_model=List[FinetunedModelRead], status_code=status.HTTP_200_OK)
+@router.get("", response_model=List[FinetunedModelRead], status_code=status.HTTP_200_OK)
 def get_models(db: Session = Depends(get_db)):
     """Get all finetuned models."""
     try:
