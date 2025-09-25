@@ -50,7 +50,7 @@ def get_models_preloaded_events(preloaded_event_id: str, db: Session = Depends(g
     except Exception as e:
         return {"error": str(e)}
 
-@router.post("/", response_model=PreloadedEventRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=PreloadedEventRead, status_code=status.HTTP_201_CREATED)
 def create_preloaded_event(preloaded_event: PreloadedEventUpdate, db: Session = Depends(get_db)):
     """Create a new preloaded event."""
     try:
