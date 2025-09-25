@@ -7,7 +7,7 @@ from lib.consts import DOWNLOAD_FOLDER
 from rasterio.io import MemoryFile
 from rasterio.windows import from_bounds, Window
 
-SHAPE = (224, 224)
+SHAPE = (512, 512)
 
 QA_INDICES = {
     'cloud': 1,
