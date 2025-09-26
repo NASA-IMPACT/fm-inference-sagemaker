@@ -82,7 +82,7 @@ def create_models_router(auth_dependency: Callable) -> APIRouter:
             return {"error": str(e)}
 
     @router.get("/{model_id}/preloaded_events", response_model=List[PreloadedEventRead], status_code=status.HTTP_200_OK)
-    def get_model_preloaded_events(model_id: str, db: Session = Depends(get_db)):
+    def get_model_preloaded_events(model_id: str,_: Dict[str, Any] = Depends(auth_dependency), db: Session = Depends(get_db)):
         """Get preloaded events associated with a specific model."""
         try:
             events = db.query(PreloadedEvent).join(
