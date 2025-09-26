@@ -12,8 +12,19 @@ COPY requirements.txt /app/
 
 RUN pip install uv && uv pip install -r /app/requirements.txt --system
 
+COPY alembic /app
+
+ADD alembic.ini /app
+
+ARG DATABASE_URL
+
+ENV DATABASE_URL=$DATABASE_URL
+
+# RUN alembic -x dburl="${DATABASE_URL}" revision --autogenerate -m "create tables" && \
+#     alembic -x dburl="${DATABASE_URL}" upgrade head
+
 # Copy the rest of the application
-COPY . /app/
+COPY src /app/src
 
 # Expose port
 EXPOSE 8000

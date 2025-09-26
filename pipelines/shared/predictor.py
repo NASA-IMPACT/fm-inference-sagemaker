@@ -62,6 +62,19 @@ API_KEY_VALIDATION_URL = os.getenv("API_KEY_VALIDATION_URL", "https://dev.fm.dsi
 # Fixed: Remove auto_error=False to make it work with FastAPI's authorization UI
 api_key_header = APIKeyHeader(name="x-api-key")
 
+def assign_available_gpus():
+    """Assign available GPUs to the current process using GPUtil (least memory usage)."""
+    try:
+        import GPUtil
+        free_gpus = GPUtil.getAvailable(order='memory', limit=1)
+        if free_gpus:
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(free_gpus[0])
+            print(f"Assigned GPU: {free_gpus[0]}")
+        else:
+            print("No free GPUs found.")
+    except Exception as e:
+        print(f"Could not assign GPU automatically: {e}")
+
 def download_from_s3(s3_path, download_path='config'):
     download_path = f"{DOWNLOAD_FOLDER}/{download_path}"
     session = get_boto3_session()
@@ -88,6 +101,9 @@ def load_model(config_file_path, checkpoint_file_path, source='s3'):
     model_module = importlib.import_module(f"lib.{usecase}_infer")
     infer = getattr(model_module, infer_classname)(model_config_file_path, model_weights_path)
     return { USECASE: infer }
+
+# Assign GPU before loading the model
+assign_available_gpus()
 
 MODEL = load_model(CONFIG_PATH, MODEL_WEIGHT_PATH)
 

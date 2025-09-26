@@ -30,7 +30,7 @@ def upgrade() -> None:
     op.create_table('inferences',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
-    sa.Column('query', sa.String(), nullable=True),
+    sa.Column('query', sa.JSON(), nullable=True),
     sa.Column('result_s3_path', sa.String(), nullable=True),
     sa.Column('result_geojson', sa.JSON(), nullable=True),
     sa.Column('created_at', sa.DateTime(), nullable=False),

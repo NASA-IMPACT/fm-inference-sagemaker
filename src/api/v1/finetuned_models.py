@@ -1,8 +1,6 @@
 from typing import Dict, List
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
-from datetime import datetime, timedelta
 
 from ...db.database import get_db
 from ...db.models import FinetunedModel, Inference, PreloadedEvent
@@ -13,7 +11,7 @@ from ...models.preloaded_event import PreloadedEventRead
 
 router = APIRouter(prefix="/v1/models", tags=["models"])
 
-@router.get("/", response_model=List[FinetunedModelRead], status_code=status.HTTP_200_OK)
+@router.get("", response_model=List[FinetunedModelRead], status_code=status.HTTP_200_OK)
 def get_models(db: Session = Depends(get_db)):
     """Get all finetuned models."""
     try:
@@ -28,7 +26,7 @@ def get_models(db: Session = Depends(get_db)):
         return {"error": str(e)}
 
 
-@router.post("/", status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 def create_model(model: FinetunedModelUpdate, db: Session = Depends(get_db)):
     """Create a new finetuned model."""
     try:

@@ -339,7 +339,7 @@ class Downloader:
         start_date = datetime.datetime.strftime(start_time, '%Y-%m-%d')
         return self.prepare_start_end_date(start_date)
 
-    def prepare_merged_file(self, date_range, bbox, layers, empty=False, current_merged_file=None):
+    def prepare_merged_file(self, date_range, bbox, layers, empty=False, current_merged_file=None, cloud_cover=(0, 100)):
         # prepare merged file for given date range and bbox
         date = date_range[0].split('T')[0]
         output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, bbox)}_merged.tif"
@@ -355,6 +355,7 @@ class Downloader:
                 temporal=date_range,
                 bounding_box=tuple(map(float, bbox)),
                 cloud_hosted=True,
+                cloud_cover=cloud_cover,
                 count=1000
             )
             for granule in granules:
@@ -412,22 +413,24 @@ class Downloader:
         cropped_file = self.crop_to_bbox(merged_file)
         return cropped_file
 
-    def find_first_available_file(self, base_date, buffer, delta=DELTA, direction=1):
+    def find_first_available_file(self, base_date, buffer, delta=DELTA, direction=1, cloud_cover=(0, 200)):
         """Find the earliest (chronologically closest) available merged file going backward (-1) or forward (+1).
         direction: -1 for pre, +1 for post.
         Returns path or '' if nothing found within window.
         """
-        min_delta = delta
-        max_delta = delta + buffer
+        min_delta = (delta - buffer) * direction
+        max_delta = delta * direction
         if direction < 0:
             min_delta, max_delta = max_delta, min_delta
         base_dt = datetime.datetime.strptime(base_date, '%Y-%m-%d')
-        for step in range(min_delta, max_delta + 1, direction):
-            candidate_dt = base_dt + datetime.timedelta(days=step * direction)
+        print(f"Searching for {'pre' if direction==-1 else 'post'} date from {base_date}, range: {min_delta} to {max_delta}")
+        for step in range(min_delta, max_delta + 1):
+            candidate_dt = base_dt + datetime.timedelta(days=step)
             candidate_str = candidate_dt.strftime('%Y-%m-%d')
             date_range = self.prepare_start_end_date(candidate_str)
-            path = self.prepare_merged_file(date_range, self.bbox, self.layers)
+            path = self.prepare_merged_file(date_range, self.bbox, self.layers, cloud_cover=cloud_cover)
             if path:  # non-empty string means data found
+                print('downloaded:', candidate_str, path, step)
                 return path
         return ''
 
@@ -442,13 +445,13 @@ class Downloader:
                     # Skip this date entirely as per requirement
                     continue
                 # Find pre and post within window (earliest match)
-                pre_cropped_file = self.find_first_available_file(date, buffer=15, max_delta=DELTA, direction=-1)
-                post_cropped_file = self.find_first_available_file(date, buffer=15, max_delta=DELTA, direction=1)
+                pre_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=-1, cloud_cover=(0, 20))
+                post_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=1, cloud_cover=(0, 20))
                 # If none found, create zero (empty) only then
                 if not pre_cropped_file:
-                    pre_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
+                    pre_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file, cloud_cover=(0, 20))
                 if not post_cropped_file:
-                    post_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file)
+                    post_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file, cloud_cover=(0, 20))
                 timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
                 # Build stack
                 stacked_arrays = []

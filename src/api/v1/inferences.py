@@ -1,17 +1,14 @@
 import time
 import requests
 
-from typing import Dict, List, Callable
-from fastapi import APIRouter, Depends, Query, status, HTTPException
+from typing import Dict, List, Callable, Any
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from ...db.database import get_db
 from ...db.models import FinetunedModel, Inference, PreloadedEvent
 from ...lib.downloader import Downloader
-from ...lib.utils import get_api_key
-from ...models.finetuned_model import FinetunedModelRead
 from ...models.inference import InferenceRead, InferenceUpdate
 from ...models.preloaded_event import PreloadedEventRead
 
@@ -24,7 +21,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         """Health check endpoint."""
         return {"status": "healthy", "timestamp": datetime.utcnow()}
 
-    @router.get("/", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
+    @router.get("", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
     def get_models(db: Session = Depends(get_db)):
         """Get all inferences."""
         try:
@@ -56,13 +53,18 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @router.post("/", status_code=status.HTTP_201_CREATED, response_model=InferenceRead)
-    def create_model(inference: InferenceUpdate, db: Session = Depends(get_db)):
+    @router.post("", status_code=status.HTTP_201_CREATED, response_model=InferenceRead)
+    def create_inference(inference: InferenceUpdate,
+                        claims: Dict[str, Any] = Depends(auth_dependency),
+                        db: Session = Depends(get_db)
+                        ):
         """Create a new finetuned model."""
         # try:
         # TODO: handle db session properly
         # handle large requests properly with background tasks
         # send back a job id and let the client poll for status/results
+        user_groups = claims.get("groups") or claims.get("cognito:groups", [])
+        user_email = claims.get("email")
         inference_name = inference.name if inference.name else time.strftime("inference_%Y%m%d_%H%M%S")
         finetuned_models = db.query(FinetunedModel).filter(FinetunedModel.id.in_(inference.finetuned_model_ids)).all()
         if not finetuned_models or len(finetuned_models) != len(inference.finetuned_model_ids):
@@ -71,7 +73,11 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         # better to upload merged_file to s3 and pass the s3 path to the inference pipeline
         # for now, we will just pass the local file path
         # call specific model inference pipeline with the file name/path here.
-        # create a dict with model names and their inference results
+        # Check key validity before running anything
+        for finetuned_model in finetuned_models:
+            model_id = str(finetuned_model.source_details.get('model_id'))
+            if model_id not in user_groups:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Key provided is not authorized to run inference on {model_id}")
         results = {}
         for finetuned_model in finetuned_models:
             # print(f"Running inference for model: {model.name} on data: {merged_file}")
@@ -121,8 +127,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         inference_details = inference.dict()
         inference_details['name'] = inference_name
         inference_details['finetuned_models'] = finetuned_models
-        #TODO add user_email to inference_details from cognito
-        inference_details['user_email'] = "example@example.com"
+        inference_details['user_email'] = user_email
         del(inference_details['finetuned_model_ids'])
         inference_orm = Inference(**inference_details)
         db.add(inference_orm)
@@ -130,21 +135,23 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         db.refresh(inference_orm)
 
         return inference_orm
-        # except Exception as e:
-        #     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
     @router.delete("/{inference_id}", status_code=status.HTTP_204_NO_CONTENT)
-    def delete_inference(inference_id: str, db: Session = Depends(get_db)):
+    def delete_inference(inference_id: str,
+                        claims: Dict[str, Any] = Depends(auth_dependency),
+                        db: Session = Depends(get_db)):
         """Delete a finetuned model by ID."""
         # TODO: soft delete and handle related objects
         try:
             inference = db.query(Inference).filter(Inference.id == inference_id).first()
             if not inference:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Inference not found")
+            user_email = claims.get("email")
+            if user_email != inference.user_email:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Action not allowed")
             db.delete(inference)
             db.commit()
             return {"message": "Inference deleted successfully"}
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
     return router
-  
