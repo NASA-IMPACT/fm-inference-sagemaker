@@ -1,6 +1,7 @@
 import boto3
 import gc
 import geopandas as gpd
+import GPUtil
 import httpx
 import importlib
 import inflection
@@ -65,7 +66,6 @@ api_key_header = APIKeyHeader(name="x-api-key")
 def assign_available_gpus():
     """Assign available GPUs to the current process using GPUtil (least memory usage)."""
     try:
-        import GPUtil
         free_gpus = GPUtil.getAvailable(order='memory', limit=1)
         if free_gpus:
             os.environ["CUDA_VISIBLE_DEVICES"] = str(free_gpus[0])
