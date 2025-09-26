@@ -1,10 +1,9 @@
 import boto3
 import os
+
 from os import path
 from glob import glob
-from lib.consts import BUCKET_NAME
-
-MODEL_PATH = "models/{model_name}"
+from lib.consts import BUCKET_NAME, MODEL_PATH
 
 
 def get_boto3_session():

@@ -1,6 +1,13 @@
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+__pypackages__/
+.venv/
+.idea/
+.vscode/
+.DS_Store
 .env
-
-.venv
 
 k8s-manifests/deployment.yaml
 
