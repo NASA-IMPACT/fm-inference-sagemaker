@@ -3,6 +3,7 @@ datasets
 fastapi
 geojson
 geopandas
+gputil
 gunicorn
 httpx
 huggingface_hub
