@@ -1,4 +1,5 @@
 import datetime
+import multiprocessing
 import earthaccess
 import geopandas as gpd
 import hashlib
@@ -9,6 +10,9 @@ import os
 import rasterio
 import requests
 import time
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+
 
 
 from earthaccess import search_data, download
@@ -22,6 +26,7 @@ from rasterio.merge import merge
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from rasterio.windows import from_bounds, Window
 from rasterio.mask import mask
+
 
 BANDS = {
     "HLSL30": ["B02", "B03", "B04", "B05", "B06", "B07", "Fmask", "SAA", "SZA"],
@@ -43,7 +48,7 @@ WIDTH, HEIGHT = (512, 512)
 DELTA = 90
 
 class Downloader:
-    def __init__(self, dates, bbox, layers=LAYERS['HLS'], timeseries=False):
+    def __init__(self, dates, bbox, layers=LAYERS['HLS'], timeseries=False, process_workers=None, thread_workers=10):
         """
         Initialize Downloader
         Args:
@@ -55,6 +60,8 @@ class Downloader:
         self.bbox = bbox
         self.timeseries = timeseries
         self.links = []
+        self.process_workers = process_workers or min(len(self.dates), multiprocessing.cpu_count())
+        self.thread_workers = thread_workers
 
     @staticmethod
     def generate_digest(date, bbox):
