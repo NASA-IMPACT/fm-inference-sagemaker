@@ -12,6 +12,7 @@ import requests
 import time
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+import threading
 
 
 
@@ -41,7 +42,7 @@ LAYERS = {
 PROJECTION = "WebMercatorQuad"
 TMS = morecantile.tms.get(PROJECTION)
 ZOOM_LEVEL = 12
-DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", '/root/.cache/')
+DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", "/Users/dshah/Documents/ODSI/r20/downloads")
 
 
 WIDTH, HEIGHT = (512, 512)
@@ -60,7 +61,7 @@ class Downloader:
         self.bbox = bbox
         self.timeseries = timeseries
         self.links = []
-        self.process_workers = process_worke
+        self.process_workers = process_workers
         self.thread_workers = thread_workers
 
     @staticmethod
@@ -74,6 +75,11 @@ class Downloader:
         key = f"{date}|{','.join(map(str, bbox))}"
         digest = hashlib.sha256(key.encode('utf-8')).hexdigest()
         return digest
+    @staticmethod
+    def log(msg):
+        pid = os.getpid()
+        tid = threading.get_ident()
+        print(f"[PID {pid} | TID {tid}] {msg}", flush=True)
 
     def prepare_start_end_date(self, date):
         return (f"{date}T00:00:00Z", f"{date}T23:59:59Z")
@@ -120,6 +126,41 @@ class Downloader:
     def download_bands(self, links):
         filenames = earthaccess.download(links, local_path=DOWNLOAD_FOLDER, threads=16)
         return filenames
+    
+    def download_and_log(self,granule, links):
+        self.log(f"Thread starting granule {granule.uuid}")
+        filenames = self.download_bands(links)
+        self.log(f"Thread completed granule {granule.uuid}")
+        return filenames
+    
+    def download_granule_links(self, layer, granules, date):
+        """Download all granules for a layer using ThreadPoolExecutor."""
+        results = []
+        futures = {}
+        with ThreadPoolExecutor(max_workers=self.thread_workers) as executor:
+            for granule in granules:
+                links = [link for band in BANDS[layer] 
+                        for link in granule.data_links(access="external") 
+                        if f".{band}." in link]
+                if all(any(f".{band}." in l for l in links) for band in BANDS[layer]):
+                    self.log(f"Found all band links for granule {granule.uuid}")
+                    futures[executor.submit(self.download_and_log, granule, links)] = granule.uuid
+                else:
+                    self.log(f"Skipping granule {granule.uuid} (missing some band links)")
+
+            for future in as_completed(futures):
+                uuid = futures[future]
+                try:
+                    filenames = future.result()
+                    if filenames:
+                        results.append((uuid, filenames))
+                except Exception as e:
+                    self.log(f"Error downloading granule {uuid}: {e}")
+
+        self.log(f"All {len(results)} granules processed for layer {layer} on date {date}")
+        return results
+
+    
 
     def generate_tiles(self, file_name, shape=(512,512), batch_size=1, overlap=0, scale=False):
         """
@@ -149,7 +190,7 @@ class Downloader:
                     if win_height < height or win_width < width:
                         pad_shape = (tile.shape[0], height, width)
                         padded = np.zeros(pad_shape, dtype=tile.dtype)
-                        if scaled:
+                        if scale:
                             tile = tile / 10000.0
                             tile = np.clip(tile, 0, 1)
                         padded[:, :win_height, :win_width] = tile
@@ -371,21 +412,16 @@ class Downloader:
                 granules = []
             if not granules:
                 continue
-            for granule in granules:
-                all_bands_available = False
-                links = [link
-                    for band in BANDS[layer] for link in granule.data_links(access='external')
-                    if f".{band}." in link
-                ]
-                if all(band in ' '.join(links) for band in BANDS[layer]):
-                    filenames = self.download_bands(links)
-                    merged_file = self.merge_bands(filenames, date, granule.uuid)
-
+            self.log(f"[{date}] Layer {layer}: {len(granules)} granules found")
+            downloaded_granules = self.download_granule_links(layer, granules, date)
+            for uuid, filenames in downloaded_granules:
+                    if not filenames:
+                        continue
+                    merged_file = self.merge_bands(filenames, date, uuid)
                     # Set target CRS from the first file
                     if target_crs is None:
                         with rasterio.open(merged_file) as src:
                             target_crs = src.crs
-
                     # Check if the file has the same CRS as target
                     with rasterio.open(merged_file) as src:
                         if src.crs != target_crs:
@@ -447,38 +483,67 @@ class Downloader:
                 return path
         return ''
 
-    def find_and_prepare_data(self):
+    def prepare_data(self,date):
         prepared_data = {}
-        for date in self.dates:
-            if self.timeseries:
-                # First get current date file; if not present skip entirely
-                current_date_range = self.prepare_start_end_date(date)
-                current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
-                if not current_cropped_file:
-                    # Skip this date entirely as per requirement
-                    continue
-                # Find pre and post within window (earliest match)
-                pre_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=-1, cloud_cover=(0, 20))
-                post_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=1, cloud_cover=(0, 20))
-                # If none found, create zero (empty) only then
-                if not pre_cropped_file:
-                    pre_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file, cloud_cover=(0, 20))
-                if not post_cropped_file:
-                    post_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file, cloud_cover=(0, 20))
-                timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
-                # Build stack
-                stacked_arrays = []
-                for file in timeseries_files:
-                    with rasterio.open(file) as src:
-                        stacked_arrays.append(src.read())
-                mosaic = np.concatenate(stacked_arrays, axis=0)
-                output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, self.bbox)}_timeseries_merged.tif"
-                with rasterio.open(current_cropped_file) as src_ref:
-                    transform = src_ref.transform
-                    crs = src_ref.crs
-                merged_file = self.save_cog(mosaic, transform, output_filename, crs)
-                cropped_file = self.crop_to_bbox(merged_file)
-            else:
-                cropped_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers)
-            prepared_data[date] = cropped_file
+        if self.timeseries:
+            # First get current date file; if not present skip entirely
+            current_date_range = self.prepare_start_end_date(date)
+            current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
+            if not current_cropped_file:
+                # Skip this date entirely as per requirement
+                None
+            # Find pre and post within window (earliest match)
+            pre_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=-1, cloud_cover=(0, 20))
+            post_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=1, cloud_cover=(0, 20))
+            # If none found, create zero (empty) only then
+            if not pre_cropped_file:
+                pre_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file, cloud_cover=(0, 20))
+            if not post_cropped_file:
+                post_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file, cloud_cover=(0, 20))
+            timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
+            # Build stack
+            stacked_arrays = []
+            for file in timeseries_files:
+                with rasterio.open(file) as src:
+                    stacked_arrays.append(src.read())
+            mosaic = np.concatenate(stacked_arrays, axis=0)
+            output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, self.bbox)}_timeseries_merged.tif"
+            with rasterio.open(current_cropped_file) as src_ref:
+                transform = src_ref.transform
+                crs = src_ref.crs
+            merged_file = self.save_cog(mosaic, transform, output_filename, crs)
+            cropped_file = self.crop_to_bbox(merged_file)
+        else:
+            cropped_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers)
+        prepared_data[date] = cropped_file
         return prepared_data
+    
+    def find_and_prepare_data(self):
+        """
+        Processes data for each date in parallel using a process pool.
+
+        For each date in `self.dates`, submits a task to `self.prepare_data` using a `ProcessPoolExecutor`.
+        Collects results as they complete, updating the results dictionary.
+        Logs progress and errors for each date.
+        Returns a dictionary mapping dates to their processed data or an empty string if an error occurred.
+
+        Returns:
+            dict: A dictionary where keys are dates and values are the processed data or an empty string on error.
+        """
+        results = {}
+        self.log("Starting per-date parallel processing...")
+
+        with ProcessPoolExecutor(max_workers=self.process_workers) as pool:
+            futures = {pool.submit(self.prepare_data, date): date for date in self.dates}
+            for f in as_completed(futures):
+                date = futures[f]
+                try:
+                    result = f.result()
+                    results.update(result)
+                except Exception as e:
+                    self.log(f"Error in date {date}: {e}")
+                    results[date] = ""
+
+        self.log("All dates processed.")
+        return results
+
