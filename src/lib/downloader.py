@@ -8,16 +8,12 @@ import morecantile
 import numpy as np
 import os
 import rasterio
-import requests
-import time
-from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import threading
 
 
 
 from earthaccess import search_data, download
-from pyproj import Transformer
 
 from shapely.geometry import box
 
@@ -25,7 +21,7 @@ from rasterio.crs import CRS
 from rasterio.io import MemoryFile
 from rasterio.merge import merge
 from rasterio.warp import calculate_default_transform, reproject, Resampling
-from rasterio.windows import from_bounds, Window
+from rasterio.windows import Window
 from rasterio.mask import mask
 
 
@@ -75,6 +71,7 @@ class Downloader:
         key = f"{date}|{','.join(map(str, bbox))}"
         digest = hashlib.sha256(key.encode('utf-8')).hexdigest()
         return digest
+    
     @staticmethod
     def log(msg):
         pid = os.getpid()
@@ -483,7 +480,7 @@ class Downloader:
                 return path
         return ''
 
-    def prepare_data(self,date):
+    def prepare_data_for_date(self,date):
         prepared_data = {}
         if self.timeseries:
             # First get current date file; if not present skip entirely
@@ -534,7 +531,7 @@ class Downloader:
         self.log("Starting per-date parallel processing...")
 
         with ProcessPoolExecutor(max_workers=self.process_workers) as pool:
-            futures = {pool.submit(self.prepare_data, date): date for date in self.dates}
+            futures = {pool.submit(self.prepare_data_for_date, date): date for date in self.dates}
             for f in as_completed(futures):
                 date = futures[f]
                 try:
