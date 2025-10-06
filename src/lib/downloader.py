@@ -48,7 +48,7 @@ WIDTH, HEIGHT = (512, 512)
 DELTA = 90
 
 class Downloader:
-    def __init__(self, dates, bbox, layers=LAYERS['HLS'], timeseries=False, process_workers=None, thread_workers=10):
+    def __init__(self, dates, bbox, layers=LAYERS['HLS'], timeseries=False, process_workers=10, thread_workers=10):
         """
         Initialize Downloader
         Args:
@@ -60,7 +60,7 @@ class Downloader:
         self.bbox = bbox
         self.timeseries = timeseries
         self.links = []
-        self.process_workers = process_workers or min(len(self.dates), multiprocessing.cpu_count())
+        self.process_workers = process_worke
         self.thread_workers = thread_workers
 
     @staticmethod
