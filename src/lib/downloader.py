@@ -357,14 +357,20 @@ class Downloader:
         target_crs = None
 
         for layer in layers:
-            granules = search_data(
-                short_name=layer,
-                temporal=date_range,
-                bounding_box=tuple(map(float, bbox)),
-                cloud_hosted=True,
-                cloud_cover=cloud_cover,
-                count=1000
-            )
+            try:
+                granules = search_data(
+                    short_name=layer,
+                    temporal=date_range,
+                    bounding_box=tuple(map(float, bbox)),
+                    cloud_hosted=True,
+                    cloud_cover=cloud_cover,
+                    count=1000
+                )
+            except Exception as e:
+                print(f"[{date}] Granule search exception for layer {layer}: {e}")
+                granules = []
+            if not granules:
+                continue
             for granule in granules:
                 all_bands_available = False
                 links = [link
