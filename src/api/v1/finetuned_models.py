@@ -20,8 +20,6 @@ def create_models_router(auth_dependency: Callable) -> APIRouter:
             models = db.query(
                 FinetunedModel
             ).all()
-            print('----------------')
-            print(len(models))
             return models
         except Exception as e:
             return {"error": str(e)}
@@ -31,7 +29,7 @@ def create_models_router(auth_dependency: Callable) -> APIRouter:
     def create_model(model: FinetunedModelUpdate,claims: Dict[str, Any] = Depends(auth_dependency), db: Session = Depends(get_db)):
         """Create a new finetuned model."""
         user_groups = claims.get("groups") or claims.get("cognito:groups", [])
-        if model.name not in user_groups + ["admin"]:
+        if "admin" not in user_groups:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"You do not have permission to create {model.name} model")
         try:
             db_model = FinetunedModel(
@@ -101,7 +99,7 @@ def create_models_router(auth_dependency: Callable) -> APIRouter:
             if not model:
                 return {"error": "Model not found"}
             # Only admins can delete models
-            if user_groups != ["admin"]:
+            if "admin" not in user_groups:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"You do not have permission to delete {model.name} model")
             db.delete(model)
             db.commit()
