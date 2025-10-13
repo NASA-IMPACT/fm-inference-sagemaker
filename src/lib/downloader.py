@@ -10,6 +10,7 @@ import os
 import rasterio
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import threading
+import time
 
 
 
@@ -38,7 +39,7 @@ LAYERS = {
 PROJECTION = "WebMercatorQuad"
 TMS = morecantile.tms.get(PROJECTION)
 ZOOM_LEVEL = 12
-DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", '/root/.cache/')
+DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER",  "/Users/dshah/Documents/ODSI/r20/downloads")
 
 
 WIDTH, HEIGHT = (512, 512)
@@ -59,6 +60,7 @@ class Downloader:
         self.links = []
         self.process_workers = process_workers
         self.thread_workers = thread_workers
+        self.timings = {}
 
     @staticmethod
     def generate_digest(date, bbox):
@@ -80,6 +82,17 @@ class Downloader:
 
     def prepare_start_end_date(self, date):
         return (f"{date}T00:00:00Z", f"{date}T23:59:59Z")
+    
+    @staticmethod
+    def record_time(label, start_time, date=None, timings=None):
+        """Record elapsed time with optional per-date aggregation."""
+        elapsed = round(time.perf_counter() - start_time, 2)
+        if timings is not None and date:
+            if date not in timings:
+                timings[date] = {}
+            timings[date][label] = elapsed
+        print(f"[TIMER] {label}: {elapsed:.2f}s", flush=True)
+        return elapsed
 
     def prepare_dates(self, dates):
         date_list = []
@@ -384,9 +397,13 @@ class Downloader:
         start_date = datetime.datetime.strftime(start_time, '%Y-%m-%d')
         return self.prepare_start_end_date(start_date)
 
-    def prepare_merged_file(self, date_range, bbox, layers, empty=False, current_merged_file=None, cloud_cover=(0, 100)):
+    def prepare_merged_file(self, date_range, bbox, layers, empty=False, current_merged_file=None, cloud_cover=(0, 100),timings=None):
         # prepare merged file for given date range and bbox
         date = date_range[0].split('T')[0]
+        if timings is None:
+            timings = {}
+        t0_total = time.perf_counter()
+
         output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, bbox)}_merged.tif"
         if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
             return output_filename.replace('.tif', '_cropped.tif')
@@ -395,6 +412,7 @@ class Downloader:
         target_crs = None
 
         for layer in layers:
+            t_search = time.perf_counter()
             try:
                 granules = search_data(
                     short_name=layer,
@@ -407,14 +425,19 @@ class Downloader:
             except Exception as e:
                 print(f"[{date}] Granule search exception for layer {layer}: {e}")
                 granules = []
+            self.record_time(f"{layer}_search", t_search, date, timings)
             if not granules:
                 continue
+            t_download = time.perf_counter()
             self.log(f"[{date}] Layer {layer}: {len(granules)} granules found")
             downloaded_granules = self.download_granule_links(layer, granules, date)
+            self.record_time(f"{layer}_download", t_download, date, timings)
             for uuid, filenames in downloaded_granules:
+                    t_merge = time.perf_counter()
                     if not filenames:
                         continue
                     merged_file = self.merge_bands(filenames, date, uuid)
+                    self.record_time(f"{layer}_merge_bands", t_merge, date, timings)
                     # Set target CRS from the first file
                     if target_crs is None:
                         with rasterio.open(merged_file) as src:
@@ -453,10 +476,13 @@ class Downloader:
                 else:
                     print("No current merged file provided for empty output.")
             return ''
-
+        t_post = time.perf_counter()
         mosaic, transform = merge(merged_files, method='first')
         merged_file = self.save_cog(mosaic, transform, output_filename, target_crs)
         cropped_file = self.crop_to_bbox(merged_file)
+        self.record_time("post_merge_crop", t_post, date, timings)
+        self.record_time("total_prepare_merged_file", t0_total, date, timings)
+
         return cropped_file
 
     def find_first_available_file(self, base_date, buffer, delta=DELTA, direction=1, cloud_cover=(0, 200)):
@@ -481,7 +507,9 @@ class Downloader:
         return ''
 
     def prepare_data_for_date(self,date):
+        t0 = time.perf_counter()
         prepared_data = {}
+        local_timings = {}
         if self.timeseries:
             # First get current date file; if not present skip entirely
             current_date_range = self.prepare_start_end_date(date)
@@ -511,9 +539,9 @@ class Downloader:
             merged_file = self.save_cog(mosaic, transform, output_filename, crs)
             cropped_file = self.crop_to_bbox(merged_file)
         else:
-            cropped_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers)
+            cropped_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers,timings=local_timings)
         prepared_data[date] = cropped_file
-        return prepared_data
+        return prepared_data,local_timings
     
     def find_and_prepare_data(self):
         """
@@ -528,19 +556,27 @@ class Downloader:
             dict: A dictionary where keys are dates and values are the processed data or an empty string on error.
         """
         results = {}
-        self.log("Starting per-date parallel processing...")
+        start_global = time.perf_counter()
 
         with ProcessPoolExecutor(max_workers=self.process_workers) as pool:
             futures = {pool.submit(self.prepare_data_for_date, date): date for date in self.dates}
             for f in as_completed(futures):
                 date = futures[f]
                 try:
-                    result = f.result()
-                    results.update(result)
+                    data, local_timings = f.result()
+                    results.update(data)
+                    self.timings.update(local_timings)
                 except Exception as e:
                     self.log(f"Error in date {date}: {e}")
                     results[date] = ""
 
-        self.log("All dates processed.")
+        self.record_time("TOTAL_ALL_DATES", start_global, timings=self.timings)
+
+        # Save timing summary JSON
+        timing_file = os.path.join(DOWNLOAD_FOLDER, "timing_summary.json")
+        with open(timing_file, "w") as f:
+            json.dump(self.timings, f, indent=2)
+        self.log(f"Timing summary saved: {timing_file}")
+
         return results
 
