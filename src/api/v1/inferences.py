@@ -32,8 +32,10 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
 
 
     @router.get("/{inference_id}", response_model=InferenceRead, status_code=status.HTTP_200_OK)
-    def get_inference(inference_id: str, db: Session = Depends(get_db)):
+    def get_inference(inference_id: str, claims: Dict[str, Any] = Depends(auth_dependency), db: Session = Depends(get_db)):
         """Get a specific inference by ID."""
+        if not claims:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No valid token provided" )
         try:
             inference = db.query(Inference).filter(Inference.id == inference_id).first()
             if not inference:

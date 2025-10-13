@@ -33,7 +33,7 @@ cognito_client = boto3.client('cognito-idp', region_name=AWS_REGION)
 
 from .api.v1 import (
     create_inference_router,
-    models_router,
+    create_models_router,
     preloaded_events_router
 )
 
@@ -218,6 +218,7 @@ async def general_access_dependency(
 
 # Include v1 API routers
 inference_router = create_inference_router(general_access_dependency)
+models_router= create_models_router(general_access_dependency)
 app.include_router(inference_router)
 app.include_router(models_router)
 app.include_router(preloaded_events_router)
