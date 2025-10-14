@@ -39,7 +39,7 @@ LAYERS = {
 PROJECTION = "WebMercatorQuad"
 TMS = morecantile.tms.get(PROJECTION)
 ZOOM_LEVEL = 12
-DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER",  "/Users/dshah/Documents/ODSI/r20/downloads")
+DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER",  '/root/.cache/')
 
 
 WIDTH, HEIGHT = (512, 512)
@@ -516,7 +516,7 @@ class Downloader:
             current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
             if not current_cropped_file:
                 # Skip this date entirely as per requirement
-                None
+                return {date: ''}, local_timings
             # Find pre and post within window (earliest match)
             pre_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=-1, cloud_cover=(0, 20))
             post_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=1, cloud_cover=(0, 20))
