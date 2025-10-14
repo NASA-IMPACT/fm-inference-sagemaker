@@ -10,8 +10,6 @@ from rasterio.features import shapes
 from lib.data_preparer import QA_INDICES
 from lib.consts import NO_DATA, NO_DATA_FLOAT, MEANS, STDS
 from terratorch.cli_tools import LightningInferenceModel
-from rasterio import Affine
-from rasterio.enums import Resampling
 
 class Infer:
     def __init__(self, config, checkpoint):
