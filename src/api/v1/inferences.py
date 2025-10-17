@@ -120,7 +120,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
                 inference.results = inference.results if inference.results else {}
                 inference.results[model_id] = inference.results.get(model_id, {})
                 inference.results[model_id][date] = {
-                    # "qa_geojson": infered_results['qa_geojson'],
+                    "qa_tif": infered_results['qa_link'],
                     "s3_link": infered_results['s3_link'],
                     "stats": infered_results['stats']
                 }

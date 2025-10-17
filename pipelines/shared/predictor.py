@@ -354,14 +354,15 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     prediction_filename = crop_file(prediction_filename, bounds)
     postprocessed_filename = inference.postprocess(bounding_box, date, prediction_filename, filename)
     s3_link = upload_to_s3(postprocessed_filename)
-    qa_geojson = inference.qa_flags_to_geojson(filename, qa_flags, timeseries=timeseries)
+    qa_tif = inference.qa_flags_to_tif(filename, qa_flags, timeseries=timeseries)
+    qa_link = upload_to_s3(qa_tif)
     stats = inference.calculate_area_from_mask(postprocessed_filename, mask_values=range(1, NUM_CLASSES))
     print("!!! Infer Time:", time.time() - start_time)
     del inference
     gc.collect()
 
     return {
-        model_id: {'s3_link': s3_link, 'qa_geojson': qa_geojson, 'stats': stats}
+        model_id: {'s3_link': s3_link, 'qa_link': qa_link, 'stats': stats}
     }
 
 # Define a model for the POST request body

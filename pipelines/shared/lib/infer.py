@@ -105,7 +105,7 @@ class Infer:
             print(f"An error occurred: {e}")
             return None
 
-    def qa_flags_to_geojson(self, image_file, qa_flags, timeseries=False):
+    def qa_flags_to_tif(self, image_file, qa_flags, timeseries=False):
         """
         Convert predicted masks to GeoJSON format.
         Args:
@@ -132,19 +132,22 @@ class Infer:
             transform = profile['transform']
             mask = mask.astype('uint8')  # Ensure mask is in uint8 format
 
-            for shape, value in shapes(mask, transform=transform):
-                if value != 0:  # Ignore background
-                    feature = {
-                        "type": "Feature",
-                        "geometry": shape,
-                        "properties": {"value": int(value)}
-                    }
-                    geojson_features.append(feature)
-        geojson = {
-            "type": "FeatureCollection",
-            "features": geojson_features
-        }
-        return geojson
+            # Save mask as GeoTIFF
+
+            output_tif = image_file.replace('.tif', '_qa_mask.tif')
+            with rasterio.open(
+                output_tif,
+                'w',
+                driver='GTiff',
+                height=mask.shape[0],
+                width=mask.shape[1],
+                count=1,
+                dtype=mask.dtype,
+                crs=profile['crs'],
+                transform=transform,
+            ) as dst:
+                dst.write(mask, 1)
+        return output_tif
 
 
     def infer(self, images, date):
