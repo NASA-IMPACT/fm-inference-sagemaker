@@ -306,7 +306,7 @@ class DEMDownloader:
             fmask_reprojected = np.zeros_like(flood_data[0], dtype=np.uint32)
 
             reproject(
-                source=rasterio.band(nir_data, 1),
+                source=nir_data,
                 destination=nir_reprojected,
                 src_transform=hls_src.transform,
                 src_crs=hls_src.crs,
@@ -316,7 +316,7 @@ class DEMDownloader:
             )
 
             reproject(
-                source=rasterio.band(green_data, 1),
+                source=green_data,
                 destination=green_reprojected,
                 src_transform=hls_src.transform,
                 src_crs=hls_src.crs,
@@ -326,7 +326,7 @@ class DEMDownloader:
             )
 
             reproject(
-                source=rasterio.band(fmask_data, 1),
+                source=fmask_data,
                 destination=fmask_reprojected,
                 src_transform=hls_src.transform,
                 src_crs=hls_src.crs,
