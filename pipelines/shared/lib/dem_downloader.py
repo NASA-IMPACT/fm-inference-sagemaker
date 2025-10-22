@@ -298,12 +298,12 @@ class DEMDownloader:
         green_data = hls_src.read(2).astype(np.float32)
         fmask_data = hls_src.read(7).astype(np.uint32)
 
-        if nir_data.shape != flood_data[0].shape:
+        if nir_data.shape != flood_data.shape:
             print("Reprojecting HLS bands to match flood detection shape...", flood_src.name, hls_src.name)
 
-            nir_reprojected = np.zeros_like(flood_data[0], dtype=np.float32)
-            green_reprojected = np.zeros_like(flood_data[0], dtype=np.float32)
-            fmask_reprojected = np.zeros_like(flood_data[0], dtype=np.uint32)
+            nir_reprojected = np.zeros_like(flood_data, dtype=np.float32)
+            green_reprojected = np.zeros_like(flood_data, dtype=np.float32)
+            fmask_reprojected = np.zeros_like(flood_data, dtype=np.uint32)
 
             reproject(
                 source=nir_data,
