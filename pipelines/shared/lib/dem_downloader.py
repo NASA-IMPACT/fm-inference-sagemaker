@@ -304,6 +304,8 @@ class DEMDownloader:
             nir_reprojected = np.zeros_like(flood_data, dtype=np.float32)
             green_reprojected = np.zeros_like(flood_data, dtype=np.float32)
             fmask_reprojected = np.zeros_like(flood_data, dtype=np.uint32)
+            print("Shapes before reprojection:", nir_data.shape, green_data.shape, fmask_data.shape, flood_data.shape)
+            print("Shapes after reprojection:", nir_reprojected.shape, green_reprojected.shape, fmask_reprojected.shape)
 
             reproject(
                 source=nir_data,
