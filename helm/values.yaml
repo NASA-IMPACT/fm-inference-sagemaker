@@ -1,0 +1,55 @@
+# Default values for fm-inference-sagemaker.
+
+replicaCount: 1
+
+image:
+  repository: 244822573120.dkr.ecr.us-west-2.amazonaws.com/prediction
+  tag: mvp
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: ecr-registry-key
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 443
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  hosts:
+    - host: kind.neo.nsstc.uah.edu
+      paths:
+        - path: /api/predict
+          pathType: Prefix
+  tls:
+   - secretName: ingress-tls
+     hosts:
+       - kind.neo.nsstc.uah.edu
+
+persistence:
+  enabled: true
+  storageClassName: "manual"
+  accessModes:
+    - ReadWriteMany
+  size: 10Gi
+  hostPath: /tmp/prediction-cache
+
+# Additional environment variables for the container
+env:
+  BUCKET_NAME: "r2o-models"
+  USECASE: "burn_scars"
+  API_KEY_VALIDATION_URL: "https://dev.fm.dsig.net/api/validate"
+  DOWNLOAD_FOLDER: "/root/.cache/data"
+
+# Reference to a configmap for additional environment variables
+configMapRef:
+  name: "oidc-envs"

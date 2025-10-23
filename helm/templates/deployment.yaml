@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "fm-inference-sagemaker.fullname" . }}
+  labels:
+    {{- include "fm-inference-sagemaker.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fm-inference-sagemaker.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fm-inference-sagemaker.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+          env:
+            - name: BUCKET_NAME
+              value: {{ .Values.env.BUCKET_NAME | quote }}
+            - name: USECASE
+              value: {{ .Values.env.USECASE | quote }}
+            - name: API_KEY_VALIDATION_URL
+              value: {{ .Values.env.API_KEY_VALIDATION_URL | quote }}
+            - name: DOWNLOAD_FOLDER
+              value: {{ .Values.env.DOWNLOAD_FOLDER | quote }}
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.configMapRef.name }}
+      volumes:
+        - name: cache-volume
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "fm-inference-sagemaker.fullname" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
