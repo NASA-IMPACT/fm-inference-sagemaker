@@ -14,7 +14,6 @@ spec:
       labels:
         app: prediction-app
     spec:
-      runtimeClassName: nvidia
       imagePullSecrets:
         - name: ecr-registry-key
       containers:
@@ -72,7 +71,6 @@ metadata:
   labels:
     app: floods-app
 spec:
-  runtimeClassName: nvidia
   replicas: 1
   selector:
     matchLabels:
@@ -84,6 +82,7 @@ spec:
     spec:
       imagePullSecrets:
         - name: ecr-registry-key
+      runtimeClassName: nvidia
       containers:
         - name: pipeline-floods-container
           image: ${ECR_URL}/${ECR_FLOOD_IMAGE_NAME}
@@ -121,7 +120,6 @@ metadata:
   labels:
     app: burn-scars-app
 spec:
-  runtimeClassName: nvidia
   replicas: 1
   selector:
     matchLabels:
@@ -133,6 +131,7 @@ spec:
     spec:
       imagePullSecrets:
         - name: ecr-registry-key
+      runtimeClassName: nvidia
       containers:
         - name: pipeline-burn-scars-container
           image: ${ECR_URL}/${ECR_BURN_IMAGE_NAME}
@@ -170,7 +169,6 @@ metadata:
   labels:
     app: crop-classification-app
 spec:
-  runtimeClassName: nvidia
   replicas: 1
   selector:
     matchLabels:
@@ -182,6 +180,7 @@ spec:
     spec:
       imagePullSecrets:
         - name: ecr-registry-key
+      runtimeClassName: nvidia
       containers:
         - name: pipeline-crop-classification-container
           image: ${ECR_URL}/${ECR_CROP_IMAGE_NAME}
