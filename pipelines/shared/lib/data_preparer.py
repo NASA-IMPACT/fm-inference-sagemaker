@@ -70,10 +70,18 @@ class DataPreparer:
     def handle_qa(self, tile):
         def get_qa_mask_vectorized(qa_band):
             # Vectorized QA mask calculation using broadcasting
-            qa_indices = np.array([QA_INDICES.get(flag, 0) for flag in self.qa_flags])
-            qa_band_uint = qa_band.astype('uint')
-            # Use broadcasting to check all flags at once
-            flags = (qa_band_uint[..., np.newaxis] & (1 << qa_indices)) != 0
+            if not self.qa_flags:
+                return np.zeros_like(qa_band, dtype=bool)
+            
+            qa_indices = np.array([QA_INDICES.get(flag, 0) for flag in self.qa_flags], dtype=np.uint32)
+            qa_band_uint = qa_band.astype(np.uint32)
+            
+            # Create shift values with proper shape for broadcasting
+            shift_values = (1 << qa_indices).astype(np.uint32)  # Shape: (n_flags,)
+            
+            # Reshape for broadcasting: qa_band_uint[..., newaxis] has shape (..., 1)
+            # shift_values has shape (n_flags,) - this should broadcast correctly
+            flags = (qa_band_uint[..., np.newaxis] & shift_values[np.newaxis, ...]) != 0
             return np.any(flags, axis=-1)
 
         if self.timeseries:
