@@ -1,582 +1,704 @@
-import datetime
-import multiprocessing
-import earthaccess
-import geopandas as gpd
-import hashlib
-import json
-import morecantile
-import numpy as np
+from __future__ import annotations
+
 import os
-import rasterio
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
-import threading
 import time
+import hashlib
+import datetime
+from dataclasses import dataclass
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    ProcessPoolExecutor,
+    as_completed,
+)
+from typing import List, Tuple, Optional, Dict
 
-
-
+import numpy as np
+import rasterio
+from rasterio.merge import merge as rio_merge
+import earthaccess
 from earthaccess import search_data, download
+from osgeo import gdal
+import traceback
 
-from shapely.geometry import box
+gdal.UseExceptions()
 
-from rasterio.crs import CRS
-from rasterio.io import MemoryFile
-from rasterio.merge import merge
-from rasterio.warp import calculate_default_transform, reproject, Resampling
-from rasterio.windows import Window
-from rasterio.mask import mask
+# -------------------------
+# Environment Configuration
+# -------------------------
+os.environ.update(
+    {
+        "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+        "GDAL_TIFF_INTERNAL_MASK": "YES",
+        "GDAL_TIFF_OVR_BLOCKSIZE": "256",
+        "GDAL_NUM_THREADS": "ALL_CPUS",
+        "GDAL_CACHEMAX": "8192",
+        "GDAL_WARP_MEMORY_LIMIT": "1073741824",  # 1GB
+        "GDAL_TIFF_DIRECT_IO": "YES",
+    }
+)
 
-
+# -------------------------
+# Constants
+# -------------------------
 BANDS = {
-    "HLSL30": ["B02", "B03", "B04", "B05", "B06", "B07", "Fmask", "SAA", "SZA"],
-    "HLSS30": ["B02", "B03", "B04", "B8A", "B11", "B12", "Fmask", "SAA", "SZA"],
+    "HLSL30": [
+        "B02",
+        "B03",
+        "B04",
+        "B05",
+        "B06",
+        "B07",
+        "Fmask",
+        "SAA",
+        "SZA",
+    ],
+    "HLSS30": [
+        "B02",
+        "B03",
+        "B04",
+        "B8A",
+        "B11",
+        "B12",
+        "Fmask",
+        "SAA",
+        "SZA",
+    ],
 }
 
-LAYERS = {
-    'HLS': ['HLSS30', 'HLSL30'],
-    'MERRA2': ['M2T1NXSLV', 'M2T1NXLND']
-}
+LAYERS = {"HLS": ["HLSS30", "HLSL30"], "MERRA2": ["M2T1NXSLV", "M2T1NXLND"]}
 
-PROJECTION = "WebMercatorQuad"
-TMS = morecantile.tms.get(PROJECTION)
-ZOOM_LEVEL = 12
-DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER",  '/root/.cache/')
+DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", "/root/.cache/")
 
-
-WIDTH, HEIGHT = (512, 512)
+WIDTH, HEIGHT = (256, 256)
 DELTA = 90
 
+
+def generate_digest(date: str, bbox: Tuple[float, float, float, float]) -> str:
+    """Generate SHA256 hash for date and bbox combination."""
+    key = f"{date}|{','.join(map(str, bbox))}"
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+@dataclass
+class WorkerConfig:
+    """Configuration for worker processes."""
+
+    download_folder: str
+    bbox: Tuple[float, float, float, float]
+    bands_map: Dict[str, List[str]]
+    layers: List[str]
+    width: int = WIDTH
+    height: int = HEIGHT
+    delta: int = DELTA
+    thread_workers: int = 10
+    merge_workers: int = 10
+
+
+# -------------------------
+# Core Processing Functions
+# -------------------------
+def convert_band_to_uint16_vrt(src_file: str, out_dir: str) -> str:
+    """Convert band to UInt16 VRT (no pixel copy)."""
+    vrt_path = os.path.join(
+        out_dir, os.path.basename(src_file).replace(".tif", "_u16.vrt")
+    )
+    gdal.Translate(
+        vrt_path, src_file, format="VRT", outputType=gdal.GDT_UInt16
+    )
+    return vrt_path
+
+
+def merge_bands_crop_to_tiff(
+    granule_id: str, band_vrts: list[str], out_dir: str, bbox: tuple
+) -> str:
+    """
+    Merge uint16 band VRTs → reproject → crop → write cropped GeoTIFF (EPSG:4326).
+    Single Warp call over a stacked VRT for speed.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+
+    stacked_vrt = os.path.join(out_dir, f"{granule_id}_stack.vrt")
+    gdal.BuildVRT(stacked_vrt, band_vrts, separate=True)
+
+    minx, miny, maxx, maxy = bbox
+    wkt_poly = f"POLYGON(({minx} {miny},{minx} {maxy},{maxx} {maxy},{maxx} {miny},{minx} {miny}))"
+
+    cropped_tiff = os.path.join(out_dir, f"{granule_id}_cropped_4326.tif")
+
+    warp_options = gdal.WarpOptions(
+        dstSRS="EPSG:4326",
+        format="GTiff",
+        cutlineWKT=wkt_poly,
+        cropToCutline=True,
+        dstNodata=-9999,
+        resampleAlg="near",
+        multithread=True,
+        warpMemoryLimit=1073741824,
+        creationOptions=[
+            "TILED=YES",
+            "BLOCKXSIZE=256",
+            "BLOCKYSIZE=256",
+            "NUM_THREADS=ALL_CPUS",
+            "BIGTIFF=IF_SAFER",
+        ],
+    )
+
+    gdal.Warp(cropped_tiff, stacked_vrt, options=warp_options)
+    return cropped_tiff
+
+
+def merge_granule_tiffs(
+    cfg: WorkerConfig,
+    cropped_tiffs: list[str],
+    out_file: str,
+    timings: dict,
+    date: str,
+) -> str:
+    """
+    1. Build VRT mosaic (no data copy)
+    2. Convert VRT → final GeoTIFF (EPSG:4326)
+    """
+    if not cropped_tiffs:
+        return ""
+
+    # Validate inputs
+    valid_tiffs = [
+        t
+        for t in cropped_tiffs
+        if os.path.exists(t) and os.path.getsize(t) > 0
+    ]
+    if not valid_tiffs:
+        return ""
+
+    # 1️ Build temporary mosaic VRT
+    vrt_path = os.path.join(cfg.download_folder, f"{date}_mosaic.vrt")
+    try:
+        gdal.BuildVRT(vrt_path, valid_tiffs, options=gdal.BuildVRTOptions())
+    except Exception:
+        return ""
+
+    if not os.path.exists(vrt_path):
+        return ""
+
+    # 2️ Convert VRT → GeoTIFF
+
+    warp_opts = gdal.TranslateOptions(
+        format="GTiff",
+        outputType=gdal.GDT_Float32,
+        creationOptions=[
+            "TILED=YES",
+            "NUM_THREADS=ALL_CPUS",
+            "BIGTIFF=IF_SAFER",
+            "SPARSE_OK=TRUE",
+            "BLOCKXSIZE=256",
+            "BLOCKYSIZE=256",
+        ],
+    )
+
+    try:
+        gdal.Translate(out_file, vrt_path, options=warp_opts)
+
+    except Exception:
+
+        return ""
+
+    # 3️ Clean up temporary VRT
+    try:
+        os.remove(vrt_path)
+    except OSError:
+        pass
+    return out_file
+
+
+def worker_merge_and_crop(
+    cfg: WorkerConfig,
+    filenames: List[str],
+    date: str,
+    uuid: str,
+) -> Tuple[str, Optional[str]]:
+    """
+    Worker process:
+    1. Convert bands → Float32 VRT
+    2. Merge + reproject + crop → cropped GeoTIFF (EPSG:4326)
+    3. Return cropped GeoTIFF path
+    """
+    if not filenames:
+
+        return "", None
+
+    try:
+        # Validate input files
+        valid_files = [
+            f
+            for f in filenames
+            if os.path.exists(f) and os.path.getsize(f) > 0
+        ]
+        if not valid_files:
+
+            return "", None
+
+        # Convert bands to Float32 VRTs
+        vrt_bands = []
+        for f in valid_files:
+            try:
+                vrt = convert_band_to_uint16_vrt(f, cfg.download_folder)
+                if os.path.exists(vrt):
+                    vrt_bands.append(vrt)
+            except Exception:
+
+                continue
+
+        if not vrt_bands:
+            return "", None
+
+        # Merge, crop, and save GeoTIFF
+        cropped_tiff = merge_bands_crop_to_tiff(
+            uuid, vrt_bands, cfg.download_folder, cfg.bbox
+        )
+
+        # Verify output
+        if (
+            not os.path.exists(cropped_tiff)
+            or os.path.getsize(cropped_tiff) == 0
+        ):
+            return "", None
+
+        return cropped_tiff, "EPSG:4326"
+
+    except Exception:
+        traceback.print_exc()
+        return "", None
+
+
+def _download_granule_links(
+    granule_id: str, links: List[str], download_folder: str
+) -> Tuple[str, List[str]]:
+    """Download granule links and return list of downloaded files."""
+    try:
+        filenames = download(links, local_path=download_folder, threads=32)
+        return (granule_id, filenames if filenames else [])
+    except Exception:
+
+        return (granule_id, [])
+
+
+def prepare_merged_file_per_date(
+    cfg: WorkerConfig,
+    date_range: Tuple[str, str],
+    bbox: Tuple[float, float, float, float],
+    layers: List[str],
+    empty: bool = False,
+    current_merged_file: Optional[str] = None,
+    cloud_cover: Tuple[int, int] = (0, 100),
+) -> Tuple[str, Dict]:
+    """Process and merge data for a single date."""
+
+    date = date_range[0].split("T")[0]
+    timings = {}
+
+    final_filename = (
+        f"{cfg.download_folder.rstrip('/')}"
+        f"/{generate_digest(date, bbox)}_merged_cropped_final.tif"
+    )
+
+    # Skip if already exists
+    if os.path.exists(final_filename):
+        return final_filename, timings
+
+    merged_files = []
+
+    # Process each layer
+    for layer in layers:
+
+        try:
+            granules = search_data(
+                short_name=layer,
+                temporal=date_range,
+                bounding_box=tuple(map(float, bbox)),
+                cloud_hosted=True,
+                cloud_cover=cloud_cover,
+                count=1000,
+            )
+        except Exception:
+            granules = []
+
+        if not granules:
+            continue
+
+        # Build granule links mapping
+        granule_link_list = []
+        for granule in granules:
+            links = [
+                link
+                for band in cfg.bands_map.get(layer, [])
+                for link in granule.data_links(access="external")
+                if f".{band}." in link
+            ]
+
+            # Check if all required bands are present
+            if all(
+                any(f".{band}." in l for l in links)
+                for band in cfg.bands_map.get(layer, [])
+            ):
+                granule_link_list.append((granule.uuid, links))
+
+        # Download granules in parallel
+        downloaded_granules = []
+
+        with ThreadPoolExecutor(max_workers=cfg.thread_workers) as dl_executor:
+            futures = {
+                dl_executor.submit(
+                    _download_granule_links, gid, links, cfg.download_folder
+                ): gid
+                for gid, links in granule_link_list
+            }
+
+            for f in as_completed(futures):
+                gid = futures[f]
+                try:
+                    gid_local, filelist = f.result()
+                    if filelist:
+                        downloaded_granules.append((gid_local, filelist))
+                except Exception:
+                    traceback.print_exc()
+
+        # Process granules in parallel (merge/reproject/crop)
+
+        merge_results = []
+
+        if downloaded_granules:
+            with ProcessPoolExecutor(
+                max_workers=cfg.merge_workers
+            ) as merge_pool:
+                futures = {
+                    merge_pool.submit(
+                        worker_merge_and_crop, cfg, filenames, date, uuid
+                    ): uuid
+                    for uuid, filenames in downloaded_granules
+                }
+
+                for f in as_completed(futures):
+                    uuid = futures[f]
+                    try:
+                        merged_path, crs_str = f.result()
+                        if merged_path:
+                            merge_results.append(merged_path)
+                    except Exception:
+                        traceback.print_exc()
+
+                merged_files.extend(merge_results)
+
+
+    # Handle empty file creation
+    if not merged_files:
+        if empty and current_merged_file:
+            try:
+                with rasterio.open(current_merged_file) as src:
+                    meta = src.meta.copy()
+                    meta.update(
+                        {
+                            "driver": "GTiff",
+                            "count": src.count,
+                            "tiled": True,
+                            "blockxsize": 256,
+                            "blockysize": 256,
+                            "dtype": "float32",
+                            "nodata": -9999,
+                        }
+                    )
+
+                    empty_data = np.full(
+                        (src.count, src.height, src.width),
+                        -9999,
+                        dtype="float32",
+                    )
+                    with rasterio.open(final_filename, "w", **meta) as dst:
+                        dst.write(empty_data)
+
+                return final_filename, timings
+            except Exception:
+
+                return "", timings
+
+    # Final mosaic merge
+    try:
+        final_file = merge_granule_tiffs(
+            cfg, merged_files, final_filename, timings, date
+        )
+
+        return final_file, timings
+
+    except Exception:
+
+        return "", timings
+
+
+# -------------------------
+# Main Downloader Class
+# -------------------------
 class Downloader:
-    def __init__(self, dates, bbox, layers=LAYERS['HLS'], timeseries=False, process_workers=10, thread_workers=10):
-        """
-        Initialize Downloader
-        Args:
-            date (str): Date in the format of 'yyyy-mm-dd'
-            layer (str): any of HLSL30, HLSS30
-        """
+    """Main class for downloading and processing HLS data."""
+
+    def __init__(
+        self,
+        dates: str,
+        bbox: Tuple[float, float, float, float],
+        layers: List[str] = LAYERS["HLS"],
+        timeseries: bool = False,
+        process_workers: int = 4,  # Reduced default for better memory management
+        thread_workers: int = 10,
+        merge_workers: int = 6,  # Reduced default
+    ):
         self.dates = self.prepare_dates(dates)
         self.layers = layers
         self.bbox = bbox
         self.timeseries = timeseries
-        self.links = []
         self.process_workers = process_workers
         self.thread_workers = thread_workers
+        self.merge_workers = merge_workers
         self.timings = {}
 
-    @staticmethod
-    def generate_digest(date, bbox):
-        """
-        Create a digest (hash) based on the combination of date and bounding box.
-        Returns:
-            str: Hex digest string
-        """
-        # Use date and bbox as string
-        key = f"{date}|{','.join(map(str, bbox))}"
-        digest = hashlib.sha256(key.encode('utf-8')).hexdigest()
-        return digest
-    
-    @staticmethod
-    def log(msg):
-        pid = os.getpid()
-        tid = threading.get_ident()
-        print(f"[PID {pid} | TID {tid}] {msg}", flush=True)
+        self.cfg = WorkerConfig(
+            download_folder=DOWNLOAD_FOLDER,
+            bbox=bbox,
+            bands_map=BANDS,
+            layers=layers,
+            width=WIDTH,
+            height=HEIGHT,
+            delta=DELTA,
+            thread_workers=thread_workers,
+            merge_workers=merge_workers,
+        )
 
-    def prepare_start_end_date(self, date):
-        return (f"{date}T00:00:00Z", f"{date}T23:59:59Z")
-    
     @staticmethod
-    def record_time(label, start_time, date=None, timings=None):
-        """Record elapsed time with optional per-date aggregation."""
-        elapsed = round(time.perf_counter() - start_time, 2)
-        if timings is not None and date:
-            if date not in timings:
-                timings[date] = {}
-            timings[date][label] = elapsed
-        print(f"[TIMER] {label}: {elapsed:.2f}s", flush=True)
-        return elapsed
-
-    def prepare_dates(self, dates):
+    def prepare_dates(dates: str) -> List[str]:
+        """Parse date string into list of dates."""
         date_list = []
-        if ':' in dates:
-            start_date, end_date = [_date.strip() for _date in dates.split(':')]
-            # validate date format
+
+        if ":" in dates:
+            # Date range
+            start_date, end_date = [d.strip() for d in dates.split(":")]
             date_list.append(start_date)
-            end_date_str = start_date
+            current_date = start_date
+
             try:
-                while(end_date_str != end_date):
-                    end_date_str = (datetime.datetime.strptime(end_date_str, '%Y-%m-%d') + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-                    date_list.append(end_date_str)
+                while current_date != end_date:
+                    dt = datetime.datetime.strptime(current_date, "%Y-%m-%d")
+                    current_date = (dt + datetime.timedelta(days=1)).strftime(
+                        "%Y-%m-%d"
+                    )
+                    date_list.append(current_date)
             except ValueError:
                 raise ValueError("Incorrect date format, should be YYYY-MM-DD")
-        elif ',' in dates:
-            date_list = dates.split(',')
+
+        elif "," in dates:
+            # Comma-separated dates
+            date_list = dates.split(",")
             for date in date_list:
                 try:
-                    datetime.datetime.strptime(date, '%Y-%m-%d')
+                    datetime.datetime.strptime(date.strip(), "%Y-%m-%d")
                 except ValueError:
-                    raise ValueError("Incorrect date format, should be YYYY-MM-DD")
+                    raise ValueError(
+                        "Incorrect date format, should be YYYY-MM-DD"
+                    )
+            date_list = [d.strip() for d in date_list]
         else:
+            # Single date
             date_list = [dates]
             try:
-                datetime.datetime.strptime(dates, '%Y-%m-%d')
+                datetime.datetime.strptime(dates, "%Y-%m-%d")
             except ValueError:
                 raise ValueError("Incorrect date format, should be YYYY-MM-DD")
+
         return date_list
 
-    def login(self):
+    def login(self) -> None:
+        """Authenticate with earthaccess using environment credentials."""
         self.auth = earthaccess.login(strategy="environment")
 
-    def download_band(self, band, filename):
-        # download one band
-        pass
-
-    def mkdir(self, foldername):
-        if not (os.path.exists(foldername)):
-            os.makedirs(foldername)
-
-    def download_bands(self, links):
-        filenames = earthaccess.download(links, local_path=DOWNLOAD_FOLDER, threads=16)
-        return filenames
-    
-    def download_and_log(self,granule, links):
-        self.log(f"Thread starting granule {granule.uuid}")
-        filenames = self.download_bands(links)
-        self.log(f"Thread completed granule {granule.uuid}")
-        return filenames
-    
-    def download_granule_links(self, layer, granules, date):
-        """Download all granules for a layer using ThreadPoolExecutor."""
-        results = []
-        futures = {}
-        with ThreadPoolExecutor(max_workers=self.thread_workers) as executor:
-            for granule in granules:
-                links = [link for band in BANDS[layer] 
-                        for link in granule.data_links(access="external") 
-                        if f".{band}." in link]
-                if all(any(f".{band}." in l for l in links) for band in BANDS[layer]):
-                    self.log(f"Found all band links for granule {granule.uuid}")
-                    futures[executor.submit(self.download_and_log, granule, links)] = granule.uuid
-                else:
-                    self.log(f"Skipping granule {granule.uuid} (missing some band links)")
-
-            for future in as_completed(futures):
-                uuid = futures[future]
-                try:
-                    filenames = future.result()
-                    if filenames:
-                        results.append((uuid, filenames))
-                except Exception as e:
-                    self.log(f"Error downloading granule {uuid}: {e}")
-
-        self.log(f"All {len(results)} granules processed for layer {layer} on date {date}")
-        return results
-
-    
-
-    def generate_tiles(self, file_name, shape=(512,512), batch_size=1, overlap=0, scale=False):
+    def find_and_prepare_data(self) -> Dict[str, str]:
         """
-        Generate tiles of given shape from the input file.
-        Yields (tile_array, window, tile_index) for each tile.
-        Args:
-            file_name: path to the multi-band raster file
-            shape: (height, width) of each tile
-        """
-        height, width = shape
-        with rasterio.open(file_name) as src:
-            step_y = height - overlap
-            step_x = width - overlap
-            nrows = max(1, (src.height - overlap) // step_y)
-            ncols = max(1, (src.width - overlap) // step_x)
-            batch = []
-            for i in range(nrows):
-                for j in range(ncols):
-                    row_off = i * step_y
-                    col_off = j * step_x
-                    window = Window(col_off, row_off, width, height)
-                    # Calculate actual window shape
-                    win_height = min(height, src.height - row_off)
-                    win_width = min(width, src.width - col_off)
-                    tile = src.read(window=Window(col_off, row_off, win_width, win_height))
-                    # Zero pad if needed
-                    if win_height < height or win_width < width:
-                        pad_shape = (tile.shape[0], height, width)
-                        padded = np.zeros(pad_shape, dtype=tile.dtype)
-                        if scale:
-                            tile = tile / 10000.0
-                            tile = np.clip(tile, 0, 1)
-                        padded[:, :win_height, :win_width] = tile
-                        tile = padded
-                    # Prepare metadata for memory file
-                    meta = src.meta.copy()
-                    meta.update({
-                        "height": height,
-                        "width": width
-                    })
-                    # Calculate correct transform for padded window
-                    base_transform = src.window_transform(Window(col_off, row_off, win_width, win_height))
-                    # Assign transform for the window (same for padded and non-padded)
-                    meta["transform"] = base_transform
-                    memfile = MemoryFile()
-                    with memfile.open(**meta) as dst:
-                        dst.write(tile)
-                    batch.append((memfile, (win_height, win_width), window, meta["transform"], (i, j)))
-                    if len(batch) == batch_size:
-                        yield batch
-                        batch = []
-            if batch:
-                yield batch
-
-    def merge_bands(self, filenames, date, uuid):
-        """
-        Merge input files into a single 7-band TIFF, cropped to the bbox.
-        Args:
-            filenames: list of file paths for each band
-            output_name: output file name
-        """
-        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, self.bbox)}-{uuid}.tif"
-        if os.path.exists(output_name):
-            print(f"File {output_name} already exists. Skipping merge.")
-            return output_name
-
-        # Open all band files and stack as separate bands
-        srcs = [rasterio.open(f) for f in filenames]
-        # Assume all files have same shape, transform, and CRS
-        arrays = [src.read(1) for src in srcs]
-        stacked = np.stack(arrays, axis=0)
-        out_meta = srcs[0].meta.copy()
-        transform = srcs[0].transform
-
-        out_meta.update({
-            "driver": "GTiff",
-            "count": len(filenames),
-            'compress': 'lzw',  # Use a lossless compression
-            'tiled': True,  # Required for COG,
-            'blockxsize': 512,
-            'blockysize': 512,
-            'dtype': 'float32',
-            'nodata': -9999
-        })
-
-        with rasterio.open(output_name, "w", **out_meta) as dst:
-            dst.write(stacked)
-        # Close all sources
-        for s in srcs:
-            s.close()
-        return output_name
-
-    def reproject_to_crs(self, src_file, dst_file, target_crs):
-        """
-        Reproject a raster file to a target CRS.
-        Args:
-            src_file: Source file path
-            dst_file: Destination file path
-            target_crs: Target CRS to reproject to
-        """
-        with rasterio.open(src_file) as src:
-            # Calculate the transform and dimensions for the target CRS
-            transform, width, height = calculate_default_transform(
-                src.crs, target_crs, src.width, src.height, *src.bounds
-            )
-
-            # Create the destination profile
-            kwargs = src.meta.copy()
-            kwargs.update({
-                'crs': target_crs,
-                'transform': transform,
-                'width': width,
-                'height': height
-            })
-
-            # Reproject and save
-            with rasterio.open(dst_file, 'w', **kwargs) as dst:
-                for i in range(1, src.count + 1):
-                    reproject(
-                        source=rasterio.band(src, i),
-                        destination=rasterio.band(dst, i),
-                        src_transform=src.transform,
-                        src_crs=src.crs,
-                        dst_transform=transform,
-                        dst_crs=target_crs,
-                        resampling=Resampling.nearest
-                    )
-
-    def crop_to_bbox(self, filename):
-        """
-        Crop the input file to the bounding box and resample to 512x512.
-        Args:
-            filename: path to the input raster file
-        Returns:
-            str: path to the cropped and resampled file
-        """
-        output_name = f"{DOWNLOAD_FOLDER.rstrip('/')}/{filename.split('/')[-1].replace('.tif', '_cropped.tif')}"
-        if os.path.exists(output_name):
-            print(f"File {output_name} already exists. Skipping crop.")
-            return output_name
-
-        with rasterio.open(filename) as src:
-            # Create bbox geometry in WGS84
-            minx, miny, maxx, maxy = self.bbox
-            bbox_geom = box(minx, miny, maxx, maxy)
-            bbox_gdf = gpd.GeoDataFrame([1], geometry=[bbox_geom], crs=CRS.from_epsg(4326))
-
-            out_image, out_transform = mask(src, bbox_gdf.geometry, crop=True)
-
-            out_meta = src.meta.copy()
-            out_meta.update({
-                "height": out_image.shape[1],
-                "width": out_image.shape[2],
-                "transform": out_transform
-            })
-
-            with rasterio.open(output_name, "w", **out_meta) as dst:
-                for i in range(1, src.count + 1):
-                    dst.write(out_image[i - 1], i)
-
-        return output_name
-
-    def save_cog(self, mosaic, transform, filename, crs):
-        """
-        Reproject raster to EPSG:4326 and save as a file.
-        Args:
-            mosaic (np.ndarray): The raster data.
-            transform (affine.Affine): The rasterio transform.
-            filename (str): The output filename.
-        """
-        src_profile = {
-            'driver': 'GTiff',
-            'height': mosaic.shape[1],
-            'width': mosaic.shape[2],
-            'transform': transform,
-            'count': mosaic.shape[0],
-            'dtype': mosaic.dtype,
-            'crs': crs,
-            'nodata': -9999,
-            'compress': 'lzw',
-            'tiled': True,
-            'blockxsize': 512,
-            'blockysize': 512
-        }
-        dst_crs = CRS.from_epsg(4326)
-
-        with MemoryFile() as memfile:
-            with memfile.open(**src_profile) as src:
-                src.write(mosaic)
-
-                # Calculate the optimal transform and dimensions for the destination
-                dst_transform, dst_width, dst_height = calculate_default_transform(
-                    src.crs, dst_crs, src.width, src.height, *src.bounds
-                )
-
-                # Create the destination profile
-                dst_profile = src.profile.copy()
-                dst_profile.update({
-                    'crs': dst_crs,
-                    'transform': dst_transform,
-                    'width': dst_width,
-                    'height': dst_height,
-                    'nodata': src.nodata
-                })
-
-                # Write the reprojected data to the destination file
-                with rasterio.open(filename, 'w', **dst_profile) as dst:
-                    reproject(
-                        source=rasterio.band(src, list(range(1, src.count + 1))),
-                        destination=rasterio.band(dst, list(range(1, dst.count + 1))),
-                        src_transform=src.transform,
-                        src_crs=src.crs,
-                        src_nodata=src.nodata,
-                        dst_transform=dst_transform,
-                        dst_crs=dst_crs,
-                        dst_nodata=dst.nodata,
-                        resampling=Resampling.bilinear
-                    )
-        return filename
-
-    def prepare_date_range(self, date, delta=DELTA):
-        date_obj = datetime.datetime.strptime(date, '%Y-%m-%d')
-        start_time = date_obj + datetime.timedelta(days=delta)
-        start_date = datetime.datetime.strftime(start_time, '%Y-%m-%d')
-        return self.prepare_start_end_date(start_date)
-
-    def prepare_merged_file(self, date_range, bbox, layers, empty=False, current_merged_file=None, cloud_cover=(0, 100),timings=None):
-        # prepare merged file for given date range and bbox
-        date = date_range[0].split('T')[0]
-        if timings is None:
-            timings = {}
-        t0_total = time.perf_counter()
-
-        output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, bbox)}_merged.tif"
-        if os.path.exists(output_filename.replace('.tif', '_cropped.tif')):
-            return output_filename.replace('.tif', '_cropped.tif')
-
-        merged_files = []
-        target_crs = None
-
-        for layer in layers:
-            t_search = time.perf_counter()
-            try:
-                granules = search_data(
-                    short_name=layer,
-                    temporal=date_range,
-                    bounding_box=tuple(map(float, bbox)),
-                    cloud_hosted=True,
-                    cloud_cover=cloud_cover,
-                    count=1000
-                )
-            except Exception as e:
-                print(f"[{date}] Granule search exception for layer {layer}: {e}")
-                granules = []
-            self.record_time(f"{layer}_search", t_search, date, timings)
-            if not granules:
-                continue
-            t_download = time.perf_counter()
-            self.log(f"[{date}] Layer {layer}: {len(granules)} granules found")
-            downloaded_granules = self.download_granule_links(layer, granules, date)
-            self.record_time(f"{layer}_download", t_download, date, timings)
-            for uuid, filenames in downloaded_granules:
-                    t_merge = time.perf_counter()
-                    if not filenames:
-                        continue
-                    merged_file = self.merge_bands(filenames, date, uuid)
-                    self.record_time(f"{layer}_merge_bands", t_merge, date, timings)
-                    # Set target CRS from the first file
-                    if target_crs is None:
-                        with rasterio.open(merged_file) as src:
-                            target_crs = src.crs
-                    # Check if the file has the same CRS as target
-                    with rasterio.open(merged_file) as src:
-                        if src.crs != target_crs:
-                            # Reproject to target CRS
-                            reprojected_file = merged_file.replace('.tif', '_reprojected.tif')
-                            self.reproject_to_crs(merged_file, reprojected_file, target_crs)
-                            merged_files.append(reprojected_file)
-                        else:
-                            merged_files.append(merged_file)
-
-        if not merged_files:
-            if empty:
-                # create empty file that has the same shapes and crs as current_merged_file
-                if current_merged_file:
-                    cropped_file = output_filename.replace('.tif', '_cropped.tif')
-                    with rasterio.open(current_merged_file) as src:
-                        meta = src.meta.copy()
-                        meta.update({
-                            "driver": "GTiff",
-                            "count": src.count,
-                            'compress': 'lzw',  # Use a lossless compression
-                            'tiled': True,  # Required for COG,
-                            'blockxsize': 512,
-                            'blockysize': 512,
-                            'dtype': 'float32',
-                            'nodata': -9999
-                        })
-                        empty_data = np.zeros_like(src.read())
-                        with rasterio.open(cropped_file, "w", **meta) as dst:
-                            dst.write(empty_data)
-                    return cropped_file
-                else:
-                    print("No current merged file provided for empty output.")
-            return ''
-        t_post = time.perf_counter()
-        mosaic, transform = merge(merged_files, method='first')
-        merged_file = self.save_cog(mosaic, transform, output_filename, target_crs)
-        cropped_file = self.crop_to_bbox(merged_file)
-        self.record_time("post_merge_crop", t_post, date, timings)
-        self.record_time("total_prepare_merged_file", t0_total, date, timings)
-
-        return cropped_file
-
-    def find_first_available_file(self, base_date, buffer, delta=DELTA, direction=1, cloud_cover=(0, 200)):
-        """Find the earliest (chronologically closest) available merged file going backward (-1) or forward (+1).
-        direction: -1 for pre, +1 for post.
-        Returns path or '' if nothing found within window.
-        """
-        min_delta = (delta - buffer) * direction
-        max_delta = delta * direction
-        if direction < 0:
-            min_delta, max_delta = max_delta, min_delta
-        base_dt = datetime.datetime.strptime(base_date, '%Y-%m-%d')
-        print(f"Searching for {'pre' if direction==-1 else 'post'} date from {base_date}, range: {min_delta} to {max_delta}")
-        for step in range(min_delta, max_delta + 1):
-            candidate_dt = base_dt + datetime.timedelta(days=step)
-            candidate_str = candidate_dt.strftime('%Y-%m-%d')
-            date_range = self.prepare_start_end_date(candidate_str)
-            path = self.prepare_merged_file(date_range, self.bbox, self.layers, cloud_cover=cloud_cover)
-            if path:  # non-empty string means data found
-                print('downloaded:', candidate_str, path, step)
-                return path
-        return ''
-
-    def prepare_data_for_date(self,date):
-        t0 = time.perf_counter()
-        prepared_data = {}
-        local_timings = {}
-        if self.timeseries:
-            # First get current date file; if not present skip entirely
-            current_date_range = self.prepare_start_end_date(date)
-            current_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers)
-            if not current_cropped_file:
-                # Skip this date entirely as per requirement
-                return {date: ''}, local_timings
-            # Find pre and post within window (earliest match)
-            pre_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=-1, cloud_cover=(0, 20))
-            post_cropped_file = self.find_first_available_file(date, buffer=15, delta=DELTA, direction=1, cloud_cover=(0, 20))
-            # If none found, create zero (empty) only then
-            if not pre_cropped_file:
-                pre_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file, cloud_cover=(0, 20))
-            if not post_cropped_file:
-                post_cropped_file = self.prepare_merged_file(current_date_range, self.bbox, self.layers, empty=True, current_merged_file=current_cropped_file, cloud_cover=(0, 20))
-            timeseries_files = [pre_cropped_file, current_cropped_file, post_cropped_file]
-            # Build stack
-            stacked_arrays = []
-            for file in timeseries_files:
-                with rasterio.open(file) as src:
-                    stacked_arrays.append(src.read())
-            mosaic = np.concatenate(stacked_arrays, axis=0)
-            output_filename = f"{DOWNLOAD_FOLDER.rstrip('/')}/{Downloader.generate_digest(date, self.bbox)}_timeseries_merged.tif"
-            with rasterio.open(current_cropped_file) as src_ref:
-                transform = src_ref.transform
-                crs = src_ref.crs
-            merged_file = self.save_cog(mosaic, transform, output_filename, crs)
-            cropped_file = self.crop_to_bbox(merged_file)
-        else:
-            cropped_file = self.prepare_merged_file(self.prepare_start_end_date(date), self.bbox, self.layers,timings=local_timings)
-        prepared_data[date] = cropped_file
-        return prepared_data,local_timings
-    
-    def find_and_prepare_data(self):
-        """
-        Processes data for each date in parallel using a process pool.
-
-        For each date in `self.dates`, submits a task to `self.prepare_data` using a `ProcessPoolExecutor`.
-        Collects results as they complete, updating the results dictionary.
-        Logs progress and errors for each date.
-        Returns a dictionary mapping dates to their processed data or an empty string if an error occurred.
+        Orchestrate processing of all dates in parallel.
 
         Returns:
-            dict: A dictionary where keys are dates and values are the processed data or an empty string on error.
+            Dictionary mapping dates to processed file paths.
         """
-        results = {}
+        results: Dict[str, str] = {}
         start_global = time.perf_counter()
 
-        with ProcessPoolExecutor(max_workers=self.process_workers) as pool:
-            futures = {pool.submit(self.prepare_data_for_date, date): date for date in self.dates}
-            for f in as_completed(futures):
-                date = futures[f]
-                try:
-                    data, local_timings = f.result()
-                    results.update(data)
-                    self.timings.update(local_timings)
-                except Exception as e:
-                    self.log(f"Error in date {date}: {e}")
-                    results[date] = ""
+        if self.timeseries:
+            # Timeseries mode
+            with ProcessPoolExecutor(max_workers=self.process_workers) as pool:
+                futures = {
+                    pool.submit(
+                        self.prepare_data_for_date_timeseries, date
+                    ): date
+                    for date in self.dates
+                }
+                for f in as_completed(futures):
+                    date = futures[f]
+                    try:
+                        data, local_timings = f.result()
+                        results.update(data)
+                        if isinstance(local_timings, dict):
+                            self.timings.update(local_timings)
+                    except Exception:
+                        results[date] = ""
+        else:
+            # Single-date mode
+            with ProcessPoolExecutor(max_workers=self.process_workers) as pool:
+                futures = {
+                    pool.submit(
+                        prepare_merged_file_per_date,
+                        self.cfg,
+                        self.prepare_start_end_date(date),
+                        tuple(self.bbox),
+                        self.layers,
+                        False,
+                        None,
+                        (0, 100),
+                    ): date
+                    for date in self.dates
+                }
+                for f in as_completed(futures):
+                    date = futures[f]
+                    try:
+                        path, local_timings = f.result()
+                        results[date] = path
+                        if isinstance(local_timings, dict):
+                            self.timings.update(local_timings)
+                    except Exception:
 
-        self.record_time("TOTAL_ALL_DATES", start_global, timings=self.timings)
-
-        # Save timing summary JSON
-        timing_file = os.path.join(DOWNLOAD_FOLDER, "timing_summary.json")
-        with open(timing_file, "w") as f:
-            json.dump(self.timings, f, indent=2)
-        self.log(f"Timing summary saved: {timing_file}")
+                        results[date] = ""
 
         return results
 
+    @staticmethod
+    def prepare_start_end_date(date: str) -> Tuple[str, str]:
+        """Convert date to start/end datetime strings."""
+        return (f"{date}T00:00:00Z", f"{date}T23:59:59Z")
+
+    def prepare_date_range(
+        self, date: str, delta: int = DELTA
+    ) -> Tuple[str, str]:
+        """Calculate date range with delta offset."""
+        date_obj = datetime.datetime.strptime(date, "%Y-%m-%d")
+        start_time = date_obj + datetime.timedelta(days=delta)
+        start_date = datetime.datetime.strftime(start_time, "%Y-%m-%d")
+        return self.prepare_start_end_date(start_date)
+
+    def find_first_available_file(
+        self,
+        base_date: str,
+        buffer: int,
+        delta: int = DELTA,
+        direction: int = 1,
+        cloud_cover: Tuple[int, int] = (0, 200),
+    ) -> str:
+        """Search for first available data file before or after a base date."""
+        min_delta = (delta - buffer) * direction
+        max_delta = delta * direction
+
+        if direction < 0:
+            min_delta, max_delta = max_delta, min_delta
+        base_dt = datetime.datetime.strptime(base_date, "%Y-%m-%d")
+        direction_label = "pre" if direction == -1 else "post"
+
+
+        for step in range(min_delta, max_delta + 1):
+            candidate_dt = base_dt + datetime.timedelta(days=step)
+            candidate_str = candidate_dt.strftime("%Y-%m-%d")
+            date_range = self.prepare_start_end_date(candidate_str)
+            path, _ = prepare_merged_file_per_date(
+                self.cfg,
+                date_range,
+                tuple(self.bbox),
+                self.layers,
+                False,
+                None,
+                cloud_cover,
+            )
+            if path:
+                return path
+
+        return ""
+
+    def prepare_data_for_date_timeseries(
+        self, date: str
+    ) -> Tuple[Dict[str, str], Dict]:
+        """Prepare timeseries data (pre/current/post) for a single date."""
+        t0 = time.perf_counter()
+        prepared_data: Dict[str, str] = {}
+        local_timings: Dict = {}
+
+        # Current date raster
+        current_range = self.prepare_start_end_date(date)
+        current_file, _ = prepare_merged_file_per_date(
+            self.cfg, current_range, tuple(self.bbox), self.layers
+        )
+        if not current_file:
+            return {date: ""}, local_timings
+
+        # Pre and post dates
+        pre_file = self.find_first_available_file(
+            date, buffer=15, direction=-1, cloud_cover=(0, 20)
+        )
+        post_file = self.find_first_available_file(
+            date, buffer=15, direction=1, cloud_cover=(0, 20)
+        )
+
+        # Create empty files if missing
+        if not pre_file:
+            pre_file, _ = prepare_merged_file_per_date(
+                self.cfg,
+                current_range,
+                tuple(self.bbox),
+                self.layers,
+                empty=True,
+                current_merged_file=current_file,
+                cloud_cover=(0, 20),
+            )
+        if not post_file:
+            post_file, _ = prepare_merged_file_per_date(
+                self.cfg,
+                current_range,
+                tuple(self.bbox),
+                self.layers,
+                empty=True,
+                current_merged_file=current_file,
+                cloud_cover=(0, 20),
+            )
+
+        timeseries_files = [pre_file, current_file, post_file]
+
+        # Merge timeseries
+        datasets = [rasterio.open(f) for f in timeseries_files]
+        mosaic, transform = rio_merge(datasets, method="first")
+        crs = datasets[0].crs
+
+        for ds in datasets:
+            ds.close()
+
+        # Save as timeseries COG
+        output_filename = os.path.join(
+            self.cfg.download_folder,
+            f"{generate_digest(date, self.bbox)}_timeseries_merged.tif",
+        )
+
+        profile = {
+            "driver": "GTiff",
+            "height": mosaic.shape[1],
+            "width": mosaic.shape[2],
+            "count": mosaic.shape[0],
+            "dtype": "float32",
+            "crs": crs,
+            "transform": transform,
+            "tiled": True,
+            "blockxsize": 256,
+            "blockysize": 256,
+            "nodata": -9999,
+        }
+        with rasterio.open(output_filename, "w", **profile) as dst:
+            dst.write(mosaic)
+        prepared_data[date] = output_filename
+        return prepared_data, local_timings
