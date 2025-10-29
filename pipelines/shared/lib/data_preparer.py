@@ -269,24 +269,24 @@ class DataPreparer:
                 base_transform = src.window_transform(window)
                 transforms_batch.append(base_transform)
 
-                    # Create MemoryFiles only when batch is full
-                    if len(tiles_batch) == self.batch_size:
-                        memfiles_batch = []
-                        for tile_data, transform in zip(tiles_batch, transforms_batch):
-                            # Create metadata only when needed for MemoryFile
-                            meta = meta_template.copy()
-                            meta["transform"] = transform
-                            memfile = MemoryFile()
-                            with memfile.open(**meta) as dst:
-                                dst.write(tile_data)
-                            memfiles_batch.append(memfile)
+                # Create MemoryFiles only when batch is full
+                if len(tiles_batch) == self.batch_size:
+                    memfiles_batch = []
+                    for tile_data, transform in zip(tiles_batch, transforms_batch):
+                        # Create metadata only when needed for MemoryFile
+                        meta = meta_template.copy()
+                        meta["transform"] = transform
+                        memfile = MemoryFile()
+                        with memfile.open(**meta) as dst:
+                            dst.write(tile_data)
+                        memfiles_batch.append(memfile)
 
-                        yield np.asarray(memfiles_batch)
+                    yield np.asarray(memfiles_batch)
 
-                        # Return tiles to memory pool after yielding
-                        self._return_tiles_to_pool(tiles_batch)
-                        tiles_batch = []
-                        transforms_batch = []
+                    # Return tiles to memory pool after yielding
+                    self._return_tiles_to_pool(tiles_batch)
+                    tiles_batch = []
+                    transforms_batch = []
 
             # Handle remaining tiles
             if tiles_batch:
