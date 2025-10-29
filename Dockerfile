@@ -30,4 +30,5 @@ COPY src /app/src
 EXPOSE 8000
 
 # Default command for development (can be overridden by docker-compose)
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "10"]
+# Making K8s control the process with a service account
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
