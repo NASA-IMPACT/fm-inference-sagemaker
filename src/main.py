@@ -5,6 +5,8 @@ import hmac
 import json
 import logging
 import os
+from fastapi.responses import HTMLResponse
+
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
@@ -406,6 +408,20 @@ def read_root():
 def health_check():
     """Health check endpoint (legacy)."""
     return {"successCode": 200, "status": "healthy"}
+
+@app.get("/welcome")
+def welcome_page(claim = Depends(general_access_dependency)):
+    """Welcome page for new users."""
+    # Read HTML template from file
+    template_file = f"{os.path.dirname(__file__)}/templates/welcome.html"
+    with open(template_file, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    username = claim.get("username")
+    # Replace placeholder with actual username
+    html_content = html_content.replace("{username}", username)
+    
+    return HTMLResponse(content=html_content)
+
 
 if __name__ == "__main__":
     import uvicorn

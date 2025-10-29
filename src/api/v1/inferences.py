@@ -32,10 +32,8 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
 
 
     @router.get("/{inference_id}", response_model=InferenceRead, status_code=status.HTTP_200_OK)
-    def get_inference(inference_id: str, claims: Dict[str, Any] = Depends(auth_dependency), db: Session = Depends(get_db)):
+    def get_inference(inference_id: str, db: Session = Depends(get_db)):
         """Get a specific inference by ID."""
-        if not claims:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No valid token provided" )
         try:
             inference = db.query(Inference).filter(Inference.id == inference_id).first()
             if not inference:
@@ -65,6 +63,8 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         # TODO: handle db session properly
         # handle large requests properly with background tasks
         # send back a job id and let the client poll for status/results
+
+        t0 = time.time()
         user_groups = claims.get("groups") or claims.get("cognito:groups", [])
         user_email = claims.get("email")
         inference_name = inference.name if inference.name else time.strftime("inference_%Y%m%d_%H%M%S")
@@ -103,6 +103,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
                 # also calculate any indices if needed here
                 # pass these extra files to the inference pipeline as needed
                 url = f"http://{model_id.replace('_', '-')}-service:{port}/api/v1/invocations"
+                t = time.time()
                 response = requests.post(url, json={
                     'filename': merged_file,
                     'scale': finetuned_model.data_config.get('scaled', False),
@@ -112,6 +113,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
                     'date': date,
                     'timeseries': timeseries
                 })
+                print(f"Inference service Took to respond {time.time() - t:.2f} seconds")
                 results[model_id] = results.get(model_id, {})
                 results[model_id][date] = results[model_id].get(date, {})
                 results[model_id][date] = response.json()[model_id]
@@ -135,7 +137,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         db.add(inference_orm)
         db.commit()
         db.refresh(inference_orm)
-
+        print(f"End to End took {time.time() - t0:.2f} seconds")
         return inference_orm
 
     @router.delete("/{inference_id}", status_code=status.HTTP_204_NO_CONTENT)

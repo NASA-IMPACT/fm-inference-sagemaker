@@ -13,7 +13,7 @@ def create_models_router(auth_dependency: Callable) -> APIRouter:
     router = APIRouter(prefix="/v1/models", tags=["models"])
 
     @router.get("", response_model=List[FinetunedModelRead], status_code=status.HTTP_200_OK)
-    def get_models(_: Dict[str, Any] = Depends(auth_dependency), db: Session = Depends(get_db)):
+    def get_models(db: Session = Depends(get_db)):
         """Get all finetuned models."""
         try:
             # Total jobs by status
@@ -45,12 +45,8 @@ def create_models_router(auth_dependency: Callable) -> APIRouter:
         except Exception as e:
             return {"error": str(e)}
 
-
-
-
-
     @router.get("/{model_id}", response_model=FinetunedModelRead, status_code=status.HTTP_200_OK)
-    def get_model(model_id: str, _: Dict[str, Any] = Depends(auth_dependency), db: Session = Depends(get_db)):
+    def get_model(model_id: str, db: Session = Depends(get_db)):
         """Get a specific model by ID."""
         try:
             model = db.query(FinetunedModel).filter(FinetunedModel.id == model_id).first()
@@ -107,3 +103,4 @@ def create_models_router(auth_dependency: Callable) -> APIRouter:
         except Exception as e:
             return {"error": str(e)}
     return router
+
