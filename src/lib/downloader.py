@@ -66,7 +66,7 @@ BANDS = {
 
 LAYERS = {"HLS": ["HLSS30", "HLSL30"], "MERRA2": ["M2T1NXSLV", "M2T1NXLND"]}
 
-DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", "/Users/dshah/Documents/ODSI/r20/downloads")
+DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", "/root/.cache/")
 
 WIDTH, HEIGHT = (256, 256)
 DELTA = 90
