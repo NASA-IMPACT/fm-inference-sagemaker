@@ -8,6 +8,12 @@ if [[ -z "$ECR_URL" || -z "$INGRESS_HOST" ]]; then
     exit 1
 fi
 
+export RELEASE_VERION=$(git rev-parse --abbrev-ref HEAD)
+
+
+# Rest of the code remains the same...
+
+
 
 # Build the image first to get the digest
 TEMP_IMAGE_NAME="inference:temp"

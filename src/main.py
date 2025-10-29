@@ -104,7 +104,7 @@ root_path = os.environ.get("FASTAPI_ROOT_PATH", "/api/predict")
 app = FastAPI(
     title="FM Inference Service",
     description="REST API for managing finetuned models and inferences.",
-    version="0.0.1",
+    version= os.getenv("RELEASE_VERION", "0.0.1"),
     lifespan=lifespan,
     root_path=root_path
 )
