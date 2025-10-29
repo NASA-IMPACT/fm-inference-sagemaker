@@ -114,21 +114,13 @@ class Infer:
         Returns:
             list: List of GeoJSON features.
         """
-        geojson_features = []
-        def get_qa_mask(tile, qa_flags):
-            combined = np.zeros_like(tile).astype('uint')
-            for qa_flag in qa_flags:
-                qa_index = QA_INDICES.get(qa_flag)
-                flag = tile[6].astype('uint') & (1 << qa_index) != 0
-                combined |= flag
-            return combined
         with rasterio.open(image_file) as src:
             profile = src.profile
             tile = src.read()
             if timeseries:
-                mask = get_qa_mask(tile[9:16], qa_flags)
+                mask = tile[15]
             else:
-                mask = get_qa_mask(tile, qa_flags)
+                mask = tile[6]
             transform = profile['transform']
             mask = mask.astype('uint8')  # Ensure mask is in uint8 format
 
