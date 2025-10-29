@@ -4,21 +4,20 @@ import os
 import time
 import hashlib
 import datetime
-from dataclasses import dataclass
+import traceback
+import numpy as np
+import rasterio
+import earthaccess
 from concurrent.futures import (
     ThreadPoolExecutor,
     ProcessPoolExecutor,
     as_completed,
 )
-from typing import List, Tuple, Optional, Dict
-
-import numpy as np
-import rasterio
-from rasterio.merge import merge as rio_merge
-import earthaccess
+from dataclasses import dataclass
 from earthaccess import search_data, download
+from typing import List, Tuple, Optional, Dict
+from rasterio.merge import merge as rio_merge
 from osgeo import gdal
-import traceback
 
 gdal.UseExceptions()
 
@@ -67,7 +66,7 @@ BANDS = {
 
 LAYERS = {"HLS": ["HLSS30", "HLSL30"], "MERRA2": ["M2T1NXSLV", "M2T1NXLND"]}
 
-DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", "/root/.cache/")
+DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", "/Users/dshah/Documents/ODSI/r20/downloads")
 
 WIDTH, HEIGHT = (256, 256)
 DELTA = 90
@@ -109,21 +108,20 @@ def convert_band_to_uint16_vrt(src_file: str, out_dir: str) -> str:
 
 
 def merge_bands_crop_to_tiff(
-    granule_id: str, band_vrts: list[str], out_dir: str, bbox: tuple
+    granule_id: str, band_vrts: list[str], cfg: WorkerConfig
 ) -> str:
     """
     Merge uint16 band VRTs → reproject → crop → write cropped GeoTIFF (EPSG:4326).
     Single Warp call over a stacked VRT for speed.
     """
-    os.makedirs(out_dir, exist_ok=True)
 
-    stacked_vrt = os.path.join(out_dir, f"{granule_id}_stack.vrt")
+    stacked_vrt = os.path.join(cfg.download_folder, f"{granule_id}_stack.vrt")
     gdal.BuildVRT(stacked_vrt, band_vrts, separate=True)
 
-    minx, miny, maxx, maxy = bbox
+    minx, miny, maxx, maxy = cfg.bbox
     wkt_poly = f"POLYGON(({minx} {miny},{minx} {maxy},{maxx} {maxy},{maxx} {miny},{minx} {miny}))"
 
-    cropped_tiff = os.path.join(out_dir, f"{granule_id}_cropped_4326.tif")
+    cropped_tiff = os.path.join(cfg.download_folder, f"{granule_id}_cropped_4326.tif")
 
     warp_options = gdal.WarpOptions(
         dstSRS="EPSG:4326",
@@ -136,8 +134,8 @@ def merge_bands_crop_to_tiff(
         warpMemoryLimit=1073741824,
         creationOptions=[
             "TILED=YES",
-            "BLOCKXSIZE=256",
-            "BLOCKYSIZE=256",
+            "BLOCKXSIZE="+str(cfg.width),
+            "BLOCKYSIZE="+str(cfg.height),
             "NUM_THREADS=ALL_CPUS",
             "BIGTIFF=IF_SAFER",
         ],
@@ -190,8 +188,8 @@ def merge_granule_tiffs(
             "NUM_THREADS=ALL_CPUS",
             "BIGTIFF=IF_SAFER",
             "SPARSE_OK=TRUE",
-            "BLOCKXSIZE=256",
-            "BLOCKYSIZE=256",
+            "BLOCKXSIZE="+str(cfg.width),
+            "BLOCKYSIZE="+str(cfg.height),
         ],
     )
 
@@ -253,7 +251,7 @@ def worker_merge_and_crop(
 
         # Merge, crop, and save GeoTIFF
         cropped_tiff = merge_bands_crop_to_tiff(
-            uuid, vrt_bands, cfg.download_folder, cfg.bbox
+            uuid, vrt_bands, cfg
         )
 
         # Verify output
@@ -282,6 +280,100 @@ def _download_granule_links(
         return (granule_id, [])
 
 
+def search_and_download_granules(cfg, layer, date_range, bbox, cloud_cover):
+    """Search and download all valid granules for a single layer."""
+    try:
+        granules = search_data(
+            short_name=layer,
+            temporal=date_range,
+            bounding_box=tuple(map(float, bbox)),
+            cloud_hosted=True,
+            cloud_cover=cloud_cover,
+            count=1000,
+        )
+    except Exception:
+        granules = []
+
+    if not granules:
+        return []
+
+    # Build granule links mapping
+    granule_link_list = []
+    for granule in granules:
+        links = [
+            link
+            for band in cfg.bands_map.get(layer, [])
+            for link in granule.data_links(access="external")
+            if f".{band}." in link
+        ]
+
+        if all(any(f".{band}." in l for l in links)
+               for band in cfg.bands_map.get(layer, [])):
+            granule_link_list.append((granule.uuid, links))
+
+    # Parallel downloads
+    downloaded_granules = []
+    with ThreadPoolExecutor(max_workers=cfg.thread_workers) as dl_executor:
+        futures = {
+            dl_executor.submit(_download_granule_links, gid, links, cfg.download_folder): gid
+            for gid, links in granule_link_list
+        }
+        for f in as_completed(futures):
+            try:
+                gid_local, filelist = f.result()
+                if filelist:
+                    downloaded_granules.append((gid_local, filelist))
+            except Exception:
+                traceback.print_exc()
+    return downloaded_granules
+
+
+def process_downloaded_granules(cfg, downloaded_granules, date):
+    """Merge/reproject/crop each granule in parallel."""
+    merge_results = []
+    if not downloaded_granules:
+        return merge_results
+
+    with ProcessPoolExecutor(max_workers=cfg.merge_workers) as merge_pool:
+        futures = {
+            merge_pool.submit(worker_merge_and_crop, cfg, filenames, date, uuid): uuid
+            for uuid, filenames in downloaded_granules
+        }
+        for f in as_completed(futures):
+            try:
+                merged_path, crs_str = f.result()
+                if merged_path:
+                    merge_results.append(merged_path)
+            except Exception:
+                traceback.print_exc()
+    return merge_results
+
+
+def create_empty_fallback(cfg,current_merged_file, final_filename):
+    """Create an empty GeoTIFF matching reference file."""
+    try:
+        with rasterio.open(current_merged_file) as src:
+            meta = src.meta.copy()
+            meta.update({
+                "driver": "GTiff",
+                "count": src.count,
+                "tiled": True,
+                "blockxsize": cfg.width,
+                "blockysize": cfg.height,
+                "dtype": "float32",
+                "nodata": -9999,
+            })
+            empty_data = np.full(
+                (src.count, src.height, src.width), -9999, dtype="float32"
+            )
+            with rasterio.open(final_filename, "w", **meta) as dst:
+                dst.write(empty_data)
+        return True
+    except Exception:
+        traceback.print_exc()
+        return False
+
+
 def prepare_merged_file_per_date(
     cfg: WorkerConfig,
     date_range: Tuple[str, str],
@@ -291,145 +383,35 @@ def prepare_merged_file_per_date(
     current_merged_file: Optional[str] = None,
     cloud_cover: Tuple[int, int] = (0, 100),
 ) -> Tuple[str, Dict]:
-    """Process and merge data for a single date."""
-
+    """Main orchestrator for one date."""
     date = date_range[0].split("T")[0]
     timings = {}
-
-    final_filename = (
-        f"{cfg.download_folder.rstrip('/')}"
-        f"/{generate_digest(date, bbox)}_merged_cropped_final.tif"
+    final_filename = os.path.join(
+        cfg.download_folder, f"{generate_digest(date, bbox)}_merged_cropped_final.tif"
     )
 
-    # Skip if already exists
     if os.path.exists(final_filename):
         return final_filename, timings
 
     merged_files = []
-
-    # Process each layer
     for layer in layers:
+        downloaded_granules = search_and_download_granules(cfg, layer, date_range, bbox, cloud_cover)
+        merge_results = process_downloaded_granules(cfg, downloaded_granules, date)
+        merged_files.extend(merge_results)
 
-        try:
-            granules = search_data(
-                short_name=layer,
-                temporal=date_range,
-                bounding_box=tuple(map(float, bbox)),
-                cloud_hosted=True,
-                cloud_cover=cloud_cover,
-                count=1000,
-            )
-        except Exception:
-            granules = []
-
-        if not granules:
-            continue
-
-        # Build granule links mapping
-        granule_link_list = []
-        for granule in granules:
-            links = [
-                link
-                for band in cfg.bands_map.get(layer, [])
-                for link in granule.data_links(access="external")
-                if f".{band}." in link
-            ]
-
-            # Check if all required bands are present
-            if all(
-                any(f".{band}." in l for l in links)
-                for band in cfg.bands_map.get(layer, [])
-            ):
-                granule_link_list.append((granule.uuid, links))
-
-        # Download granules in parallel
-        downloaded_granules = []
-
-        with ThreadPoolExecutor(max_workers=cfg.thread_workers) as dl_executor:
-            futures = {
-                dl_executor.submit(
-                    _download_granule_links, gid, links, cfg.download_folder
-                ): gid
-                for gid, links in granule_link_list
-            }
-
-            for f in as_completed(futures):
-                gid = futures[f]
-                try:
-                    gid_local, filelist = f.result()
-                    if filelist:
-                        downloaded_granules.append((gid_local, filelist))
-                except Exception:
-                    traceback.print_exc()
-
-        # Process granules in parallel (merge/reproject/crop)
-
-        merge_results = []
-
-        if downloaded_granules:
-            with ProcessPoolExecutor(
-                max_workers=cfg.merge_workers
-            ) as merge_pool:
-                futures = {
-                    merge_pool.submit(
-                        worker_merge_and_crop, cfg, filenames, date, uuid
-                    ): uuid
-                    for uuid, filenames in downloaded_granules
-                }
-
-                for f in as_completed(futures):
-                    uuid = futures[f]
-                    try:
-                        merged_path, crs_str = f.result()
-                        if merged_path:
-                            merge_results.append(merged_path)
-                    except Exception:
-                        traceback.print_exc()
-
-                merged_files.extend(merge_results)
-
-
-    # Handle empty file creation
+    # Handle empty case
     if not merged_files:
         if empty and current_merged_file:
-            try:
-                with rasterio.open(current_merged_file) as src:
-                    meta = src.meta.copy()
-                    meta.update(
-                        {
-                            "driver": "GTiff",
-                            "count": src.count,
-                            "tiled": True,
-                            "blockxsize": 256,
-                            "blockysize": 256,
-                            "dtype": "float32",
-                            "nodata": -9999,
-                        }
-                    )
-
-                    empty_data = np.full(
-                        (src.count, src.height, src.width),
-                        -9999,
-                        dtype="float32",
-                    )
-                    with rasterio.open(final_filename, "w", **meta) as dst:
-                        dst.write(empty_data)
-
+            if create_empty_fallback(cfg,current_merged_file, final_filename):
                 return final_filename, timings
-            except Exception:
-
-                return "", timings
+        return "", timings
 
     # Final mosaic merge
     try:
-        final_file = merge_granule_tiffs(
-            cfg, merged_files, final_filename, timings, date
-        )
-
+        final_file = merge_granule_tiffs(cfg, merged_files, final_filename, timings, date)
         return final_file, timings
-
     except Exception:
-
+        traceback.print_exc()
         return "", timings
 
 
