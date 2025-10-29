@@ -134,8 +134,8 @@ def merge_bands_crop_to_tiff(
         warpMemoryLimit=1073741824,
         creationOptions=[
             "TILED=YES",
-            "BLOCKXSIZE="+str(cfg.width),
-            "BLOCKYSIZE="+str(cfg.height),
+            f"BLOCKXSIZE={cfg.width}",
+            f"BLOCKYSIZE={cfg.height}",
             "NUM_THREADS=ALL_CPUS",
             "BIGTIFF=IF_SAFER",
         ],
@@ -188,8 +188,8 @@ def merge_granule_tiffs(
             "NUM_THREADS=ALL_CPUS",
             "BIGTIFF=IF_SAFER",
             "SPARSE_OK=TRUE",
-            "BLOCKXSIZE="+str(cfg.width),
-            "BLOCKYSIZE="+str(cfg.height),
+            f"BLOCKXSIZE={cfg.width}",
+            f"BLOCKYSIZE={cfg.height}",
         ],
     )
 
@@ -676,8 +676,8 @@ class Downloader:
             "crs": crs,
             "transform": transform,
             "tiled": True,
-            "blockxsize": 256,
-            "blockysize": 256,
+            "blockxsize": self.cfg.width,
+            "blockysize": self.cfg.height,
             "nodata": -9999,
         }
         with rasterio.open(output_filename, "w", **profile) as dst:
