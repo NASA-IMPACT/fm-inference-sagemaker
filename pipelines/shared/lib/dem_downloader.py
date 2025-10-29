@@ -298,6 +298,48 @@ class DEMDownloader:
         green_data = hls_src.read(2).astype(np.float32)
         fmask_data = hls_src.read(7).astype(np.uint32)
 
+        if nir_data.shape != flood_data.shape:
+            print("Reprojecting HLS bands to match flood detection shape...", flood_src.name, hls_src.name)
+
+            nir_reprojected = np.zeros_like(flood_data, dtype=np.float32)
+            green_reprojected = np.zeros_like(flood_data, dtype=np.float32)
+            fmask_reprojected = np.zeros_like(flood_data, dtype=np.uint32)
+            print("Shapes before reprojection:", nir_data.shape, green_data.shape, fmask_data.shape, flood_data.shape)
+            print("Shapes after reprojection:", nir_reprojected.shape, green_reprojected.shape, fmask_reprojected.shape)
+
+            reproject(
+                source=nir_data,
+                destination=nir_reprojected,
+                src_transform=hls_src.transform,
+                src_crs=hls_src.crs,
+                dst_transform=flood_src.transform,
+                dst_crs=flood_src.crs,
+                resampling=Resampling.bilinear
+            )
+
+            reproject(
+                source=green_data,
+                destination=green_reprojected,
+                src_transform=hls_src.transform,
+                src_crs=hls_src.crs,
+                dst_transform=flood_src.transform,
+                dst_crs=flood_src.crs,
+                resampling=Resampling.bilinear
+            )
+
+            reproject(
+                source=fmask_data,
+                destination=fmask_reprojected,
+                src_transform=hls_src.transform,
+                src_crs=hls_src.crs,
+                dst_transform=flood_src.transform,
+                dst_crs=flood_src.crs,
+                resampling=Resampling.bilinear
+            )
+            nir_data = nir_reprojected
+            green_data = green_reprojected
+            fmask_data = fmask_reprojected
+
         aerosol_level = (fmask_data >> 6) & 3
         ndwi = np.zeros_like(green_data, dtype=np.float32)
         valid = (green_data + nir_data) != 0
