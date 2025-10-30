@@ -161,6 +161,7 @@ async def verify_cognito_token(
         response = client.get_user(AccessToken=token)
 
         username = response['Username']
+        email = response.get("email", "no.email@example.com")
         groups = get_user_groups_from_cognito(username)
 
         logger.info(f"Successfully authenticated user '{username}' via Cognito token")
@@ -169,6 +170,7 @@ async def verify_cognito_token(
             "sub": username,
             "username": username,
             "groups": groups,
+            "email": email,
             "cognito:groups": groups,
             "auth_method": "cognito_direct"
         }
@@ -229,16 +231,16 @@ app.include_router(preloaded_events_router)
 @app.post("/create-token", tags=["Authentication"])
 async def create_token(
     body: TokenRequest,
-    custom_token_payload: Optional[dict[str, Any]] = Depends(verify_custom_token)
+    cognito_token_payload: Optional[dict[str, Any]] = Depends(verify_cognito_token)
 
 ):
     """
     Create a token to access the API.
     Only users belonging to the specified groups are allowed to create tokens for one or more of that groups.
     """
-    username = custom_token_payload.get("sub")
-    email = custom_token_payload.get("email")
-    groups = custom_token_payload.get("groups", [])
+    username = cognito_token_payload.get("sub")
+    email = cognito_token_payload.get("email")
+    groups = cognito_token_payload.get("groups", [])
     # Maximum 90 days
     expires_in_days = min(90, body.expires_in_days)
     expire = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
