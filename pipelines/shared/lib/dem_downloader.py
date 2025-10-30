@@ -300,45 +300,85 @@ class DEMDownloader:
 
         if nir_data.shape != flood_data.shape:
             print("Reprojecting HLS bands to match flood detection shape...", flood_src.name, hls_src.name)
-
-            nir_reprojected = np.zeros_like(flood_data, dtype=np.float32)
-            green_reprojected = np.zeros_like(flood_data, dtype=np.float32)
-            fmask_reprojected = np.zeros_like(flood_data, dtype=np.uint32)
             print("Shapes before reprojection:", nir_data.shape, green_data.shape, fmask_data.shape, flood_data.shape)
-            print("Shapes after reprojection:", nir_reprojected.shape, green_reprojected.shape, fmask_reprojected.shape)
+            print("Flood bounds:", flood_src.bounds)
+            print("HLS bounds:", hls_src.bounds)
+            print("Flood transform:", flood_src.transform)
+            print("HLS transform:", hls_src.transform)
 
-            reproject(
-                source=nir_data,
-                destination=nir_reprojected,
-                src_transform=hls_src.transform,
-                src_crs=hls_src.crs,
-                dst_transform=flood_src.transform,
-                dst_crs=flood_src.crs,
-                resampling=Resampling.bilinear
-            )
+            # Use flood_data dimensions explicitly
+            flood_height, flood_width = flood_data.shape
+            print("Target reprojection shape:", flood_height, flood_width)
 
-            reproject(
-                source=green_data,
-                destination=green_reprojected,
-                src_transform=hls_src.transform,
-                src_crs=hls_src.crs,
-                dst_transform=flood_src.transform,
-                dst_crs=flood_src.crs,
-                resampling=Resampling.bilinear
-            )
+            try:
+                # Stack all three bands for simultaneous reprojection
+                # This ensures they all get exactly the same dimensions
+                hls_bands_stacked = np.stack([green_data, nir_data, fmask_data.astype(np.float32)], axis=0)
+                reprojected_bands = np.zeros((3, flood_height, flood_width), dtype=np.float32)
 
-            reproject(
-                source=fmask_data,
-                destination=fmask_reprojected,
-                src_transform=hls_src.transform,
-                src_crs=hls_src.crs,
-                dst_transform=flood_src.transform,
-                dst_crs=flood_src.crs,
-                resampling=Resampling.bilinear
-            )
-            nir_data = nir_reprojected
-            green_data = green_reprojected
-            fmask_data = fmask_reprojected
+                reproject(
+                    source=hls_bands_stacked,
+                    destination=reprojected_bands,
+                    src_transform=hls_src.transform,
+                    src_crs=hls_src.crs,
+                    dst_transform=flood_src.transform,
+                    dst_crs=flood_src.crs,
+                    resampling=Resampling.bilinear
+                )
+
+                # Extract the reprojected bands
+                green_data = reprojected_bands[0]
+                nir_data = reprojected_bands[1]
+                fmask_data = reprojected_bands[2].astype(np.uint32)
+
+                print("Shapes after reprojection:", nir_data.shape, green_data.shape, fmask_data.shape)
+
+                # Validate that reprojection worked correctly
+                if (nir_data.shape != flood_data.shape or
+                    green_data.shape != flood_data.shape or
+                    fmask_data.shape != flood_data.shape):
+                    raise ValueError(f"Reprojection failed: expected shape {flood_data.shape}, "
+                                   f"got NIR: {nir_data.shape}, Green: {green_data.shape}, "
+                                   f"FMask: {fmask_data.shape}")
+
+            except Exception as e:
+                print(f"Reprojection error: {e}")
+                # Fallback: resize arrays if reprojection fails
+                from scipy.ndimage import zoom
+
+                height_ratio = flood_data.shape[0] / nir_data.shape[0]
+                width_ratio = flood_data.shape[1] / nir_data.shape[1]
+
+                print(f"Falling back to resizing with ratios: height={height_ratio:.4f}, width={width_ratio:.4f}")
+
+                nir_data = zoom(nir_data.astype(np.float32), (height_ratio, width_ratio), order=1)
+                green_data = zoom(green_data.astype(np.float32), (height_ratio, width_ratio), order=1)
+                fmask_data = zoom(fmask_data.astype(np.uint32), (height_ratio, width_ratio), order=0)
+
+                # Ensure exact shape match by cropping or padding if needed
+                if nir_data.shape[0] != flood_data.shape[0] or nir_data.shape[1] != flood_data.shape[1]:
+                    print(f"Adjusting final shapes from {nir_data.shape} to {flood_data.shape}")
+
+                    # Create arrays of exact target size
+                    nir_final = np.zeros(flood_data.shape, dtype=np.float32)
+                    green_final = np.zeros(flood_data.shape, dtype=np.float32)
+                    fmask_final = np.zeros(flood_data.shape, dtype=np.uint32)
+
+                    # Copy data, handling potential size differences
+                    h_end = min(nir_data.shape[0], flood_data.shape[0])
+                    w_end = min(nir_data.shape[1], flood_data.shape[1])
+
+                    nir_final[:h_end, :w_end] = nir_data[:h_end, :w_end]
+                    green_final[:h_end, :w_end] = green_data[:h_end, :w_end]
+                    fmask_final[:h_end, :w_end] = fmask_data[:h_end, :w_end]
+
+                    nir_data = nir_final
+                    green_data = green_final
+                    fmask_data = fmask_final
+
+                print(f"Final shapes after fallback: NIR: {nir_data.shape}, Green: {green_data.shape}, FMask: {fmask_data.shape}")
+        else:
+            print("Shapes already match, no reprojection needed:", nir_data.shape, flood_data.shape)
 
         aerosol_level = (fmask_data >> 6) & 3
         ndwi = np.zeros_like(green_data, dtype=np.float32)
