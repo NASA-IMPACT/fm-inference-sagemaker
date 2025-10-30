@@ -5,6 +5,7 @@ import GPUtil
 import httpx
 import importlib
 import inflection
+import inspect
 import json
 import logging
 import numpy as np
@@ -220,25 +221,39 @@ def save_cog(mosaic, profile, transform, filename):
                         out_raster.write(reprojected_raster.read())
     return filename
 
-def crop_file(filename, bbox, width=None, height=None):
+def crop_file(filename, bbox, width=None, height=None, src_handle=None):
     """
     Reproject raster to EPSG:4326, crop to bbox, and save as COG
 
     Args:
         filename: output filename
-        bbox: [minx, miny, maxx, maxy] in EPSG:4326 coordinates
+        bbox: [minx, miny, maxx, maxy] in EPSG:4326 coordinates or rasterio.coords.BoundingBox
         width: target width
         height: target height
+        src_handle: optional open rasterio file handle to reuse
     """
-    # Extract bbox coordinates
-    minx, miny, maxx, maxy = bbox
+    # Handle both tuple/list and BoundingBox types
+    if hasattr(bbox, 'left'):  # rasterio BoundingBox
+        minx, miny, maxx, maxy = bbox.left, bbox.bottom, bbox.right, bbox.top
+    else:
+        minx, miny, maxx, maxy = bbox
+
     # Create bbox geometry
     bbox_geom = box(minx, miny, maxx, maxy)
     clip_geom = gpd.GeoDataFrame({'geometry': [bbox_geom]}, crs='EPSG:4326')
 
-    with rasterio.open(filename) as src:
-        out_image, out_transform = mask(src, clip_geom.geometry, crop=True)
-        out_meta = src.meta.copy()
+    # Use provided handle or open new one
+    should_close = False
+    if src_handle is None:
+        src_handle = rasterio.open(filename)
+        should_close = True
+
+    try:
+        out_image, out_transform = mask(src_handle, clip_geom.geometry, crop=True)
+        out_meta = src_handle.meta.copy()
+    finally:
+        if should_close:
+            src_handle.close()
 
     out_meta.update({
         "height": out_image.shape[1],
@@ -324,6 +339,16 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     results = list()
     profiles = list()
     s3_link = ''
+
+    # Cache source file metadata to avoid multiple file opens
+    source_bounds = None
+    source_width = None
+    source_height = None
+    with rasterio.open(filename) as src:
+        source_bounds = src.bounds
+        source_width = src.profile['width']
+        source_height = src.profile['height']
+
     tiles_generator = DataPreparer(filename, overlap=0, scale=scale, qa_flags=qa_flags, timeseries=timeseries).generate_tiles()
     torch.cuda.synchronize()
 
@@ -357,10 +382,18 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     print("!!! Mosaic and Save COG Time:", time.time() - start_time)
 
     start_time = time.time()
-    with rasterio.open(filename) as src:
-        bounds = src.bounds
-    prediction_filename = crop_file(prediction_filename, bounds)
-    postprocessed_filename = inference.postprocess(bounding_box, date, prediction_filename, filename)
+    # Optimization: Use cached bounds instead of reopening file
+    prediction_filename = crop_file(prediction_filename, source_bounds)
+
+    # Pass cached dimensions to postprocess to avoid reopening file
+    # Check if postprocess method accepts additional parameters
+    postprocess_method = getattr(inference, 'postprocess')
+    sig = inspect.signature(postprocess_method)
+    if 'source_width' in sig.parameters and 'source_height' in sig.parameters:
+        postprocessed_filename = inference.postprocess(bounding_box, date, prediction_filename, filename,
+                                                       source_width=source_width, source_height=source_height)
+    else:
+        postprocessed_filename = inference.postprocess(bounding_box, date, prediction_filename, filename)
     print("!!! Crop and Postprocess Time:", time.time() - start_time)
 
     start_time = time.time()
@@ -368,7 +401,7 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     qa_tif = inference.qa_flags_to_tif(filename, qa_flags, timeseries=timeseries)
     qa_link = upload_to_s3(qa_tif)
     stats = inference.calculate_area_from_mask(postprocessed_filename, mask_values=range(1, NUM_CLASSES))
-    print("!!! Infer Time:", time.time() - start_time)
+    print("!!! stats calculation Time:", time.time() - start_time)
     del inference
     gc.collect()
 
