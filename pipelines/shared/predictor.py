@@ -326,14 +326,19 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     s3_link = ''
     tiles_generator = DataPreparer(filename, overlap=0, scale=scale, qa_flags=qa_flags, timeseries=timeseries).generate_tiles()
     torch.cuda.synchronize()
+
+    batch_start_time = time.time()
     with torch.no_grad():
         for tiles in tiles_generator:
             batch_results, batch_profiles = inference.infer(tiles, date)
             results.extend(batch_results)
-            # profile is ofset by some value. need to debug
             profiles.extend(batch_profiles)
+    batch_infer_time = time.time() - batch_start_time
+    print(f"Inference time for batch: {batch_infer_time:.2f} seconds")
     memory_files = list()
     torch.cuda.empty_cache()
+
+    start_time = time.time()
     for index, profile in enumerate(profiles):
         memfile = MemoryFile()
         profile.update({
@@ -349,10 +354,16 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     prediction_filename = f"{PREDICTION_FOLDER}/{start_time}-predictions.tif"
 
     prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename)
+    print("!!! Mosaic and Save COG Time:", time.time() - start_time)
+
+    start_time = time.time()
     with rasterio.open(filename) as src:
         bounds = src.bounds
     prediction_filename = crop_file(prediction_filename, bounds)
     postprocessed_filename = inference.postprocess(bounding_box, date, prediction_filename, filename)
+    print("!!! Crop and Postprocess Time:", time.time() - start_time)
+
+    start_time = time.time()
     s3_link = upload_to_s3(postprocessed_filename)
     qa_tif = inference.qa_flags_to_tif(filename, qa_flags, timeseries=timeseries)
     qa_link = upload_to_s3(qa_tif)
