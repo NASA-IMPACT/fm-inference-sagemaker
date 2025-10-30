@@ -2,6 +2,7 @@ import os
 import requests
 import numpy as np
 import rasterio
+from rasterio.env import Env
 import geopandas as gpd
 import logging
 import shutil
@@ -15,6 +16,46 @@ from shapely.geometry import box
 
 DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", '/root/.cache/')
 URL = "https://copernicus-dem-30m.s3.amazonaws.com/{tile_name}/{tile_name}.tif"
+
+# Optimal GDAL configuration for rasterio operations
+GDAL_CONFIG = {
+    # Memory and caching
+    'GDAL_CACHEMAX': 512,  # MB of cache for GDAL operations
+    'CPL_VSIL_CURL_CACHE_SIZE': 200000000,  # 200MB for network file cache
+    'GDAL_HTTP_MERGE_CONSECUTIVE_RANGES': 'YES',  # Optimize HTTP range requests
+    'GDAL_HTTP_MULTIPLEX': 'YES',  # Enable HTTP/2 multiplexing
+    'GDAL_HTTP_VERSION': '2',  # Use HTTP/2 for better performance
+
+    # Disable auxiliary files that slow down operations
+    'GDAL_DISABLE_READDIR_ON_OPEN': 'EMPTY_DIR',  # Avoid scanning directories
+    'CPL_VSIL_CURL_ALLOWED_EXTENSIONS': '.tif,.TIF,.tiff,.TIFF',  # Only look for TIF files
+
+    # Performance optimizations
+    'GDAL_NUM_THREADS': 'ALL_CPUS',  # Use all available CPU cores
+    'GDAL_MAX_DATASET_POOL_SIZE': 450,  # Connection pool for datasets
+
+    # Network optimizations
+    'CPL_CURL_VERBOSE': 'NO',  # Reduce logging overhead
+    'GDAL_HTTP_TIMEOUT': '60',  # Timeout for HTTP requests
+    'GDAL_HTTP_CONNECTTIMEOUT': '30',  # Connection timeout
+
+    # Error handling
+    'CPL_LOG': '/tmp/gdal.log',  # Log GDAL errors
+    'CPL_DEBUG': 'OFF',  # Disable debug logging for performance
+}
+
+# Common profile updates for compressed tiled output
+COMPRESSION_PROFILE = {
+    'compress': 'DEFLATE',
+    'tiled': True,
+    'blockxsize': 512,
+    'blockysize': 512,
+}
+
+
+def get_gdal_env():
+    """Returns a configured GDAL environment for optimal rasterio operations."""
+    return Env(**GDAL_CONFIG)
 
 class DEMDownloader:
     def __init__(self, bbox, date_str):
@@ -84,50 +125,53 @@ class DEMDownloader:
             if os.path.exists(filename):
                 return filename
 
-            with rasterio.open(dem_tiles[0]) as src:
-                out_meta = src.meta.copy()
+            with get_gdal_env():
+                with rasterio.open(dem_tiles[0]) as src:
+                    out_meta = src.meta.copy()
 
-            mosaic, out_transform = merge([rasterio.open(f) for f in dem_tiles])
+                mosaic, out_transform = merge([rasterio.open(f) for f in dem_tiles])
 
-            out_meta.update({
-                "driver": "GTiff",
-                "height": mosaic.shape[1],
-                "width": mosaic.shape[2],
-                "transform": out_transform,
-            })
+                out_meta.update({
+                    "driver": "GTiff",
+                    "height": mosaic.shape[1],
+                    "width": mosaic.shape[2],
+                    "transform": out_transform,
+                    **COMPRESSION_PROFILE
+                })
 
-            merged_dem_path = os.path.join(self.output_dir, f"{base_filename}_dem_merged.tif")
-            with rasterio.open(merged_dem_path, "w", **out_meta) as dest:
-                dest.write(mosaic)
+                merged_dem_path = os.path.join(self.output_dir, f"{base_filename}_dem_merged.tif")
+                with rasterio.open(merged_dem_path, "w", **out_meta) as dest:
+                    dest.write(mosaic)
 
-            clip_geom = gpd.GeoDataFrame({'geometry': [box(west, south, east, north)]}, crs='EPSG:4326')
+                clip_geom = gpd.GeoDataFrame({'geometry': [box(west, south, east, north)]}, crs='EPSG:4326')
 
-            with rasterio.open(merged_dem_path) as src:
-                out_image, out_transform = mask(src, clip_geom.geometry, crop=True)
-                out_meta = src.meta.copy()
+                with rasterio.open(merged_dem_path) as src:
+                    out_image, out_transform = mask(src, clip_geom.geometry, crop=True)
+                    out_meta = src.meta.copy()
 
-            out_meta.update({
-                "height": out_image.shape[1],
-                "width": out_image.shape[2],
-                "transform": out_transform,
-            })
+                out_meta.update({
+                    "height": out_image.shape[1],
+                    "width": out_image.shape[2],
+                    "transform": out_transform,
+                    **COMPRESSION_PROFILE
+                })
 
-            with rasterio.open(filename, "w", **out_meta) as dest:
-                if width and height:
-                    print(f"Reprojecting DEM to width: {width}, height: {height}")
-                    reprojected_image = np.empty((height, width), dtype=out_image.dtype)
-                    reproject(
-                        source=out_image,
-                        destination=reprojected_image,
-                        src_transform=out_transform,
-                        src_crs=src.crs,
-                        dst_transform=out_transform,
-                        dst_crs=src.crs,
-                        resampling=Resampling.bilinear
-                    )
-                    dest.write(reprojected_image, 1)
-                else:
-                    dest.write(out_image)
+                with rasterio.open(filename, "w", **out_meta) as dest:
+                    if width and height:
+                        print(f"Reprojecting DEM to width: {width}, height: {height}")
+                        reprojected_image = np.empty((height, width), dtype=out_image.dtype)
+                        reproject(
+                            source=out_image,
+                            destination=reprojected_image,
+                            src_transform=out_transform,
+                            src_crs=src.crs,
+                            dst_transform=out_transform,
+                            dst_crs=src.crs,
+                            resampling=Resampling.bilinear
+                        )
+                        dest.write(reprojected_image, 1)
+                    else:
+                        dest.write(out_image)
 
             return filename
 
@@ -152,10 +196,11 @@ class DEMDownloader:
         os.makedirs(slope_path, exist_ok=True)
         slope_file = os.path.join(slope_path, os.path.basename(dem_src.name).replace('_dem_clipped.tif', '_slope_degrees.tif'))
         profile = dem_src.profile.copy()
-        profile.update(dtype=rasterio.float32)
+        profile.update(dtype=rasterio.float32, **COMPRESSION_PROFILE)
 
-        with rasterio.open(slope_file, 'w', **profile) as dst:
-            dst.write(slope_deg.astype(rasterio.float32), 1)
+        with get_gdal_env():
+            with rasterio.open(slope_file, 'w', **profile) as dst:
+                dst.write(slope_deg.astype(rasterio.float32), 1)
 
         return slope_file
 
@@ -224,8 +269,10 @@ class DEMDownloader:
         incidence_angle = np.degrees(np.arccos(cos_incidence))
 
         slia_file = os.path.join(output_dir, os.path.basename(dem_src.name).replace('_dem_clipped.tif', '_slia_degrees.tif'))
-        with rasterio.open(slia_file, 'w', **dem_profile) as dst:
-            dst.write(incidence_angle.astype(np.float32), 1)
+        dem_profile.update(**COMPRESSION_PROFILE)
+        with get_gdal_env():
+            with rasterio.open(slia_file, 'w', **dem_profile) as dst:
+                dst.write(incidence_angle.astype(np.float32), 1)
         return slia_file
 
     @staticmethod
@@ -284,8 +331,10 @@ class DEMDownloader:
         flood_corrected[shadow_mask & (flood_data == 1)] = 0
 
         output_file = os.path.join(output_dir, os.path.basename(flood_src.name).replace('.tif', '_flood_terrain_corrected.tif'))
-        with rasterio.open(output_file, 'w', **flood_profile) as dst:
-            dst.write(flood_corrected, 1)
+        flood_profile.update(**COMPRESSION_PROFILE)
+        with get_gdal_env():
+            with rasterio.open(output_file, 'w', **flood_profile) as dst:
+                dst.write(flood_corrected, 1)
         return output_file, shadow_mask, pixels_corrected
 
     @staticmethod
@@ -397,8 +446,10 @@ class DEMDownloader:
         flood_corrected[aerosol_mask] = 0
 
         output_file = os.path.join(output_dir, os.path.basename(flood_src.name).replace('.tif', '_flood_aerosol_corrected.tif'))
-        with rasterio.open(output_file, 'w', **flood_profile) as dst:
-            dst.write(flood_corrected, 1)
+        flood_profile.update(**COMPRESSION_PROFILE)
+        with get_gdal_env():
+            with rasterio.open(output_file, 'w', **flood_profile) as dst:
+                dst.write(flood_corrected, 1)
         return output_file, aerosol_mask, pixels_corrected
 
     @staticmethod
@@ -420,16 +471,19 @@ class DEMDownloader:
         flood_corrected[veg_mask] = 0
 
         output_file = os.path.join(output_dir, os.path.basename(flood_src.name).replace('.tif', '_flood_veg_corrected.tif'))
-        with rasterio.open(output_file, 'w', **flood_profile) as dst:
-            dst.write(flood_corrected, 1)
+        flood_profile.update(**COMPRESSION_PROFILE)
+        with get_gdal_env():
+            with rasterio.open(output_file, 'w', **flood_profile) as dst:
+                dst.write(flood_corrected, 1)
 
         # NDVI filename should be the same as dem filename but with _ndvi suffix
         ndvi_file = dem_filename.replace('_dem_clipped.tif', '_ndvi.tif')
         ndvi_profile = flood_profile.copy()
-        ndvi_profile.update({'dtype': 'float32', 'nodata': -999})
-        with rasterio.open(ndvi_file, 'w', **ndvi_profile) as dst:
-            ndvi[~valid_pixels] = -999
-            dst.write(ndvi, 1)
+        ndvi_profile.update(dtype='float32', nodata=-999, **COMPRESSION_PROFILE)
+        with get_gdal_env():
+            with rasterio.open(ndvi_file, 'w', **ndvi_profile) as dst:
+                ndvi[~valid_pixels] = -999
+                dst.write(ndvi, 1)
         return output_file, veg_mask, pixels_corrected, ndvi_file
 
     @staticmethod
@@ -437,40 +491,41 @@ class DEMDownloader:
         postproc_dir = f"{DOWNLOAD_FOLDER}/predictions/flood_detection/postprocessed"
         os.makedirs(postproc_dir, exist_ok=True)
 
-        with rasterio.open(dem_file) as dem_src, \
-             rasterio.open(hls_file) as hls_src, \
-             rasterio.open(flood_detection_file) as flood_src:
-            # Calculate slope
-            slope_file = DEMDownloader.calculate_slope(dem_src)
+        with get_gdal_env():
+            with rasterio.open(dem_file) as dem_src, \
+                 rasterio.open(hls_file) as hls_src, \
+                 rasterio.open(flood_detection_file) as flood_src:
+                # Calculate slope
+                slope_file = DEMDownloader.calculate_slope(dem_src)
 
-            # Calculate SLIA
-            slia_file = DEMDownloader.calculate_solar_incidence_angle_from_bands(dem_src, hls_src)
+                # Calculate SLIA
+                slia_file = DEMDownloader.calculate_solar_incidence_angle_from_bands(dem_src, hls_src)
 
-            # 1. Terrain shadow masking
-            terrain_output, shadow_mask, terrain_pixels = DEMDownloader.postprocess_terrain_shadows(
-                flood_src, slia_file, slope_file
-            )
-
-            # 2. Smart aerosol filter (optional)
-            with rasterio.open(terrain_output, 'r') as terrain_out:
-                if use_smart_aerosol:
-                    aerosol_output, aerosol_mask, aerosol_pixels = DEMDownloader.postprocess_smart_aerosol_filter(
-                        terrain_out, hls_src
-                    )
-                else:
-                    print("\nSkipping aerosol filter...")
-                    aerosol_output = terrain_output
-                    aerosol_mask = np.zeros_like(shadow_mask)
-                    aerosol_pixels = 0
-
-            # 3. Vegetation filter
-            with rasterio.open(aerosol_output, 'r') as aerosol_src:
-                veg_output, veg_mask, veg_pixels, ndvi_file = DEMDownloader.postprocess_vegetation_filter(
-                    aerosol_src, hls_src, dem_file
+                # 1. Terrain shadow masking
+                terrain_output, shadow_mask, terrain_pixels = DEMDownloader.postprocess_terrain_shadows(
+                    flood_src, slia_file, slope_file
                 )
 
-            # Final corrected file
-            final_corrected = os.path.join(postproc_dir, flood_detection_file.replace('.tif', '_final_corrected.tif'))
-            shutil.copy(veg_output, final_corrected)
+                # 2. Smart aerosol filter (optional)
+                with rasterio.open(terrain_output, 'r') as terrain_out:
+                    if use_smart_aerosol:
+                        aerosol_output, aerosol_mask, aerosol_pixels = DEMDownloader.postprocess_smart_aerosol_filter(
+                            terrain_out, hls_src
+                        )
+                    else:
+                        print("\nSkipping aerosol filter...")
+                        aerosol_output = terrain_output
+                        aerosol_mask = np.zeros_like(shadow_mask)
+                        aerosol_pixels = 0
+
+                # 3. Vegetation filter
+                with rasterio.open(aerosol_output, 'r') as aerosol_src:
+                    veg_output, veg_mask, veg_pixels, ndvi_file = DEMDownloader.postprocess_vegetation_filter(
+                        aerosol_src, hls_src, dem_file
+                    )
+
+                # Final corrected file
+                final_corrected = os.path.join(postproc_dir, flood_detection_file.replace('.tif', '_final_corrected.tif'))
+                shutil.copy(veg_output, final_corrected)
 
         return final_corrected
