@@ -59,7 +59,7 @@ class NormalizeTrailingSlashMiddleware(BaseHTTPMiddleware):
 
 async def require_alb_authentication(request: Request) -> dict[str, Any]:
     """Dependency to ensure a user is authenticated by the ALB."""
-    access_token = request.headers.get("x-amzn-oidc-accesstoken")
+    access_token = request.headers.get("x-amzn-oidc-data")
     if not access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
