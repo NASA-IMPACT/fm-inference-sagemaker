@@ -2,6 +2,7 @@ import math
 import numpy as np
 import os
 import rasterio
+import torch
 
 from lib.consts import DOWNLOAD_FOLDER
 from rasterio.io import MemoryFile
@@ -59,7 +60,19 @@ class DataPreparer:
             layer (str): any of HLSL30, HLSS30
         """
         self.filename = filename
-        self.batch_size = batch_size
+        # Set batch_size based on available GPU memory if possible
+        try:
+            if torch.cuda.is_available():
+            gpu_mem = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)  # in MB
+            # Example heuristic: use larger batch if GPU has more memory
+            if gpu_mem >= 81152:
+                self.batch_size = max(batch_size, 240)
+            elif gpu_mem <= 81152:
+                self.batch_size = max(batch_size, 120)
+            else:
+                self.batch_size = batch_size
+        except Exception:
+            self.batch_size = batch_size
         self.overlap = overlap
         self.qa_flags = qa_flags
         self.scale = scale
