@@ -348,6 +348,7 @@ async def authenticate_with_cognito(username: str, password: str) -> dict:
 def create_jwt_token(user_data: dict, expire_days: int = 7) -> dict:
     """Create JWT token from user data"""
     expire = datetime.now(timezone.utc) + timedelta(days=expire_days)
+    print(f"{user_data=}")
 
     to_encode = {
         "sub": user_data["username"],
