@@ -8,8 +8,7 @@ if [[ -z "$ECR_URL" || -z "$INGRESS_HOST" ]]; then
     exit 1
 fi
 
-export RELEASE_VERION=$(git rev-parse --abbrev-ref HEAD)
-
+RELEASE_VERSION=$(git describe --tags --exact-match 2>/dev/null || git branch --show-current || git rev-parse --short HEAD)
 
 # Rest of the code remains the same...
 

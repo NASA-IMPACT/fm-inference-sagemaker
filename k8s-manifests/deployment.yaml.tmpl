@@ -26,8 +26,8 @@ spec:
             - name: cache-volume
               mountPath: /root/.cache
           env:
-          - name: RELEASE_VERION
-            value: "${}"
+          - name: RELEASE_VERSION
+            value: "${RELEASE_VERSION}"
           - name: BUCKET_NAME
             value: "r2o-models"
           - name: USECASE
