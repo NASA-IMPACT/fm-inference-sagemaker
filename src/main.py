@@ -231,7 +231,7 @@ app.include_router(preloaded_events_router)
 @app.post("/create-token", tags=["Authentication"])
 async def create_token(
     body: TokenRequest,
-    cognito_token_payload: Optional[dict[str, Any]] = Depends(verify_cognito_token)
+    cognito_token_payload: Optional[dict[str, Any]] = Depends(verify_custom_token)
 
 ):
     """
@@ -239,7 +239,7 @@ async def create_token(
     Only users belonging to the specified groups are allowed to create tokens for one or more of that groups.
     """
     username = cognito_token_payload.get("sub")
-    email = cognito_token_payload.get("email")
+    email = cognito_token_payload.get("email", "no.email@example.com")
     groups = cognito_token_payload.get("groups", [])
     # Maximum 90 days
     expires_in_days = min(90, body.expires_in_days)
