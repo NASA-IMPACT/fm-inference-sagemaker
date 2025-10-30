@@ -59,12 +59,14 @@ class NormalizeTrailingSlashMiddleware(BaseHTTPMiddleware):
 
 async def require_alb_authentication(request: Request) -> dict[str, Any]:
     """Dependency to ensure a user is authenticated by the ALB."""
+    oidc_data = request.headers.get("x-amzn-oidc-data")
     access_token = request.headers.get("x-amzn-oidc-accesstoken")
     if not access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User is not authenticated via ALB/Cognito."
         )
+    print(f"Here: {get_jwt_payload(oidc_data)}")
     return get_jwt_payload(access_token)
 
 
@@ -231,7 +233,7 @@ app.include_router(preloaded_events_router)
 @app.post("/create-token", tags=["Authentication"])
 async def create_token(
     body: TokenRequest,
-    cognito_token_payload: Optional[dict[str, Any]] = Depends(verify_cognito_token)
+    cognito_token_payload: Optional[dict[str, Any]] = Depends(verify_custom_token)
 
 ):
     """
@@ -239,7 +241,7 @@ async def create_token(
     Only users belonging to the specified groups are allowed to create tokens for one or more of that groups.
     """
     username = cognito_token_payload.get("sub")
-    email = cognito_token_payload.get("email")
+    email = cognito_token_payload.get("email", "no.email@example.com")
     groups = cognito_token_payload.get("groups", [])
     # Maximum 90 days
     expires_in_days = min(90, body.expires_in_days)
@@ -348,6 +350,7 @@ async def authenticate_with_cognito(username: str, password: str) -> dict:
 def create_jwt_token(user_data: dict, expire_days: int = 7) -> dict:
     """Create JWT token from user data"""
     expire = datetime.now(timezone.utc) + timedelta(days=expire_days)
+    print(f"{user_data=}")
 
     to_encode = {
         "sub": user_data["username"],
