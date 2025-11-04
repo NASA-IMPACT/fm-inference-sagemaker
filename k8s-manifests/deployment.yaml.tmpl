@@ -26,6 +26,8 @@ spec:
             - name: cache-volume
               mountPath: /root/.cache
           env:
+          - name: RELEASE_VERSION
+            value: "${RELEASE_VERSION}"
           - name: BUCKET_NAME
             value: "r2o-models"
           - name: USECASE
@@ -82,6 +84,7 @@ spec:
     spec:
       imagePullSecrets:
         - name: ecr-registry-key
+      runtimeClassName: nvidia
       containers:
         - name: pipeline-floods-container
           image: ${ECR_URL}/${ECR_FLOOD_IMAGE_NAME}
@@ -130,6 +133,7 @@ spec:
     spec:
       imagePullSecrets:
         - name: ecr-registry-key
+      runtimeClassName: nvidia
       containers:
         - name: pipeline-burn-scars-container
           image: ${ECR_URL}/${ECR_BURN_IMAGE_NAME}
@@ -178,6 +182,7 @@ spec:
     spec:
       imagePullSecrets:
         - name: ecr-registry-key
+      runtimeClassName: nvidia
       containers:
         - name: pipeline-crop-classification-container
           image: ${ECR_URL}/${ECR_CROP_IMAGE_NAME}
