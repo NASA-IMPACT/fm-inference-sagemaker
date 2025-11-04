@@ -2,6 +2,7 @@ import math
 import numpy as np
 import os
 import rasterio
+import torch
 
 from lib.consts import DOWNLOAD_FOLDER
 from rasterio.io import MemoryFile
@@ -59,7 +60,19 @@ class DataPreparer:
             layer (str): any of HLSL30, HLSS30
         """
         self.filename = filename
-        self.batch_size = batch_size
+        # Set batch_size based on available GPU memory if possible
+        try:
+            gpu_mem = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)  # in MB
+            # Example heuristic: use larger batch if GPU has more memory
+
+            if gpu_mem >= 81152:
+                self.batch_size = max(batch_size, 240)
+            elif gpu_mem <= 81152:
+                self.batch_size = max(batch_size, 120)
+            else:
+                self.batch_size = batch_size
+        except Exception:
+            self.batch_size = batch_size
         self.overlap = overlap
         self.qa_flags = qa_flags
         self.scale = scale
@@ -70,26 +83,38 @@ class DataPreparer:
     def handle_qa(self, tile):
         def get_qa_mask_vectorized(qa_band):
             # Vectorized QA mask calculation using broadcasting
-            qa_indices = np.array([QA_INDICES.get(flag, 0) for flag in self.qa_flags])
-            qa_band_uint = qa_band.astype('uint')
-            # Use broadcasting to check all flags at once
-            flags = (qa_band_uint[..., np.newaxis] & (1 << qa_indices)) != 0
+            if not self.qa_flags:
+                return np.zeros_like(qa_band, dtype=bool)
+
+            qa_indices = np.array([QA_INDICES.get(flag, 0) for flag in self.qa_flags], dtype=np.uint32)
+            qa_band_uint = qa_band.astype(np.uint32)
+
+            # Create shift values with proper shape for broadcasting
+            shift_values = (1 << qa_indices).astype(np.uint32)  # Shape: (n_flags,)
+
+            # Reshape for broadcasting: qa_band_uint[..., newaxis] has shape (..., 1)
+            # shift_values has shape (n_flags,) - this should broadcast correctly
+            flags = (qa_band_uint[..., np.newaxis] & shift_values[np.newaxis, ...]) != 0
             return np.any(flags, axis=-1)
 
         if self.timeseries:
             # Vectorized operations for timeseries
             pre_combined = get_qa_mask_vectorized(tile[6])
-            tile[:6][pre_combined] = 0.0001
+            for band_idx in range(6):
+                tile[band_idx][pre_combined] = 0.0001
 
             combined = get_qa_mask_vectorized(tile[15])  # QA band for middle period
-            tile[9:15][combined] = 0.0001
+            for band_idx in range(9, 15):
+                tile[band_idx][combined] = 0.0001
 
             post_combined = get_qa_mask_vectorized(tile[24])  # QA band for post period
-            tile[18:24][post_combined] = 0.0001
+            for band_idx in range(18, 24):
+                tile[band_idx][post_combined] = 0.0001
         else:
             # Vectorized operations for single time
             combined = get_qa_mask_vectorized(tile[6])
-            tile[:6][combined] = 0.0001
+            for band_idx in range(6):
+                tile[band_idx][combined] = 0.0001
         return tile
 
     def _process_tile_vectorized(self, tile):
@@ -269,24 +294,24 @@ class DataPreparer:
                 base_transform = src.window_transform(window)
                 transforms_batch.append(base_transform)
 
-                    # Create MemoryFiles only when batch is full
-                    if len(tiles_batch) == self.batch_size:
-                        memfiles_batch = []
-                        for tile_data, transform in zip(tiles_batch, transforms_batch):
-                            # Create metadata only when needed for MemoryFile
-                            meta = meta_template.copy()
-                            meta["transform"] = transform
-                            memfile = MemoryFile()
-                            with memfile.open(**meta) as dst:
-                                dst.write(tile_data)
-                            memfiles_batch.append(memfile)
+                # Create MemoryFiles only when batch is full
+                if len(tiles_batch) == self.batch_size:
+                    memfiles_batch = []
+                    for tile_data, transform in zip(tiles_batch, transforms_batch):
+                        # Create metadata only when needed for MemoryFile
+                        meta = meta_template.copy()
+                        meta["transform"] = transform
+                        memfile = MemoryFile()
+                        with memfile.open(**meta) as dst:
+                            dst.write(tile_data)
+                        memfiles_batch.append(memfile)
 
-                        yield np.asarray(memfiles_batch)
+                    yield np.asarray(memfiles_batch)
 
-                        # Return tiles to memory pool after yielding
-                        self._return_tiles_to_pool(tiles_batch)
-                        tiles_batch = []
-                        transforms_batch = []
+                    # Return tiles to memory pool after yielding
+                    self._return_tiles_to_pool(tiles_batch)
+                    tiles_batch = []
+                    transforms_batch = []
 
             # Handle remaining tiles
             if tiles_batch:

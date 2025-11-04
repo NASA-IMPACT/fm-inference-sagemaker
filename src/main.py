@@ -5,6 +5,8 @@ import hmac
 import json
 import logging
 import os
+from fastapi.responses import HTMLResponse
+
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone, timedelta
@@ -57,12 +59,14 @@ class NormalizeTrailingSlashMiddleware(BaseHTTPMiddleware):
 
 async def require_alb_authentication(request: Request) -> dict[str, Any]:
     """Dependency to ensure a user is authenticated by the ALB."""
+    oidc_data = request.headers.get("x-amzn-oidc-data")
     access_token = request.headers.get("x-amzn-oidc-accesstoken")
     if not access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User is not authenticated via ALB/Cognito."
         )
+    print(f"Here: {get_jwt_payload(oidc_data)}")
     return get_jwt_payload(access_token)
 
 
@@ -102,7 +106,7 @@ root_path = os.environ.get("FASTAPI_ROOT_PATH", "/api/predict")
 app = FastAPI(
     title="FM Inference Service",
     description="REST API for managing finetuned models and inferences.",
-    version="0.0.1",
+    version= os.getenv("RELEASE_VERSION", "0.0.1"),
     lifespan=lifespan,
     root_path=root_path
 )
@@ -159,6 +163,7 @@ async def verify_cognito_token(
         response = client.get_user(AccessToken=token)
 
         username = response['Username']
+        email = response.get("email", "no.email@example.com")
         groups = get_user_groups_from_cognito(username)
 
         logger.info(f"Successfully authenticated user '{username}' via Cognito token")
@@ -167,6 +172,7 @@ async def verify_cognito_token(
             "sub": username,
             "username": username,
             "groups": groups,
+            "email": email,
             "cognito:groups": groups,
             "auth_method": "cognito_direct"
         }
@@ -227,16 +233,16 @@ app.include_router(preloaded_events_router)
 @app.post("/create-token", tags=["Authentication"])
 async def create_token(
     body: TokenRequest,
-    custom_token_payload: Optional[dict[str, Any]] = Depends(verify_custom_token)
+    cognito_token_payload: Optional[dict[str, Any]] = Depends(verify_custom_token)
 
 ):
     """
     Create a token to access the API.
     Only users belonging to the specified groups are allowed to create tokens for one or more of that groups.
     """
-    username = custom_token_payload.get("sub")
-    email = custom_token_payload.get("email")
-    groups = custom_token_payload.get("groups", [])
+    username = cognito_token_payload.get("sub")
+    email = cognito_token_payload.get("email", "no.email@example.com")
+    groups = cognito_token_payload.get("groups", [])
     # Maximum 90 days
     expires_in_days = min(90, body.expires_in_days)
     expire = datetime.now(timezone.utc) + timedelta(days=expires_in_days)
@@ -344,6 +350,7 @@ async def authenticate_with_cognito(username: str, password: str) -> dict:
 def create_jwt_token(user_data: dict, expire_days: int = 7) -> dict:
     """Create JWT token from user data"""
     expire = datetime.now(timezone.utc) + timedelta(days=expire_days)
+    print(f"{user_data=}")
 
     to_encode = {
         "sub": user_data["username"],
@@ -406,6 +413,20 @@ def read_root():
 def health_check():
     """Health check endpoint (legacy)."""
     return {"successCode": 200, "status": "healthy"}
+
+@app.get("/welcome")
+def welcome_page(claim = Depends(general_access_dependency)):
+    """Welcome page for new users."""
+    # Read HTML template from file
+    template_file = f"{os.path.dirname(__file__)}/templates/welcome.html"
+    with open(template_file, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    username = claim.get("username")
+    # Replace placeholder with actual username
+    html_content = html_content.replace("{username}", username)
+    
+    return HTMLResponse(content=html_content)
+
 
 if __name__ == "__main__":
     import uvicorn

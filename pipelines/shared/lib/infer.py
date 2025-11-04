@@ -63,7 +63,6 @@ class Infer:
 
         # increase dimensions to match input size
         processed_images = imgs_tensor
-        print("shape of processed images:", processed_images.shape)
         processed_images = imgs_tensor.unsqueeze(2)
         return processed_images, profiles, coords, temporal
 
@@ -114,21 +113,13 @@ class Infer:
         Returns:
             list: List of GeoJSON features.
         """
-        geojson_features = []
-        def get_qa_mask(tile, qa_flags):
-            combined = np.zeros_like(tile).astype('uint')
-            for qa_flag in qa_flags:
-                qa_index = QA_INDICES.get(qa_flag)
-                flag = tile[6].astype('uint') & (1 << qa_index) != 0
-                combined |= flag
-            return combined
         with rasterio.open(image_file) as src:
             profile = src.profile
             tile = src.read()
             if timeseries:
-                mask = get_qa_mask(tile[9:16], qa_flags)
+                mask = tile[15]
             else:
-                mask = get_qa_mask(tile, qa_flags)
+                mask = tile[6]
             transform = profile['transform']
             mask = mask.astype('uint8')  # Ensure mask is in uint8 format
 
@@ -180,7 +171,5 @@ class Infer:
                     #         size=img_size,
                     #         mode="nearest"
                     #     )
-                    print("Shape of predicted mask:", predicted_mask.shape)
-                    print("max and min of predicted mask:", predicted_mask.max(), predicted_mask.min())
                 predicted_masks.append(predicted_mask)
             return predicted_masks, profiles
