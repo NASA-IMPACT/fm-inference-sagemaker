@@ -10,8 +10,8 @@ from terratorch.tasks import SemanticSegmentationTask
 
 
 class FloodInfer(Infer):
-    def __init__(self, config, checkpoint):
-        super().__init__(config, checkpoint)
+    def __init__(self, config, checkpoint, max_queue_size=4, num_streams=2):
+        super().__init__(config, checkpoint, max_queue_size, num_streams)
         self.logger = logging.getLogger(__name__)
 
     def load_model(self):
@@ -48,8 +48,11 @@ class FloodInfer(Infer):
         )
 
         self.model = self.model.eval()
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.to(device)
+        self.model.to(self.device)
+
+        # Enable cudnn benchmarking for optimized convolution algorithms
+        if self.use_cuda:
+            torch.backends.cudnn.benchmark = True
 
     def postprocess(self, bbox, date, prediction, image, source_width=None, source_height=None):
         dem_downloader = DEMDownloader(bbox, date)

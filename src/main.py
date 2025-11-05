@@ -66,8 +66,10 @@ async def require_alb_authentication(request: Request) -> dict[str, Any]:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User is not authenticated via ALB/Cognito."
         )
-    print(f"Here: {get_jwt_payload(oidc_data)}")
-    return get_jwt_payload(access_token)
+    data_from_oidc = get_jwt_payload(oidc_data)
+    data_access_token = get_jwt_payload(access_token)
+    data_access_token['email'] = data_from_oidc['email']
+    return data_access_token
 
 
 def get_jwt_payload(token: str) -> dict[str, Any]:

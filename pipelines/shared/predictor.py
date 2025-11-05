@@ -331,9 +331,6 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
         response = {'statusCode': 422}
         return JSONResponse(content=jsonable_encoder(response))
     inference = MODEL[model_id]
-    all_tiles = list()
-    geojson_list = list()
-    geojson = {'type': 'FeatureCollection', 'features': []}
 
     start_time = time.time()
     results = list()
