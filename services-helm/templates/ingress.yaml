@@ -18,13 +18,13 @@ metadata:
 spec:
   tls:
   - hosts:
-    - ${INGRESS_HOST}
-    secretName: ingress-tls
+    - {{ .Values.ingressPrediction.host  }}
+    secretName: {{ .Values.ingressPrediction.tlsSecretName }}
   rules:
-  - host: ${INGRESS_HOST}
+  - host: {{ .Values.ingressPrediction.host  }}
     http:
       paths:
-      - path: /api/predict
+      - path: {{ .Values.ingressPrediction.path  }}
         pathType: Prefix
         backend:
           service:

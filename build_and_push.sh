@@ -57,25 +57,31 @@ CROP_IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_CROP_IMAGE_NAME | cu
 
 # Create final tag using just the short hash (no colons or special characters)
 IMAGE_TAG="${IMAGE_DIGEST}"
-export ECR_IMAGE_NAME="inference:${IMAGE_TAG}"
-export ECR_FLOOD_IMAGE_NAME="inference_pipelines/floods:${FLOOD_IMAGE_DIGEST}"
-export ECR_BURN_IMAGE_NAME="inference_pipelines/burn_scars:${BURN_IMAGE_DIGEST}"
-export ECR_CROP_IMAGE_NAME="inference_pipelines/crop_classification:${CROP_IMAGE_DIGEST}"
+PREDICTION_APP="inference:${IMAGE_TAG}"
+FLOODS_APP="inference_pipelines/floods:${FLOOD_IMAGE_DIGEST}"
+BURN_SCAR_APP="inference_pipelines/burn_scars:${BURN_IMAGE_DIGEST}"
+CROP_APP="inference_pipelines/crop_classification:${CROP_IMAGE_DIGEST}"
 
 # Tag the temp image with final name
-docker tag $TEMP_IMAGE_NAME $ECR_URL/$ECR_IMAGE_NAME
-docker tag $TEMP_FLOOD_IMAGE_NAME $ECR_URL/$ECR_FLOOD_IMAGE_NAME
-docker tag $TEMP_BURN_IMAGE_NAME $ECR_URL/$ECR_BURN_IMAGE_NAME
-docker tag $TEMP_CROP_IMAGE_NAME $ECR_URL/$ECR_CROP_IMAGE_NAME
+docker tag $TEMP_IMAGE_NAME $ECR_URL/$PREDICTION_APP
+docker tag $TEMP_FLOOD_IMAGE_NAME $ECR_URL/$FLOODS_APP
+docker tag $TEMP_BURN_IMAGE_NAME $ECR_URL/$BURN_SCAR_APP
+docker tag $TEMP_CROP_IMAGE_NAME $ECR_URL/$CROP_APP
 
-echo "Final image: $ECR_URL/$ECR_IMAGE_NAME"
+echo "Final image: $ECR_URL/$PREDICTION_APP"
 echo "Using ingress host: $INGRESS_HOST"
 
+export TF_VAR_prediction_app_image_url=$ECR_URL/$PREDICTION_APP
+export TF_VAR_floods_app_image_url=$ECR_URL/$FLOODS_APP
+export TF_VAR_burnScar_app_image_url=$ECR_URL/$BURN_SCAR_APP
+export TF_VAR_crop_app_image_url=$ECR_URL/$CROP_APP
+
+
 # Push to ECR
-docker push $ECR_URL/$ECR_IMAGE_NAME
-docker push $ECR_URL/$ECR_FLOOD_IMAGE_NAME
-docker push $ECR_URL/$ECR_BURN_IMAGE_NAME
-docker push $ECR_URL/$ECR_CROP_IMAGE_NAME
+docker push $TF_VAR_prediction_app_image_url
+docker push $TF_VAR_floods_app_image_url
+docker push $TF_VAR_burnScar_app_image_url
+docker push $TF_VAR_crop_app_image_url
 
 # Clean up temporary image
 docker rmi $TEMP_IMAGE_NAME
@@ -86,11 +92,11 @@ docker rmi $TEMP_CROP_IMAGE_NAME
 
 cd -
 # Generate deployment.yaml and ingress.yaml from templates using envsubst
-envsubst < k8s-manifests/deployment.yaml.tmpl > k8s-manifests/deployment.yaml
-envsubst < k8s-manifests/ingress.yaml.tmpl > k8s-manifests/ingress.yaml
+envsubst < services-helm/configMap.yaml.tmpl > services-helm/configMap.yaml
 
 # Apply Kubernetes manifests
-kubectl apply -f k8s-manifests/
+kubectl apply -f services-helm/configMap.yaml
 
 # Optional: Load image to kind cluster if needed
-# kind load docker-image $ECR_URL/$ECR_IMAGE_NAME --name neo-cluster
+# kind load docker-image $ECR_URL/$PREDICTION_APP --name neo-cluster
+
