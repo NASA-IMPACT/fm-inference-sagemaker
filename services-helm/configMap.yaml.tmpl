@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prediction-app-envs
+  namespace: default
+data:
+  RELEASE_VERSION: "${RELEASE_VERSION}"
+  BUCKET_NAME: "r2o-models"
+  API_KEY_VALIDATION_URL: "https://dev.fm.dsig.net/api/validate"
+  DOWNLOAD_FOLDER: "/root/.cache/data"
+  DATABASE_URL: "${DATABASE_URL}"
+  POSTGRES_HOST: "${POSTGRES_HOST}"
+  POSTGRES_PORT: "${POSTGRES_PORT}"
+  POSTGRES_DB: "${POSTGRES_DB}"
+  POSTGRES_USER: "${POSTGRES_USER}"
+  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+  EARTHDATA_USERNAME: "${EARTHDATA_USERNAME}"
+  EARTHDATA_PASSWORD: "${EARTHDATA_PASSWORD}"
+  COGNITO_USER_POOL_ID: "${COGNITO_USER_POOL_ID}"
+  COGNITO_CLIENT_SECRET: "${COGNITO_CLIENT_SECRET}"
+  COGNITO_CLIENT_ID: "${COGNITO_CLIENT_ID}"
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: floods-app-envs
+  namespace: default
+data:
+  BUCKET_NAME: "r2o-models"
+  USECASE: "floods"
+  API_KEY_VALIDATION_URL: "https://dev.fm.dsig.net/api/validate"
+  DOWNLOAD_FOLDER: "/root/.cache/data"
+  MODEL_WEIGHT_PATH: "${FLOOD_WEIGHT}"
+  CONFIG_PATH: "${FLOOD_CONFIG}"
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: burn-scars-app-envs
+  namespace: default
+data:
+   BUCKET_NAME: "r2o-models"
+   USECASE: "burn_scars"
+   API_KEY_VALIDATION_URL: "https://dev.fm.dsig.net/api/validate"
+   DOWNLOAD_FOLDER: "/root/.cache/data"
+   MODEL_WEIGHT_PATH: "${BURN_WEIGHT}"
+   CONFIG_PATH: "${BURN_CONFIG}"
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: crop-classification-app-envs
+  namespace: default
+data:
+   BUCKET_NAME: "r2o-models"
+   USECASE: "crop_classification"
+   API_KEY_VALIDATION_URL: "https://dev.fm.dsig.net/api/validate"
+   DOWNLOAD_FOLDER: "/root/.cache/data"
+   MODEL_WEIGHT_PATH: "${CROP_WEIGHT}"
+   CONFIG_PATH: "${CROP_CONFIG}"
+
+

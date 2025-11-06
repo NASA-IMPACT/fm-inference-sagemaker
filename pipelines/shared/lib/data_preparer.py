@@ -52,7 +52,7 @@ class ArrayPool:
         self.pool.clear()
 
 class DataPreparer:
-    def __init__(self, filename, batch_size=120, overlap=0, scale=False, qa_flags=['cloud', 'shadow', 'snow', 'water'], timeseries=False):
+    def __init__(self, filename, batch_size=60, overlap=0, scale=False, qa_flags=['cloud', 'shadow', 'snow', 'water'], timeseries=False):
         """
         Initialize Downloader
         Args:
@@ -66,9 +66,9 @@ class DataPreparer:
             # Example heuristic: use larger batch if GPU has more memory
 
             if gpu_mem >= 81152:
-                self.batch_size = max(batch_size, 240)
+                self.batch_size = max(batch_size, 60)
             elif gpu_mem <= 81152:
-                self.batch_size = max(batch_size, 120)
+                self.batch_size = max(batch_size, 60)
             else:
                 self.batch_size = batch_size
         except Exception:
