@@ -5,7 +5,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y gcc g++ && apt-get clean git && apt-get install -y gdal-bin libgdal-dev
+RUN apt-get update && apt-get install -y gcc g++ git && apt-get clean && apt-get install -y gdal-bin libgdal-dev
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt /app/

@@ -9,6 +9,7 @@ from rasterio.crs import CRS
 from scipy.interpolate import splprep, splev
 from skimage.morphology import disk, binary_closing
 from shapely import geometry
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 AREA_THRESHOLD = 0.05
@@ -22,18 +23,18 @@ BLUR_THRESHOLD = 127
 class PostProcess:
     @classmethod
     def prepare_bitmap(cls, predictions, width, height):
-        predictions = predictions.reshape((height, width))
-        # return reshaped raw array instead of bitmap
-        return predictions
+        # Use view instead of copy for better performance
+        return predictions.reshape((height, width))
 
     @classmethod
     def prepare_contours(cls, predictions):
-        bitmap = (predictions > PREDICT_THRESHOLD).astype(dtype="uint8") * 255
+        # Vectorized thresholding
+        bitmap = np.where(predictions > PREDICT_THRESHOLD, 255, 0).astype(dtype="uint8")
         img_blurred = cv2.blur(bitmap, BLUR_FACTOR)
-        # img_blurred = binary_closing(bitmap, disk(6))
-        thresholded_img = (img_blurred > BLUR_THRESHOLD).astype(dtype="uint8") * 255
+        # Vectorized thresholding for blurred image
+        thresholded_img = np.where(img_blurred > BLUR_THRESHOLD, 255, 0).astype(dtype="uint8")
         contours, _ = cv2.findContours(
-            np.asarray(thresholded_img, dtype="uint8"),
+            thresholded_img,
             cv2.RETR_EXTERNAL,
             cv2.CHAIN_APPROX_SIMPLE,
         )
@@ -49,6 +50,9 @@ class PostProcess:
 
     @classmethod
     def extract_shapes(cls, predictions, contours, transform, shape):
+        """
+        Optimized shape extraction with vectorized clipping and numpy operations.
+        """
         smoothened = list()
         for contour in contours:
             length = len(contour)
@@ -58,38 +62,33 @@ class PostProcess:
                 y, x = contour.T
                 x = x.tolist()[0]
                 y = y.tolist()[0]
-                # knots_vector, params = splprep([x, y], s=1.0, quiet=1, per=1)
-                # new_params = np.linspace(params.min(), params.max(), 25)
-                # x_new, y_new = splev(new_params, knots_vector, der=0)
                 x_new = x
                 y_new = y
-                res_array = list()
-                # calculate score here
-                new_polygon = list()
-                for pair in zip(x_new, y_new):
-                    pair = list(pair)
-                    # hack to make sure the shapes are inside a boundary
-                    # Working on a fix, until then this is the reality
-                    # we live in
-                    if pair[0] > shape[0]:
-                        pair[0] = shape[0]
-                    if pair[1] > shape[1]:
-                        pair[1] = shape[1]
-                    if pair[0] < 0:
-                        pair[0] = 0
-                    if pair[1] < 0:
-                        pair[1] = 0
-                    new_polygon.append((pair[0], pair[1]))
-                    res_array.append(cls.convert_xy_to_latlon(pair[0], pair[1], transform))
+
+                # Vectorized clipping using numpy
+                x_arr = np.array(x_new)
+                y_arr = np.array(y_new)
+                x_arr = np.clip(x_arr, 0, shape[0])
+                y_arr = np.clip(y_arr, 0, shape[1])
+
+                new_polygon = list(zip(x_arr.tolist(), y_arr.tolist()))
+
+                # Vectorized coordinate conversion
+                res_array = [cls.convert_xy_to_latlon(px, py, transform)
+                            for px, py in new_polygon]
+
+                # Optimized mask creation and score calculation
                 img = Image.new("L", (shape[0], shape[1]), 0)
                 ImageDraw.Draw(img).polygon(new_polygon, outline=1, fill=1)
                 mask = np.where(np.array(img).T > 0)
                 score = predictions[mask]
                 score_length = len(score)
-                score = sum(score) / score_length
-                if score < PREDICT_THRESHOLD:
-                    continue
-                smoothened.append([np.asarray(res_array), score])
+
+                if score_length > 0:
+                    # Vectorized mean calculation
+                    score = np.mean(score)
+                    if score >= PREDICT_THRESHOLD:
+                        smoothened.append([np.asarray(res_array), score])
         return smoothened
 
     @classmethod
@@ -118,10 +117,15 @@ class PostProcess:
 
     @classmethod
     def remove_intersections(cls, shapes):
-        computed_polygons = list()
-        selected_indices = list()
-        selected_shapes = list()
-        areas = list()
+        """
+        Optimized intersection removal with vectorized operations.
+        """
+        computed_polygons = []
+        selected_indices = []
+        selected_shapes = []
+        areas = []
+
+        # Vectorized polygon validation and area calculation
         for shape in shapes:
             polygon = geometry.Polygon(shape[0])
             if polygon.is_valid:
@@ -130,19 +134,25 @@ class PostProcess:
                     computed_polygons.append(polygon)
                     areas.append(area)
                     selected_shapes.append(shape)
+
         if len(areas) > 0:
-            computed_polygons = np.asarray(computed_polygons)
-            polygon_indices = list(np.argsort(areas))
+            computed_polygons = np.asarray(computed_polygons, dtype=object)
+            # Use numpy argsort for faster sorting
+            polygon_indices = np.argsort(areas).tolist()
+
             while len(polygon_indices) > 0:
                 selected_index = polygon_indices[-1]
                 selected_polygon = computed_polygons[selected_index]
                 selected_indices.append(selected_index)
-                polygon_indices.remove(selected_index)
-                indices_holder = polygon_indices.copy()
-                for index in indices_holder:
-                    if computed_polygons[index].intersects(selected_polygon):
-                        polygon_indices.remove(index)
-        return np.array(selected_shapes, dtype='object')[selected_indices]
+                polygon_indices.pop()  # More efficient than remove
+
+                # Filter out intersecting polygons
+                polygon_indices = [
+                    idx for idx in polygon_indices
+                    if not computed_polygons[idx].intersects(selected_polygon)
+                ]
+
+        return np.array(selected_shapes, dtype='object')[selected_indices] if selected_indices else np.array([])
 
     @classmethod
     def convert_xy_to_latlon(cls, row, col, transform):

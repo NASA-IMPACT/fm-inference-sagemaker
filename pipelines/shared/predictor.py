@@ -98,7 +98,7 @@ def load_model(config_file_path, checkpoint_file_path, source='s3'):
         pass
     # Load the model only once
     usecase = inflection.singularize(USECASE)
-    infer_classname = f"{"".join([split.capitalize() for split in usecase.split('_')])}Infer"
+    infer_classname = f"{''.join([split.capitalize() for split in usecase.split('_')])}Infer"
     model_module = importlib.import_module(f"lib.{usecase}_infer")
     infer = getattr(model_module, infer_classname)(model_config_file_path, model_weights_path)
     return { USECASE: infer }

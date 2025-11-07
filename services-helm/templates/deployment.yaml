@@ -26,6 +26,9 @@ spec:
           volumeMounts:
             - name: cache-volume
               mountPath: /root/.cache
+          env:
+          - name: RELEASE_VERSION
+            value: {{ .Values.release_version  }}
           envFrom:
             - configMapRef:
                 name: prediction-app-envs

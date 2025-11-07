@@ -12,17 +12,33 @@ RUN add-apt-repository -y ppa:deadsnakes/ppa
 RUN add-apt-repository -y ppa:ubuntugis/ppa
 
 RUN apt-get update && \
-    apt-get install -y gcc g++ wget && \
-    apt-get clean git && \
+    apt-get install -y gcc g++ wget git && \
     apt-get install -y gdal-bin libgdal-dev && \
     apt-get install -y ffmpeg libsm6 libxext6 libgl1 && \
-    apt-get install -y python3.12 python3-pip python3.12-venv python3.12-dev && \
+    apt-get install -y python3.11 python3-pip python3.11-venv python3.11-dev && \
     apt-get install -y cmake ninja-build sqlite3 && \
+    apt-get install -y swig4.0 python3-setuptools && \
+    ln -sf /usr/bin/swig4.0 /usr/bin/swig && \
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-RUN update-alternatives --install /usr/bin/python3 python /usr/bin/python3.12 2
+RUN update-alternatives --install /usr/bin/python3 python /usr/bin/python3.11 2
 RUN update-alternatives --install /usr/bin/python3 python /usr/bin/python3.10 1
-RUN update-alternatives --set python /usr/bin/python3.12
+RUN update-alternatives --set python /usr/bin/python3.11
+
+RUN python3.11 -m ensurepip --upgrade
+
+# Upgrade pip and install uv
+RUN python3.11 -m pip install --upgrade pip
+RUN python3.11 -m pip install uv
+
+# Install compatible setuptools for GDAL build
+RUN python3.11 -m pip install "setuptools<66" wheel
+
+# Install NumPy with better compatibility
+RUN python3.11 -m pip install --no-cache-dir --force-reinstall --no-deps numpy && \
+    python3.11 -c "import numpy; print('NumPy working:', numpy.__version__)" || \
+    echo "NumPy test failed, will build GDAL without NumPy"
 
 RUN cd /tmp && \
     wget https://download.osgeo.org/proj/proj-9.3.0.tar.gz && \
@@ -43,29 +59,48 @@ RUN cd /tmp && \
     cd /tmp && \
     rm -rf proj-9.3.0*
 
-# Install GDAL from source (minimal build)
-RUN wget https://download.osgeo.org/gdal/3.11.3/gdal-3.11.3.tar.gz
-RUN tar zxvf gdal-3.11.3.tar.gz
-RUN mkdir -p gdal-3.11.3/build && \
-    cd gdal-3.11.3/build && \
-    cmake .. -G Ninja \
+# Install GDAL from source with Python bindings
+RUN wget https://download.osgeo.org/gdal/3.11.3/gdal-3.11.3.tar.gz && \
+    tar zxvf gdal-3.11.3.tar.gz && \
+    mkdir -p gdal-3.11.3/build && \
+    cd gdal-3.11.3/build
+
+# Debug environment before building
+RUN cd gdal-3.11.3/build && \
+    echo "=== Environment Check ===" && \
+    which python3.11 && \
+    python3.11 --version && \
+    which swig && \
+    swig -version && \
+    echo "=== CMake Configure (without NumPy to avoid compatibility issues) ===" && \
+    GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY=1 cmake .. -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX=/usr/local \
-        -DBUILD_SHARED_LIBS=ON && \
-    cmake --build ./ && \
+        -DBUILD_SHARED_LIBS=ON \
+        -DBUILD_PYTHON_BINDINGS=ON \
+        -DPython_LOOKUP_VERSION=3.11 \
+        -DSWIG_EXECUTABLE=/usr/bin/swig
+
+# Build with better error reporting
+RUN cd gdal-3.11.3/build && \
+    echo "=== Starting GDAL Build ===" && \
+    cmake --build ./ --parallel 4 2>&1 | tee build.log || (echo "=== BUILD FAILED - Last 50 lines ==="; tail -50 build.log; exit 1)
+
+# Install
+RUN cd gdal-3.11.3/build && \
+    echo "=== Installing GDAL ===" && \
     cmake --install ./ && \
-    cd ../.. && rm -rf gdal-3.12*
+    cd ../.. && \
+    rm -rf gdal-3.11.3*
 
 # Set environment variables
 ENV GDAL_DATA=/usr/local/share/gdal
 ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 ENV PATH=/usr/local/bin:$PATH
+ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages:$PYTHONPATH
 
-RUN python3.12 -m ensurepip --upgrade
-
-# Upgrade pip and install uv
-RUN python3.12 -m pip install --upgrade pip
-RUN python3.12 -m pip install uv
+# Ensure NumPy is working after GDAL build
+RUN python3.11 -m pip install --no-cache-dir --force-reinstall numpy --root-user-action=ignore
 
 WORKDIR /app
 

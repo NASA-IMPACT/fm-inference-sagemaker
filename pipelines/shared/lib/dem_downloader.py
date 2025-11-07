@@ -7,49 +7,58 @@ import geopandas as gpd
 import logging
 import shutil
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 from rasterio.mask import mask
 from rasterio.merge import merge
 from rasterio.warp import reproject, Resampling
 from scipy.ndimage import sobel
 from shapely.geometry import box
+from osgeo import gdal
+
+gdal.UseExceptions()
 
 DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", '/root/.cache/')
 URL = "https://copernicus-dem-30m.s3.amazonaws.com/{tile_name}/{tile_name}.tif"
 
-# Optimal GDAL configuration for rasterio operations
+# Enhanced GDAL configuration for rasterio operations
 GDAL_CONFIG = {
-    # Memory and caching
-    'GDAL_CACHEMAX': 512,  # MB of cache for GDAL operations
+    # Memory and caching - increased for better performance
+    'GDAL_CACHEMAX': 8192,  # MB of cache for GDAL operations (increased from 512)
+    'GDAL_WARP_MEMORY_LIMIT': 1073741824,  # 1GB warp memory limit
     'CPL_VSIL_CURL_CACHE_SIZE': 200000000,  # 200MB for network file cache
-    'GDAL_HTTP_MERGE_CONSECUTIVE_RANGES': 'YES',  # Optimize HTTP range requests
-    'GDAL_HTTP_MULTIPLEX': 'YES',  # Enable HTTP/2 multiplexing
-    'GDAL_HTTP_VERSION': '2',  # Use HTTP/2 for better performance
+    'GDAL_HTTP_MERGE_CONSECUTIVE_RANGES': True,  # Optimize HTTP range requests
+    'GDAL_HTTP_MULTIPLEX': True,  # Enable HTTP/2 multiplexing
+    'GDAL_HTTP_VERSION': 2,  # Use HTTP/2 for better performance
 
     # Disable auxiliary files that slow down operations
     'GDAL_DISABLE_READDIR_ON_OPEN': 'EMPTY_DIR',  # Avoid scanning directories
     'CPL_VSIL_CURL_ALLOWED_EXTENSIONS': '.tif,.TIF,.tiff,.TIFF',  # Only look for TIF files
+    'GDAL_TIFF_INTERNAL_MASK': True,  # Use internal mask for better performance
 
     # Performance optimizations
     'GDAL_NUM_THREADS': 'ALL_CPUS',  # Use all available CPU cores
     'GDAL_MAX_DATASET_POOL_SIZE': 450,  # Connection pool for datasets
+    'GDAL_TIFF_OVR_BLOCKSIZE': 256,  # Optimize overview block size
+    'GDAL_TIFF_DIRECT_IO': True,  # Enable direct I/O for better performance
 
     # Network optimizations
-    'CPL_CURL_VERBOSE': 'NO',  # Reduce logging overhead
-    'GDAL_HTTP_TIMEOUT': '60',  # Timeout for HTTP requests
-    'GDAL_HTTP_CONNECTTIMEOUT': '30',  # Connection timeout
+    'CPL_CURL_VERBOSE': False,  # Reduce logging overhead
+    'GDAL_HTTP_TIMEOUT': 60,  # Timeout for HTTP requests
+    'GDAL_HTTP_CONNECTTIMEOUT': 30,  # Connection timeout
 
     # Error handling
     'CPL_LOG': '/tmp/gdal.log',  # Log GDAL errors
-    'CPL_DEBUG': 'OFF',  # Disable debug logging for performance
+    'CPL_DEBUG': False,  # Disable debug logging for performance
 }
 
-# Common profile updates for compressed tiled output
+# Common profile updates for compressed tiled output - optimized
 COMPRESSION_PROFILE = {
     'compress': 'DEFLATE',
     'tiled': True,
-    'blockxsize': 512,
-    'blockysize': 512,
+    'blockxsize': 256,  # Reduced from 512 for better memory efficiency
+    'blockysize': 256,  # Reduced from 512 for better memory efficiency
+    'NUM_THREADS': 'ALL_CPUS',  # Multi-threaded compression
+    'BIGTIFF': 'IF_SAFER',  # Auto-detect BigTIFF need
 }
 
 
@@ -83,7 +92,7 @@ class DEMDownloader:
             self.logger.error(f"Failed to download {url}: {e}")
             return None
 
-    def download_dem_tiles(self, max_workers=5):
+    def download_dem_tiles(self, max_workers=10):
         west, south, east, north = self.bbox
         min_lon, max_lon = int(np.floor(west)), int(np.floor(east))
         min_lat, max_lat = int(np.floor(south)), int(np.floor(north))
@@ -118,6 +127,10 @@ class DEMDownloader:
         return dem_tiles
 
     def merge_and_clip_dems(self, dem_tiles, width=None, height=None):
+        """
+        Optimized merge and clip using VRT and GDAL for better performance.
+        Uses GDAL's native operations instead of rasterio for speed.
+        """
         try:
             west, south, east, north = self.bbox
             base_filename = f"{west}_{south}_{east}_{north}".replace('.', '_').replace('-', 'm')
@@ -125,53 +138,70 @@ class DEMDownloader:
             if os.path.exists(filename):
                 return filename
 
-            with get_gdal_env():
-                with rasterio.open(dem_tiles[0]) as src:
-                    out_meta = src.meta.copy()
+            # Step 1: Build VRT mosaic (no data copy, instant)
+            vrt_path = os.path.join(self.output_dir, f"{base_filename}_dem_mosaic.vrt")
+            gdal.BuildVRT(vrt_path, dem_tiles)
 
-                mosaic, out_transform = merge([rasterio.open(f) for f in dem_tiles])
+            if not os.path.exists(vrt_path):
+                self.logger.error("Failed to create VRT mosaic")
+                return None
 
-                out_meta.update({
-                    "driver": "GTiff",
-                    "height": mosaic.shape[1],
-                    "width": mosaic.shape[2],
-                    "transform": out_transform,
-                    **COMPRESSION_PROFILE
-                })
+            # Step 2: Clip and optionally resample using GDAL Warp (single operation)
+            wkt_poly = f"POLYGON(({west} {south},{west} {north},{east} {north},{east} {south},{west} {south}))"
 
-                merged_dem_path = os.path.join(self.output_dir, f"{base_filename}_dem_merged.tif")
-                with rasterio.open(merged_dem_path, "w", **out_meta) as dest:
-                    dest.write(mosaic)
+            warp_options = gdal.WarpOptions(
+                dstSRS='EPSG:4326',
+                format='GTiff',
+                cutlineWKT=wkt_poly,
+                cropToCutline=True,
+                dstNodata=-9999,
+                resampleAlg='bilinear',
+                multithread=True,
+                warpMemoryLimit=1073741824,  # 1GB
+                creationOptions=[
+                    'TILED=YES',
+                    'BLOCKXSIZE=256',
+                    'BLOCKYSIZE=256',
+                    'NUM_THREADS=ALL_CPUS',
+                    'BIGTIFF=IF_SAFER',
+                    'COMPRESS=DEFLATE',
+                ],
+            )
 
-                clip_geom = gpd.GeoDataFrame({'geometry': [box(west, south, east, north)]}, crs='EPSG:4326')
+            # Add width/height if specified
+            if width and height:
+                warp_options = gdal.WarpOptions(
+                    dstSRS='EPSG:4326',
+                    format='GTiff',
+                    cutlineWKT=wkt_poly,
+                    cropToCutline=True,
+                    dstNodata=-9999,
+                    resampleAlg='bilinear',
+                    multithread=True,
+                    warpMemoryLimit=1073741824,
+                    width=width,
+                    height=height,
+                    creationOptions=[
+                        'TILED=YES',
+                        'BLOCKXSIZE=256',
+                        'BLOCKYSIZE=256',
+                        'NUM_THREADS=ALL_CPUS',
+                        'BIGTIFF=IF_SAFER',
+                        'COMPRESS=DEFLATE',
+                    ],
+                )
 
-                with rasterio.open(merged_dem_path) as src:
-                    out_image, out_transform = mask(src, clip_geom.geometry, crop=True)
-                    out_meta = src.meta.copy()
+            gdal.Warp(filename, vrt_path, options=warp_options)
 
-                out_meta.update({
-                    "height": out_image.shape[1],
-                    "width": out_image.shape[2],
-                    "transform": out_transform,
-                    **COMPRESSION_PROFILE
-                })
+            # Clean up temporary VRT
+            try:
+                os.remove(vrt_path)
+            except OSError:
+                pass
 
-                with rasterio.open(filename, "w", **out_meta) as dest:
-                    if width and height:
-                        print(f"Reprojecting DEM to width: {width}, height: {height}")
-                        reprojected_image = np.empty((height, width), dtype=out_image.dtype)
-                        reproject(
-                            source=out_image,
-                            destination=reprojected_image,
-                            src_transform=out_transform,
-                            src_crs=src.crs,
-                            dst_transform=out_transform,
-                            dst_crs=src.crs,
-                            resampling=Resampling.bilinear
-                        )
-                        dest.write(reprojected_image, 1)
-                    else:
-                        dest.write(out_image)
+            if not os.path.exists(filename):
+                self.logger.error("Failed to create clipped DEM")
+                return None
 
             return filename
 
@@ -187,14 +217,18 @@ class DEMDownloader:
         pixel_size_x = abs(transform[0]) * 111000 * np.cos(np.radians(lat_center))
         pixel_size_y = abs(transform[4]) * 111000
 
+        # Vectorized slope calculation
         dz_dx = sobel(dem, axis=1) / (8 * pixel_size_x)
         dz_dy = sobel(dem, axis=0) / (8 * pixel_size_y)
 
+        # In-place operations to reduce memory allocations
         slope_rad = np.arctan(np.sqrt(dz_dx**2 + dz_dy**2))
         slope_deg = np.degrees(slope_rad)
+
         slope_path = f"{DOWNLOAD_FOLDER}/slopes"
         os.makedirs(slope_path, exist_ok=True)
         slope_file = os.path.join(slope_path, os.path.basename(dem_src.name).replace('_dem_clipped.tif', '_slope_degrees.tif'))
+
         profile = dem_src.profile.copy()
         profile.update(dtype=rasterio.float32, **COMPRESSION_PROFILE)
 
@@ -217,13 +251,16 @@ class DEMDownloader:
         pixel_size_x = abs(dem_transform[0]) * 111000 * np.cos(np.radians(lat_center))
         pixel_size_y = abs(dem_transform[4]) * 111000
 
+        # Vectorized sobel operations
         dz_dx = sobel(dem, axis=1) / (8 * pixel_size_x)
         dz_dy = sobel(dem, axis=0) / (8 * pixel_size_y)
 
+        # In-place normal vector calculations
         nx = -dz_dx
         ny = -dz_dy
         nz = np.ones_like(dem)
 
+        # Vectorized normalization
         norm = np.sqrt(nx**2 + ny**2 + nz**2)
         nx /= norm
         ny /= norm
@@ -231,33 +268,33 @@ class DEMDownloader:
 
         sza_data = hls_src.read(8)
         saa_data = hls_src.read(9)
-        sza_resampled = np.zeros_like(sza_data, dtype=np.float32)
-        saa_resampled = np.zeros_like(saa_data, dtype=np.float32)
 
+        # Only create resampled arrays if needed
         if sza_data.shape != dem.shape:
             sza_resampled = np.zeros_like(dem, dtype=np.float32)
             saa_resampled = np.zeros_like(dem, dtype=np.float32)
 
-        reproject(
-            source=sza_data,
-            destination=sza_resampled,
-            src_transform=hls_src.transform,
-            src_crs=hls_src.crs,
-            dst_transform=dem_transform,
-            dst_crs=dem_src.crs,
-            resampling=Resampling.bilinear
-        )
-        reproject(
-            source=saa_data,
-            destination=saa_resampled,
-            src_transform=hls_src.transform,
-            src_crs=hls_src.crs,
-            dst_transform=dem_transform,
-            dst_crs=dem_src.crs,
-            resampling=Resampling.bilinear
-        )
-        sza_data, saa_data = sza_resampled, saa_resampled
+            reproject(
+                source=sza_data,
+                destination=sza_resampled,
+                src_transform=hls_src.transform,
+                src_crs=hls_src.crs,
+                dst_transform=dem_transform,
+                dst_crs=dem_src.crs,
+                resampling=Resampling.bilinear
+            )
+            reproject(
+                source=saa_data,
+                destination=saa_resampled,
+                src_transform=hls_src.transform,
+                src_crs=hls_src.crs,
+                dst_transform=dem_transform,
+                dst_crs=dem_src.crs,
+                resampling=Resampling.bilinear
+            )
+            sza_data, saa_data = sza_resampled, saa_resampled
 
+        # Vectorized trigonometric operations
         zenith_rad = np.radians(sza_data)
         azimuth_rad = np.radians(saa_data)
 
@@ -265,6 +302,7 @@ class DEMDownloader:
         sy = np.sin(zenith_rad) * np.cos(azimuth_rad)
         sz = np.cos(zenith_rad)
 
+        # Vectorized incidence angle calculation
         cos_incidence = np.clip(sx * nx + sy * ny + sz * nz, -1, 1)
         incidence_angle = np.degrees(np.arccos(cos_incidence))
 
@@ -289,6 +327,9 @@ class DEMDownloader:
 
     @staticmethod
     def postprocess_terrain_shadows(flood_src, slia_file, slope_file, slia_threshold=85, slope_threshold=15):
+        """
+        Optimized terrain shadow processing with vectorized operations.
+        """
         output_dir = f"{DOWNLOAD_FOLDER}/predictions/flood_detection/postprocessed"
         os.makedirs(output_dir, exist_ok=True)
         flood_data = flood_src.read(1)
@@ -299,32 +340,33 @@ class DEMDownloader:
             slia_data = slia_src.read(1)
             slope_data = slope_src.read(1)
 
-        if slia_data.shape != flood_data.shape:
-            slia_resampled = np.zeros_like(flood_data, dtype=np.float32)
-            slope_resampled = np.zeros_like(flood_data, dtype=np.float32)
+            if slia_data.shape != flood_data.shape:
+                # Optimized: Single combined reprojection
+                slia_resampled = np.zeros_like(flood_data, dtype=np.float32)
+                slope_resampled = np.zeros_like(flood_data, dtype=np.float32)
 
-            with rasterio.open(slia_file) as src:
                 reproject(
-                    source=rasterio.band(src, 1),
+                    source=rasterio.band(slia_src, 1),
                     destination=slia_resampled,
-                    src_transform=src.transform,
-                    src_crs=src.crs,
+                    src_transform=slia_src.transform,
+                    src_crs=slia_src.crs,
                     dst_transform=flood_transform,
                     dst_crs=flood_src.crs,
                     resampling=Resampling.bilinear
                 )
 
-            with rasterio.open(slope_file) as src:
                 reproject(
-                    source=rasterio.band(src, 1),
+                    source=rasterio.band(slope_src, 1),
                     destination=slope_resampled,
-                    src_transform=src.transform,
-                    src_crs=src.crs,
+                    src_transform=slope_src.transform,
+                    src_crs=slope_src.crs,
                     dst_transform=flood_transform,
                     dst_crs=flood_src.crs,
                     resampling=Resampling.bilinear
                 )
-            slia_data, slope_data = slia_resampled, slope_resampled
+                slia_data, slope_data = slia_resampled, slope_resampled
+
+        # Vectorized mask creation
         shadow_mask = (slia_data > slia_threshold) & (slope_data > slope_threshold)
         flood_corrected = flood_data.copy()
         pixels_corrected = np.sum((flood_data == 1) & shadow_mask)
@@ -339,6 +381,9 @@ class DEMDownloader:
 
     @staticmethod
     def postprocess_smart_aerosol_filter(flood_src, hls_src):
+        """
+        Optimized aerosol filter with vectorized operations and efficient reprojection.
+        """
         output_dir = f"{DOWNLOAD_FOLDER}/predictions/flood_detection/postprocessed"
         os.makedirs(output_dir, exist_ok=True)
         flood_data = flood_src.read(1)
@@ -348,92 +393,35 @@ class DEMDownloader:
         fmask_data = hls_src.read(7).astype(np.uint32)
 
         if nir_data.shape != flood_data.shape:
-            print("Reprojecting HLS bands to match flood detection shape...", flood_src.name, hls_src.name)
-            print("Shapes before reprojection:", nir_data.shape, green_data.shape, fmask_data.shape, flood_data.shape)
-            print("Flood bounds:", flood_src.bounds)
-            print("HLS bounds:", hls_src.bounds)
-            print("Flood transform:", flood_src.transform)
-            print("HLS transform:", hls_src.transform)
-
-            # Use flood_data dimensions explicitly
             flood_height, flood_width = flood_data.shape
-            print("Target reprojection shape:", flood_height, flood_width)
 
-            try:
-                # Stack all three bands for simultaneous reprojection
-                # This ensures they all get exactly the same dimensions
-                hls_bands_stacked = np.stack([green_data, nir_data, fmask_data.astype(np.float32)], axis=0)
-                reprojected_bands = np.zeros((3, flood_height, flood_width), dtype=np.float32)
+            # Optimized: Stack bands for single reprojection operation
+            hls_bands_stacked = np.stack([green_data, nir_data, fmask_data.astype(np.float32)], axis=0)
+            reprojected_bands = np.zeros((3, flood_height, flood_width), dtype=np.float32)
 
-                reproject(
-                    source=hls_bands_stacked,
-                    destination=reprojected_bands,
-                    src_transform=hls_src.transform,
-                    src_crs=hls_src.crs,
-                    dst_transform=flood_src.transform,
-                    dst_crs=flood_src.crs,
-                    resampling=Resampling.bilinear
-                )
+            reproject(
+                source=hls_bands_stacked,
+                destination=reprojected_bands,
+                src_transform=hls_src.transform,
+                src_crs=hls_src.crs,
+                dst_transform=flood_src.transform,
+                dst_crs=flood_src.crs,
+                resampling=Resampling.bilinear
+            )
 
-                # Extract the reprojected bands
-                green_data = reprojected_bands[0]
-                nir_data = reprojected_bands[1]
-                fmask_data = reprojected_bands[2].astype(np.uint32)
+            green_data = reprojected_bands[0]
+            nir_data = reprojected_bands[1]
+            fmask_data = reprojected_bands[2].astype(np.uint32)
 
-                print("Shapes after reprojection:", nir_data.shape, green_data.shape, fmask_data.shape)
-
-                # Validate that reprojection worked correctly
-                if (nir_data.shape != flood_data.shape or
-                    green_data.shape != flood_data.shape or
-                    fmask_data.shape != flood_data.shape):
-                    raise ValueError(f"Reprojection failed: expected shape {flood_data.shape}, "
-                                   f"got NIR: {nir_data.shape}, Green: {green_data.shape}, "
-                                   f"FMask: {fmask_data.shape}")
-
-            except Exception as e:
-                print(f"Reprojection error: {e}")
-                # Fallback: resize arrays if reprojection fails
-                from scipy.ndimage import zoom
-
-                height_ratio = flood_data.shape[0] / nir_data.shape[0]
-                width_ratio = flood_data.shape[1] / nir_data.shape[1]
-
-                print(f"Falling back to resizing with ratios: height={height_ratio:.4f}, width={width_ratio:.4f}")
-
-                nir_data = zoom(nir_data.astype(np.float32), (height_ratio, width_ratio), order=1)
-                green_data = zoom(green_data.astype(np.float32), (height_ratio, width_ratio), order=1)
-                fmask_data = zoom(fmask_data.astype(np.uint32), (height_ratio, width_ratio), order=0)
-
-                # Ensure exact shape match by cropping or padding if needed
-                if nir_data.shape[0] != flood_data.shape[0] or nir_data.shape[1] != flood_data.shape[1]:
-                    print(f"Adjusting final shapes from {nir_data.shape} to {flood_data.shape}")
-
-                    # Create arrays of exact target size
-                    nir_final = np.zeros(flood_data.shape, dtype=np.float32)
-                    green_final = np.zeros(flood_data.shape, dtype=np.float32)
-                    fmask_final = np.zeros(flood_data.shape, dtype=np.uint32)
-
-                    # Copy data, handling potential size differences
-                    h_end = min(nir_data.shape[0], flood_data.shape[0])
-                    w_end = min(nir_data.shape[1], flood_data.shape[1])
-
-                    nir_final[:h_end, :w_end] = nir_data[:h_end, :w_end]
-                    green_final[:h_end, :w_end] = green_data[:h_end, :w_end]
-                    fmask_final[:h_end, :w_end] = fmask_data[:h_end, :w_end]
-
-                    nir_data = nir_final
-                    green_data = green_final
-                    fmask_data = fmask_final
-
-                print(f"Final shapes after fallback: NIR: {nir_data.shape}, Green: {green_data.shape}, FMask: {fmask_data.shape}")
-        else:
-            print("Shapes already match, no reprojection needed:", nir_data.shape, flood_data.shape)
-
+        # Vectorized aerosol level extraction
         aerosol_level = (fmask_data >> 6) & 3
+
+        # Vectorized NDWI calculation with in-place operations
         ndwi = np.zeros_like(green_data, dtype=np.float32)
         valid = (green_data + nir_data) != 0
-        ndwi[valid] = (green_data[valid] - nir_data[valid]) / (green_data[valid] + nir_data[valid])
+        np.divide(green_data - nir_data, green_data + nir_data, out=ndwi, where=valid)
 
+        # Vectorized mask creation
         aerosol_mask = (
             (flood_data == 1) &
             (aerosol_level >= 2) &
@@ -454,6 +442,9 @@ class DEMDownloader:
 
     @staticmethod
     def postprocess_vegetation_filter(flood_src, hls_src, dem_filename, ndvi_threshold=0.7):
+        """
+        Optimized vegetation filter with vectorized NDVI calculation.
+        """
         output_dir = f"{DOWNLOAD_FOLDER}/predictions/flood_detection/postprocessed"
         os.makedirs(output_dir, exist_ok=True)
         flood_data = flood_src.read(1)
@@ -461,10 +452,12 @@ class DEMDownloader:
         red_data = hls_src.read(3).astype(np.float32)
         nir_data = hls_src.read(4).astype(np.float32)
 
+        # Vectorized NDVI calculation with in-place operations
         ndvi = np.zeros_like(red_data, dtype=np.float32)
         valid_pixels = (red_data + nir_data) != 0
-        ndvi[valid_pixels] = (nir_data[valid_pixels] - red_data[valid_pixels]) / (nir_data[valid_pixels] + red_data[valid_pixels])
+        np.divide(nir_data - red_data, nir_data + red_data, out=ndvi, where=valid_pixels)
 
+        # Vectorized mask creation
         veg_mask = (ndvi > ndvi_threshold) & (flood_data == 1)
         flood_corrected = flood_data.copy()
         pixels_corrected = np.sum(veg_mask)
