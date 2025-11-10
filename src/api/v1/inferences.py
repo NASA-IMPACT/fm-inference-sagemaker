@@ -2,13 +2,14 @@ import time
 import requests
 
 from typing import Dict, List, Callable, Any
-from fastapi import APIRouter, Depends, status, HTTPException
+from fastapi import APIRouter, Depends, status, HTTPException, Response
 from sqlalchemy.orm import Session
 from datetime import datetime
 
 from ...db.database import get_db
 from ...db.models import FinetunedModel, Inference, PreloadedEvent
 from ...lib.downloader import Downloader
+from ...lib.pagination import PaginationHelper
 from ...models.inference import InferenceRead, InferenceUpdate
 from ...models.preloaded_event import PreloadedEventRead
 
@@ -22,11 +23,42 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         return {"status": "healthy", "timestamp": datetime.utcnow()}
 
     @router.get("", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
-    def get_models(db: Session = Depends(get_db)):
-        """Get all inferences."""
+    def get_inferences(
+        response: Response,
+        skip: int = 0,
+        limit: int = 10,
+        claims: Dict[str, Any] = Depends(auth_dependency),
+        db: Session = Depends(get_db)
+    ):
+        """Get paginated inferences filtered by the logged-in user."""
         try:
-            inferences = db.query(Inference).all()
+            user_email = claims.get("email")
+            if not user_email:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="User email not found"
+                )
+
+            # Validate pagination parameters
+            skip, limit = PaginationHelper.get_pagination_params(skip, limit)
+
+            # Query inferences filtered by user email, ordered by creation date
+            query = db.query(Inference).filter(
+                Inference.user_email == user_email
+            ).order_by(Inference.created_at.desc())
+
+            # Apply pagination and set response headers
+            inferences = PaginationHelper.paginate(
+                query=query,
+                response=response,
+                base_url="/v1/inferences",
+                skip=skip,
+                limit=limit
+            )
+
             return inferences
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
