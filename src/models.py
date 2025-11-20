@@ -1,7 +1,7 @@
 import enum
 import uuid
 
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column, String, DateTime, Enum, ForeignKey, Boolean, Integer, JSON
 )
@@ -23,7 +23,7 @@ class FinetunedModel(Base):
     name = Column(String, nullable=False)
     source_type = Column(Enum(SourceType), nullable=False)
     source_details = Column(JSON, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     data_config = Column(JSON, nullable=True)
 
 inference_finetuned_model = Table(
@@ -39,7 +39,7 @@ class Inference(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     query = Column(JSON, nullable=True) # contains bbox, date, or date range
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     finetuned_models = relationship(
         "FinetunedModel",
         secondary=inference_finetuned_model,
@@ -53,7 +53,7 @@ class PreloadedEvent:
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     event_name = Column(String, nullable=False)
     event_details = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     inference_id = Column(UUID(as_uuid=True), ForeignKey("inferences.id"), nullable=True)
     inference = relationship("Inference", backref="preloaded_events")
 
@@ -62,16 +62,16 @@ class PreloadedEvent:
 def set_timestamps(mapper, connection, target):
     # Set started_at when status changes to running
     if hasattr(target, 'status') and target.status == JobStatus.running and not target.started_at:
-        target.started_at = datetime.utcnow()
+        target.started_at = datetime.now(timezone.utc)
     # Set completed_at when status changes to completed or failed
     if hasattr(target, 'status') and target.status in [JobStatus.completed, JobStatus.failed] and not target.completed_at:
-        target.completed_at = datetime.utcnow()
+        target.completed_at = datetime.now(timezone.utc)
     # Set failed_at when status changes to failed
     if hasattr(target, 'status') and target.status == JobStatus.failed and not getattr(target, 'failed_at', None):
-        target.failed_at = datetime.utcnow()
+        target.failed_at = datetime.now(timezone.utc)
     # Set deleted_at when is_deleted is True
     if hasattr(target, 'is_deleted') and target.is_deleted and not target.deleted_at:
-        target.deleted_at = datetime.utcnow()
+        target.deleted_at = datetime.now(timezone.utc)
 
 # Listen for before_insert and before_update events on Job
 

@@ -4,7 +4,7 @@ import requests
 from typing import Dict, List, Callable, Any
 from fastapi import APIRouter, Depends, status, HTTPException, Response
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 
 from ...db.database import get_db
 from ...db.models import FinetunedModel, Inference, PreloadedEvent
@@ -20,7 +20,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
     @router.get("/health", status_code=status.HTTP_200_OK)
     def health_check():
         """Health check endpoint."""
-        return {"status": "healthy", "timestamp": datetime.utcnow()}
+        return {"status": "healthy", "timestamp": datetime.now(timezone.utc)}
 
     @router.get("", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
     def get_inferences(
@@ -99,7 +99,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         t0 = time.time()
         user_groups = claims.get("groups") or claims.get("cognito:groups", [])
         user_email = claims.get("email")
-        inference_name = inference.name if inference.name else time.strftime("inference_%Y%m%d_%H%M%S")
+        inference_name = inference.name if inference.name else datetime.now(timezone.utc).strftime("inference_%Y%m%d_%H%M%S")
         finetuned_models = db.query(FinetunedModel).filter(FinetunedModel.id.in_(inference.finetuned_model_ids)).all()
         if not finetuned_models or len(finetuned_models) != len(inference.finetuned_model_ids):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more finetuned models not found")
