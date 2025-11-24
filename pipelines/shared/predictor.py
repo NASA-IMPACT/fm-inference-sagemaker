@@ -255,23 +255,23 @@ def crop_file(filename, bbox, width=None, height=None, src_handle=None):
         if should_close:
             src_handle.close()
 
+    # Decide target size
+    if width and height:
+        target_height, target_width = height, width
+        # Reshape the output image to the target width and height
+        out_image = np.transpose(out_image, (1, 2, 0))  # CHW -> HWC
+        out_image = np.resize(out_image, (target_height, target_width, out_image.shape[2]))
+        out_image = np.transpose(out_image, (2, 0, 1))  # HWC -> CHW
+    else:
+        target_height, target_width = out_image.shape[1], out_image.shape[2]
+
     out_meta.update({
-        "height": out_image.shape[1],
-        "width": out_image.shape[2],
+        "height": target_height,
+        "width": target_width,
         "transform": out_transform
     })
 
     with rasterio.open(filename, "w", **out_meta) as dest:
-        if width and height:
-            # Reshape the output image to the target width and height
-            out_image = np.transpose(out_image, (1, 2, 0)) # HWC
-            out_image = np.resize(out_image, (height, width, out_image.shape[2]))
-            out_image = np.transpose(out_image, (2, 0, 1)) # CHW
-            out_meta.update({
-                "height": height,
-                "width": width,
-            })
-
         dest.write(out_image)
 
     return filename
@@ -380,7 +380,7 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
 
     start_time = time.time()
     # Optimization: Use cached bounds instead of reopening file
-    prediction_filename = crop_file(prediction_filename, source_bounds)
+    prediction_filename = crop_file(prediction_filename, source_bounds,height=source_height, width=source_width)
 
     # Pass cached dimensions to postprocess to avoid reopening file
     # Check if postprocess method accepts additional parameters
