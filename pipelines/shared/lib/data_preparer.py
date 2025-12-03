@@ -61,17 +61,19 @@ class DataPreparer:
         """
         self.filename = filename
         # Set batch_size based on available GPU memory if possible
-        try:
-            gpu_mem = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)  # in MB
-            # Example heuristic: use larger batch if GPU has more memory
-            print(f"Detected GPU memory: {gpu_mem} MB")
-            if gpu_mem >= 81152:
-                self.batch_size = max(batch_size, 120)
-            elif gpu_mem <= 81152:
-                self.batch_size = max(batch_size, 60)
-            else:
+        if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+            try:
+                gpu_mem = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)  # in MB
+                # Example heuristic: use larger batch if GPU has more memory
+                if gpu_mem >= 81152:
+                    self.batch_size = max(batch_size, 60)
+                elif gpu_mem <= 81152:
+                    self.batch_size = max(batch_size, 60)
+                else:
+                    self.batch_size = batch_size
+            except Exception:
                 self.batch_size = batch_size
-        except Exception:
+        else:
             self.batch_size = batch_size
         self.overlap = overlap
         self.qa_flags = qa_flags
