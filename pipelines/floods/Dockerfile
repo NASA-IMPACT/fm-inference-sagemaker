@@ -26,5 +26,17 @@ ENV STDS="[1201.092, 1219.943, 1397.225, 1447.836, 1471.002, 1365.30]"
 # Expose port
 EXPOSE 8001
 
-# Default command for development (can be overridden by docker-compose)
-CMD ["uvicorn", "predictor:app", "--host", "0.0.0.0", "--port", "8001"]
+ENV PYTHONUNBUFFERED=1
+ENV NUMBA_NUM_THREADS=1
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+##Intel MKL
+ENV OPENBLAS_NUM_THREADS=1
+ENV BLIS_NUM_THREADS=1
+ENV NUMEXPR_NUM_THREADS=1
+ENV VECLIB_MAXIMUM_THREADS=1
+
+
+# Default command for development - using gunicorn with uvicorn worker and thread limits
+CMD ["uvicorn", "predictor:app", "--host", "0.0.0.0", "--port", "8001" ]
+#  "--loop", "uvloop", "--http", "h11", "--limit-concurrency", "1"
