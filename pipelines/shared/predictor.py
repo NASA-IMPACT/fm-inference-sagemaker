@@ -399,13 +399,12 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     mosaic, transform = merge(memory_files)
     [memfile.close() for memfile in memory_files]
     prediction_filename = f"{PREDICTION_FOLDER}/{start_time}-predictions.tif"
+    prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename)
     del mosaic
     del memory_files
     del results
     del profiles
     gc.collect()
-
-    prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename)
     print("!!! Mosaic and Save COG Time:", time.time() - start_time)
 
     start_time = time.time()
