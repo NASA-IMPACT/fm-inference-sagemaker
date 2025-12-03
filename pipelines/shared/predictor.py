@@ -14,6 +14,10 @@ import rasterio
 import time
 import torch
 
+from anyio import to_thread
+from anyio import CapacityLimiter
+from anyio.lowlevel import RunVar
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, APIRouter, status, Response, Body, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -41,12 +45,29 @@ from typing import Optional
 PREDICTION_FOLDER = f"{DOWNLOAD_FOLDER}/predictions"
 os.makedirs(PREDICTION_FOLDER, exist_ok=True)
 
+inference_limiter = CapacityLimiter(4)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager."""
+    # Startup
+    print("Starting pipeline.")
+
+    limiter = to_thread.current_default_thread_limiter()
+    limiter.total_tokens = 4  # allow only 4 concurrent worker threads
+    RunVar("_default_thread_limiter").set(CapacityLimiter(4))
+    yield
+    # Shutdown
+    print("Shutting down pipeline...")
+
+
 # This will be served by the FastAPI as a container
 # Re-enable docs to see the authorization feature
 # Create without docs
 app = FastAPI(
     docs_url=None,
     redoc_url=None,
+    lifespan=lifespan
 )
 
 # Todo Provide a better title
@@ -378,6 +399,11 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     mosaic, transform = merge(memory_files)
     [memfile.close() for memfile in memory_files]
     prediction_filename = f"{PREDICTION_FOLDER}/{start_time}-predictions.tif"
+    del mosaic
+    del memory_files
+    del results
+    del profiles
+    gc.collect()
 
     prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename)
     print("!!! Mosaic and Save COG Time:", time.time() - start_time)
@@ -426,14 +452,16 @@ class InvocationData(BaseModel):
 async def infer_from_model(invocation_data: InvocationData = Body(...)):
     filename = invocation_data.filename
     print(f"Received inference request for model: {invocation_data.model_id} on data: {filename}")
-    final_geojson = infer(
-        filename=filename,
-        scale=invocation_data.scale,
-        model_id=invocation_data.model_id,
-        bounding_box=invocation_data.bounding_box,
-        date=invocation_data.date,
-        qa_flags=invocation_data.qa_flags,
-        timeseries=invocation_data.timeseries
+    final_geojson = await to_thread.run_sync(
+        infer,
+        filename,
+        invocation_data.scale,
+        invocation_data.model_id,
+        invocation_data.bounding_box,
+        invocation_data.date,
+        invocation_data.qa_flags,
+        bool(invocation_data.timeseries or False),
+        limiter=inference_limiter,  # <= THIS is what actually limits concurrency
     )
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
