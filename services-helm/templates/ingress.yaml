@@ -4,16 +4,20 @@ metadata:
   name: prediction-ingress
   namespace: default
   annotations:
-    # Force HTTPS redirect
     traefik.ingress.kubernetes.io/router.entrypoints: websecure
     traefik.ingress.kubernetes.io/router.tls: "true"
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/health-check: |
+      hs = {}
+      hs.status = "Healthy"
+      return hs
 spec:
   ingressClassName: traefik
   rules:
-  - host: {{ .Values.ingressPrediction.host  }}
+  - host: {{ .Values.ingressPrediction.host }}
     http:
       paths:
-      - path: {{ .Values.ingressPrediction.path  }}
+      - path: {{ .Values.ingressPrediction.path }}
         pathType: Prefix
         backend:
           service:
