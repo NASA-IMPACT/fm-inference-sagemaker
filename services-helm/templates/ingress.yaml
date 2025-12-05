@@ -19,4 +19,4 @@ spec:
           service:
             name: prediction-service
             port:
-              number: 443
+              number: 80

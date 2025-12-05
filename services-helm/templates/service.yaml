@@ -6,7 +6,7 @@ spec:
   selector:
     app: prediction-app
   ports:
-  - port: 443
+  - port: 80
     targetPort: 8000
   type: ClusterIP
 ---
