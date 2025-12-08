@@ -10,6 +10,7 @@ import json
 import logging
 import numpy as np
 import os
+import psutil
 import rasterio
 import time
 import torch
@@ -44,6 +45,19 @@ from typing import Optional
 
 PREDICTION_FOLDER = f"{DOWNLOAD_FOLDER}/predictions"
 os.makedirs(PREDICTION_FOLDER, exist_ok=True)
+
+logger = logging.getLogger(__name__)
+
+def log_rss(label: str) -> None:
+    """Log current process RSS in MB at a checkpoint in the pipeline."""
+    try:
+        process = psutil.Process(os.getpid())
+        rss_mb = process.memory_info().rss / (1024 * 1024)
+        logger.info("RSS at %s: %.1f MB", label, rss_mb)
+        print(f"RSS at {label}: {rss_mb:.1f} MB")
+    except Exception:
+        # Best-effort logging only
+        pass
 
 inference_limiter = CapacityLimiter(4)
 
@@ -357,6 +371,7 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
         return JSONResponse(content=jsonable_encoder(response))
     inference = MODEL[model_id]
 
+    log_rss("start_infer")
     start_time = time.time()
     results = list()
     profiles = list()
@@ -370,9 +385,12 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
         source_bounds = src.bounds
         source_width = src.profile['width']
         source_height = src.profile['height']
+    log_rss("after_read_source")
 
     tiles_generator = DataPreparer(filename, overlap=0, scale=scale, qa_flags=qa_flags, timeseries=timeseries).generate_tiles()
-    torch.cuda.synchronize()
+    log_rss("after_tile_generation")
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
 
     batch_start_time = time.time()
     with torch.no_grad():
@@ -380,12 +398,18 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
             batch_results, batch_profiles = inference.infer(tiles, date)
             results.extend(batch_results)
             profiles.extend(batch_profiles)
+            for memfile in tiles:
+                memfile.close()
+            del tiles
     batch_infer_time = time.time() - batch_start_time
     print(f"Inference time for batch: {batch_infer_time:.2f} seconds")
     memory_files = list()
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    log_rss("after_tile_infer")
 
     start_time = time.time()
+    datasets = []
     for index, profile in enumerate(profiles):
         memfile = MemoryFile()
         profile.update({
@@ -393,10 +417,15 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
             'dtype': 'float32',
             'nodata': 0
         })
-        with memfile.open(**profile) as memoryfile:
-            memoryfile.write(results[index], 1)
-        memory_files.append(memfile.open())
+        with memfile.open(**profile) as dst:
+            dst.write(results[index], 1)
+
+        ds = memfile.open()
+        memory_files.append(memfile)
+        datasets.append(ds)
+    log_rss("before_mosaic_build")
     mosaic, transform = merge(memory_files)
+    [ds.close() for ds in datasets]
     [memfile.close() for memfile in memory_files]
     prediction_filename = f"{PREDICTION_FOLDER}/{start_time}-predictions.tif"
     prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename)
@@ -405,11 +434,12 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     del results
     del profiles
     gc.collect()
+    log_rss("after_mosaic_save")
     print("!!! Mosaic and Save COG Time:", time.time() - start_time)
 
     start_time = time.time()
     # Optimization: Use cached bounds instead of reopening file
-    prediction_filename = crop_file(prediction_filename, source_bounds,height=source_height, width=source_width)
+    prediction_filename = crop_file(prediction_filename, source_bounds, height=source_height, width=source_width)
 
     # Pass cached dimensions to postprocess to avoid reopening file
     # Check if postprocess method accepts additional parameters
@@ -430,6 +460,9 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     print("!!! stats calculation Time:", time.time() - start_time)
     del inference
     gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    log_rss("end_infer")
 
     return {
         model_id: {'s3_link': s3_link, 'qa_link': qa_link, 'stats': stats}
