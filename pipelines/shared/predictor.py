@@ -69,7 +69,7 @@ def assign_available_gpus():
     try:
         free_gpus = GPUtil.getAvailable(order='memory', limit=1)
         if os.environ.get("GPU_ID"):
-            free_gpus = GPUtil.geetAvailable(order='memory', limit=1, deviceIDs=[int(gpu_id) for gpu_id in os.environ["GPU_ID"].split(",")])
+            free_gpus = GPUtil.getAvailable(order='memory', limit=1, deviceIDs=[int(gpu_id) for gpu_id in os.environ["GPU_ID"].split(",")])
 
         if free_gpus:
             os.environ["CUDA_VISIBLE_DEVICES"] = str(free_gpus[0])
