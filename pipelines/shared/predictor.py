@@ -69,6 +69,7 @@ def assign_available_gpus():
     try:
         free_gpus = GPUtil.getAvailable(order='memory', limit=1)
         if os.environ.get("GPU_ID"):
+            free_gpus = GPUtil.getAvailable(order='memory', limit=8)
             available_gpus = [int(gpu_id) for gpu_id in os.environ["GPU_ID"].split(",")]
             free_gpus = [gpu_id for gpu_id in free_gpus if gpu_id in available_gpus]
         if free_gpus:
