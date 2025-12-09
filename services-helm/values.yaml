@@ -28,7 +28,12 @@ cropContainer:
 
 imagePullSecrets: ecr-registry-key
 
+hostServices: ""
+
 ingressPrediction:
-  host: ""
   path: /api/predict
+  tlsSecretName: ingress-tls
+
+ingressSunTiler:
+  path: /api/tiles
   tlsSecretName: ingress-tls
