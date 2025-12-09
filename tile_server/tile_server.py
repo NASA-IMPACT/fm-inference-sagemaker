@@ -2,25 +2,25 @@
 Tile server for solar imagery with Helioprojective coordinates.
 Serves tiles in XYZ format with custom coordinate system handling.
 """
-
 import asyncio
 import io
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+import rasterio
+import sunpy.visualization.colormaps as cm  # Registers SunPy colormaps with matplotlib
+
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from functools import partial
 from pathlib import Path
-from typing import Optional
-
-import rasterio
-from rasterio.windows import Window
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi.responses import Response
 from PIL import Image
-import numpy as np
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from datetime import datetime
-import matplotlib.pyplot as plt
-import sunpy.visualization.colormaps as cm  # Registers SunPy colormaps with matplotlib
+from rasterio.windows import Window
+from typing import Optional
 
 # Thread pool for CPU-bound operations (rasterio, numpy, PIL)
 executor = ThreadPoolExecutor(max_workers=4)
