@@ -13,6 +13,18 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  name: tile-service
+spec:
+  selector:
+    app: tile-service
+  ports:
+  - port: 8090
+    targetPort: 8090
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
   name: floods-service
 spec:
   selector:

@@ -42,6 +42,46 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: tile-service
+  labels:
+    app: tile-service
+spec:
+  replicas: {{ .Values.tileServiceContainer.replicaCount  }}
+  selector:
+    matchLabels:
+      app: tile-service
+  template:
+    metadata:
+      labels:
+        app: tile-service
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets }}
+      containers:
+        - name: tile-service-container
+          image: {{ .Values.tileServiceContainer.imageUrl }}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+          env:
+          - name: RELEASE_VERSION
+            value: {{ .Values.release_version  }}
+          envFrom:
+            - configMapRef:
+                name: tile-service-envs
+            - configMapRef:
+                name: oidc-envs
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: service-cache-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: floods-app
   labels:
     app: floods-app
@@ -152,4 +192,3 @@ spec:
         - name: cache-volume
           persistentVolumeClaim:
             claimName: service-cache-pvc
-

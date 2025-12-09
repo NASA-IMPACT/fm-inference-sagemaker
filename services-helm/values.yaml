@@ -6,37 +6,29 @@ predictionContainer:
   pullPolicy: IfNotPresent
   replicaCount: 1
 
-
+tileServiceContainer:
+  imageUrl: ""
+  pullPolicy: IfNotPresent
+  replicaCount: 1
 
 floodsContainer:
   imageUrl: ""
   pullPolicy: IfNotPresent
   replicaCount: 1
 
-
-
-
 burnScarContainer:
   imageUrl: ""
   pullPolicy: IfNotPresent
   replicaCount: 1
-
 
 cropContainer:
   imageUrl: ""
   pullPolicy: IfNotPresent
   replicaCount: 1
 
-
-
 imagePullSecrets: ecr-registry-key
-
-
 
 ingressPrediction:
   host: ""
   path: /api/predict
   tlsSecretName: ingress-tls
-
-
-
