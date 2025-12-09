@@ -37,11 +37,7 @@ docker push $ECR_URL/$ECR_BASE_IMAGE_NAME
 
 TILER_IMAGE_NAME="tile_server:temp"
 echo "Building temporary image to get digest: $TILER_IMAGE_NAME"
-docker build -t $TILER_IMAGE_NAME . -f tile_server/Dockerfile
-TILER_DIGEST=$(docker inspect --format='{{.Id}}' $TILER_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
-export ECR_TILER_IMAGE_NAME="tile_server/tiler:${TILER_DIGEST}"
-docker tag $TILER_IMAGE_NAME $ECR_URL/$ECR_TILER_IMAGE_NAME
-docker push $ECR_URL/$ECR_TILER_IMAGE_NAME
+docker build -t $TILER_IMAGE_NAME . -f tile_server/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
 
 # Build floods and burn scars images
 TEMP_FLOOD_IMAGE_NAME="floods:temp"
@@ -56,6 +52,7 @@ TEMP_CROP_IMAGE_NAME="crop_classification:temp"
 echo "Building temporary image to get digest: $TEMP_CROP_IMAGE_NAME"
 docker build -t $TEMP_CROP_IMAGE_NAME . -f crop_classification/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
 
+TILER_DIGEST=$(docker inspect --format='{{.Id}}' $TILER_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 # Get the image digest (content-based hash) - extract only the hash portion
 IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 # Get the flood image digest (content-based hash) - extract only the hash portion
@@ -69,12 +66,14 @@ PREDICTION_APP="inference:${IMAGE_TAG}"
 FLOODS_APP="inference_pipelines/floods:${FLOOD_IMAGE_DIGEST}"
 BURN_SCAR_APP="inference_pipelines/burn_scars:${BURN_IMAGE_DIGEST}"
 CROP_APP="inference_pipelines/crop_classification:${CROP_IMAGE_DIGEST}"
+export ECR_TILER_IMAGE_NAME="tile_server/tiler:${TILER_DIGEST}"
 
 # Tag the temp image with final name
 docker tag $TEMP_IMAGE_NAME $ECR_URL/$PREDICTION_APP
 docker tag $TEMP_FLOOD_IMAGE_NAME $ECR_URL/$FLOODS_APP
 docker tag $TEMP_BURN_IMAGE_NAME $ECR_URL/$BURN_SCAR_APP
 docker tag $TEMP_CROP_IMAGE_NAME $ECR_URL/$CROP_APP
+docker tag $TILER_IMAGE_NAME $ECR_URL/$ECR_TILER_IMAGE_NAME
 
 echo "Final image: $ECR_URL/$PREDICTION_APP"
 echo "Using ingress host: $INGRESS_HOST"
@@ -85,12 +84,13 @@ export TF_VAR_burnScar_app_image_url=$ECR_URL/$BURN_SCAR_APP
 export TF_VAR_crop_app_image_url=$ECR_URL/$CROP_APP
 export TF_VAR_tiler_image_url=$ECR_URL/$ECR_TILER_IMAGE_NAME
 
-
 # Push to ECR
 docker push $TF_VAR_prediction_app_image_url
 docker push $TF_VAR_floods_app_image_url
 docker push $TF_VAR_burnScar_app_image_url
 docker push $TF_VAR_crop_app_image_url
+docker push $ECR_URL/$ECR_TILER_IMAGE_NAME
+
 
 # Clean up temporary image
 docker rmi $TEMP_IMAGE_NAME
