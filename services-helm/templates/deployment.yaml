@@ -7,6 +7,7 @@ metadata:
     app: prediction-app
 spec:
   replicas: {{ .Values.predictionContainer.replicaCount  }}
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: prediction-app
@@ -47,6 +48,7 @@ metadata:
     app: tile-service
 spec:
   replicas: {{ .Values.tileServiceContainer.replicaCount  }}
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: tile-service
@@ -85,6 +87,7 @@ metadata:
     app: floods-app
 spec:
   replicas: {{ .Values.floodsContainer.replicaCount  }}
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: floods-app
@@ -123,6 +126,7 @@ metadata:
     app: burn-scars-app
 spec:
   replicas: {{ .Values.burnScarContainer.replicaCount  }}
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: burn-scars-app
@@ -161,6 +165,7 @@ metadata:
     app: crop-classification-app
 spec:
   replicas: {{ .Values.cropContainer.replicaCount  }}
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: crop-classification-app
