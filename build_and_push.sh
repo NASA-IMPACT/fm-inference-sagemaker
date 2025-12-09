@@ -35,10 +35,6 @@ export ECR_BASE_IMAGE_NAME="inference_pipelines/base:${BASE_DIGEST}"
 docker tag $BASE_IMAGE_NAME $ECR_URL/$ECR_BASE_IMAGE_NAME
 docker push $ECR_URL/$ECR_BASE_IMAGE_NAME
 
-TILER_IMAGE_NAME="tile_server:temp"
-echo "Building temporary image to get digest: $TILER_IMAGE_NAME"
-docker build -t $TILER_IMAGE_NAME . -f tile_server/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
-
 # Build floods and burn scars images
 TEMP_FLOOD_IMAGE_NAME="floods:temp"
 echo "Building temporary image to get digest: $TEMP_FLOOD_IMAGE_NAME"
@@ -51,6 +47,12 @@ docker build -t $TEMP_BURN_IMAGE_NAME . -f burn_scars/Dockerfile --build-arg BAS
 TEMP_CROP_IMAGE_NAME="crop_classification:temp"
 echo "Building temporary image to get digest: $TEMP_CROP_IMAGE_NAME"
 docker build -t $TEMP_CROP_IMAGE_NAME . -f crop_classification/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
+
+cd -
+
+TILER_IMAGE_NAME="tile_server:temp"
+echo "Building temporary image to get digest: $TILER_IMAGE_NAME"
+docker build -t $TILER_IMAGE_NAME . -f tile_server/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
 
 TILER_DIGEST=$(docker inspect --format='{{.Id}}' $TILER_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 # Get the image digest (content-based hash) - extract only the hash portion
@@ -100,7 +102,6 @@ docker rmi $TEMP_FLOOD_IMAGE_NAME
 docker rmi $TEMP_BURN_IMAGE_NAME
 docker rmi $TEMP_CROP_IMAGE_NAME
 
-cd -
 # Generate deployment.yaml and ingress.yaml from templates using envsubst
 envsubst < services-helm/configMap.yaml.tmpl > services-helm/configMap.yaml
 
