@@ -27,7 +27,7 @@ executor = ThreadPoolExecutor(max_workers=4)
 
 root_path = os.environ.get("TILER_ROOT_PATH", "/api/tiles")
 
-app = FastAPI(title="Solar Tile Server", root_path=root_path)
+app = FastAPI(title="Solar Tile Server", version= os.getenv("RELEASE_VERSION", "0.0.1"), root_path=root_path)
 
 # Enable CORS for frontend access
 app.add_middleware(
