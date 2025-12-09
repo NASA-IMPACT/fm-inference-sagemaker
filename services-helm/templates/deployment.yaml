@@ -71,8 +71,6 @@ spec:
             value: {{ .Values.release_version  }}
           envFrom:
             - configMapRef:
-                name: tile-service-envs
-            - configMapRef:
                 name: oidc-envs
       volumes:
         - name: cache-volume

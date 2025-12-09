@@ -18,7 +18,7 @@ spec:
   selector:
     app: tile-service
   ports:
-  - port: 8090
+  - port: 80
     targetPort: 8090
   type: ClusterIP
 ---

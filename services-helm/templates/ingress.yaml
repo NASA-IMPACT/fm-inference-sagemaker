@@ -14,9 +14,16 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-  - host: {{ .Values.ingressPrediction.host }}
+  - host: {{ .Values.hostServices }}
     http:
       paths:
+      - path: {{ .Values.ingressSunTiler.path }}
+        pathType: Prefix
+        backend:
+          service:
+            name: tile-service
+            port:
+              number: 80
       - path: {{ .Values.ingressPrediction.path }}
         pathType: Prefix
         backend:
