@@ -35,6 +35,14 @@ export ECR_BASE_IMAGE_NAME="inference_pipelines/base:${BASE_DIGEST}"
 docker tag $BASE_IMAGE_NAME $ECR_URL/$ECR_BASE_IMAGE_NAME
 docker push $ECR_URL/$ECR_BASE_IMAGE_NAME
 
+TILER_IMAGE_NAME="tile_server:temp"
+echo "Building temporary image to get digest: $TILER_IMAGE_NAME"
+docker build -t $TILER_IMAGE_NAME . -f tile_server/Dockerfile
+TILER_DIGEST=$(docker inspect --format='{{.Id}}' $TILER_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
+export ECR_TILER_IMAGE_NAME="tile_server/tiler:${TILER_DIGEST}"
+docker tag $TILER_IMAGE_NAME $ECR_URL/$ECR_TILER_IMAGE_NAME
+docker push $ECR_URL/$ECR_TILER_IMAGE_NAME
+
 # Build floods and burn scars images
 TEMP_FLOOD_IMAGE_NAME="floods:temp"
 echo "Building temporary image to get digest: $TEMP_FLOOD_IMAGE_NAME"
@@ -75,6 +83,7 @@ export TF_VAR_prediction_app_image_url=$ECR_URL/$PREDICTION_APP
 export TF_VAR_floods_app_image_url=$ECR_URL/$FLOODS_APP
 export TF_VAR_burnScar_app_image_url=$ECR_URL/$BURN_SCAR_APP
 export TF_VAR_crop_app_image_url=$ECR_URL/$CROP_APP
+export TF_VAR_tiler_image_url=$ECR_URL/$ECR_TILER_IMAGE_NAME
 
 
 # Push to ECR
@@ -86,6 +95,7 @@ docker push $TF_VAR_crop_app_image_url
 # Clean up temporary image
 docker rmi $TEMP_IMAGE_NAME
 docker rmi $BASE_IMAGE_NAME
+docker rmi $TILER_IMAGE_NAME
 docker rmi $TEMP_FLOOD_IMAGE_NAME
 docker rmi $TEMP_BURN_IMAGE_NAME
 docker rmi $TEMP_CROP_IMAGE_NAME
@@ -99,4 +109,3 @@ kubectl apply -f services-helm/configMap.yaml
 
 # Optional: Load image to kind cluster if needed
 # kind load docker-image $ECR_URL/$PREDICTION_APP --name neo-cluster
-
