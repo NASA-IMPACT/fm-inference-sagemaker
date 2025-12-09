@@ -7,6 +7,7 @@ metadata:
     app: prediction-app
 spec:
   replicas: {{ .Values.predictionContainer.replicaCount  }}
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: prediction-app
@@ -42,11 +43,51 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: tile-service
+  labels:
+    app: tile-service
+spec:
+  replicas: {{ .Values.tileServiceContainer.replicaCount  }}
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: tile-service
+  template:
+    metadata:
+      labels:
+        app: tile-service
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets }}
+      containers:
+        - name: tile-service-container
+          image: {{ .Values.tileServiceContainer.imageUrl }}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+          env:
+          - name: RELEASE_VERSION
+            value: {{ .Values.release_version  }}
+          envFrom:
+            - configMapRef:
+                name: oidc-envs
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: service-cache-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: floods-app
   labels:
     app: floods-app
 spec:
   replicas: {{ .Values.floodsContainer.replicaCount  }}
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: floods-app
@@ -85,6 +126,7 @@ metadata:
     app: burn-scars-app
 spec:
   replicas: {{ .Values.burnScarContainer.replicaCount  }}
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: burn-scars-app
@@ -123,6 +165,7 @@ metadata:
     app: crop-classification-app
 spec:
   replicas: {{ .Values.cropContainer.replicaCount  }}
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: crop-classification-app
@@ -152,4 +195,3 @@ spec:
         - name: cache-volume
           persistentVolumeClaim:
             claimName: service-cache-pvc
-

@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+rasterio
+Pillow
+numpy
+matplotlib
+localtileserver>=0.10.7
+matplotlib>=3.10.7
+mpl-animators>=1.2.4
+rasterio>=1.4.3
+sunpy
