@@ -102,11 +102,11 @@ api_key_header = APIKeyHeader(name="x-api-key")
 def assign_available_gpus():
     """Assign available GPUs to the current process using GPUtil (least memory usage)."""
     try:
-        if os.environ.get("GPU_ID"):
-            os.environ["CUDA_VISIBLE_DEVICES"] = os.environ["GPU_ID"]
-            print(f"Assigned GPU from environment variable: {os.environ['GPU_ID']}")
-            return
         free_gpus = GPUtil.getAvailable(order='memory', limit=1)
+        if os.environ.get("GPU_ID"):
+            free_gpus = GPUtil.getAvailable(order='memory', limit=8)
+            available_gpus = [int(gpu_id) for gpu_id in os.environ["GPU_ID"].split(",")]
+            free_gpus = [gpu_id for gpu_id in free_gpus if gpu_id in available_gpus]
         if free_gpus:
             os.environ["CUDA_VISIBLE_DEVICES"] = str(free_gpus[0])
             print(f"Assigned GPU: {free_gpus[0]}")
