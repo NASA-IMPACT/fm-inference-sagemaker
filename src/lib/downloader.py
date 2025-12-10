@@ -17,24 +17,7 @@ from dataclasses import dataclass
 from earthaccess import search_data, download
 from typing import List, Tuple, Optional, Dict
 from rasterio.merge import merge as rio_merge
-from osgeo import gdal
 
-gdal.UseExceptions()
-
-# -------------------------
-# Environment Configuration
-# -------------------------
-os.environ.update(
-    {
-        "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
-        "GDAL_TIFF_INTERNAL_MASK": "YES",
-        "GDAL_TIFF_OVR_BLOCKSIZE": "256",
-        "GDAL_NUM_THREADS": "ALL_CPUS",
-        "GDAL_CACHEMAX": "8192",
-        "GDAL_WARP_MEMORY_LIMIT": "1073741824",  # 1GB
-        "GDAL_TIFF_DIRECT_IO": "YES",
-    }
-)
 
 # -------------------------
 # Constants
@@ -70,6 +53,20 @@ DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", "/root/.cache/")
 
 WIDTH, HEIGHT = (256, 256)
 DELTA = 90
+
+def _init_gdal_env():
+    global gdal
+    from osgeo import gdal as _gdal
+    gdal = _gdal
+    os.environ.update({
+        "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+        "GDAL_TIFF_INTERNAL_MASK": "YES",
+        "GDAL_TIFF_OVR_BLOCKSIZE": "256",
+        "GDAL_NUM_THREADS": "ALL_CPUS",
+        "GDAL_CACHEMAX": "8192",
+        "GDAL_WARP_MEMORY_LIMIT": "1073741824",
+        "GDAL_TIFF_DIRECT_IO": "YES",
+    })
 
 
 def generate_digest(date: str, bbox: Tuple[float, float, float, float]) -> str:
@@ -220,6 +217,7 @@ def worker_merge_and_crop(
     2. Merge + reproject + crop → cropped GeoTIFF (EPSG:4326)
     3. Return cropped GeoTIFF path
     """
+    _init_gdal_env()
     if not filenames:
 
         return "", None
@@ -384,6 +382,7 @@ def prepare_merged_file_per_date(
     cloud_cover: Tuple[int, int] = (0, 100),
 ) -> Tuple[str, Dict]:
     """Main orchestrator for one date."""
+    _init_gdal_env()
     date = date_range[0].split("T")[0]
     timings = {}
     final_filename = os.path.join(
