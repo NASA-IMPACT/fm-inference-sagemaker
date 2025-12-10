@@ -142,6 +142,26 @@ class SolarTileGenerator:
             self.bounds = src.bounds
             self.transform = src.transform
 
+            # Compute file-level normalization statistics for consistent tile rendering
+            data = src.read(1)
+            if src.nodata is not None:
+                data = np.where(data == src.nodata, np.nan, data)
+            valid_data = data[~np.isnan(data)]
+
+            if len(valid_data) > 0:
+                if self.instrument_type == 'hmi' and self.observable in ['magnetogram', 'dopplergram', 'mag', 'v']:
+                    # HMI magnetogram/dopplergram: symmetric scale around zero
+                    abs_max = np.percentile(np.abs(valid_data), 99.5)
+                    self.vmin, self.vmax = -abs_max, abs_max
+                    self.nan_fill = 0.5  # NaN -> middle of diverging scale
+                else:
+                    # AIA or HMI continuum: percentile-based normalization
+                    self.vmin, self.vmax = np.percentile(valid_data, [1.25, 99.5])
+                    self.nan_fill = 0.0
+            else:
+                self.vmin, self.vmax = 0, 1
+                self.nan_fill = 0.0
+
     def get_tile(self, z: int, x: int, y: int, tile_size: int = 256, colormap: bool = True) -> Optional[bytes]:
         """
         Generate a tile for the given z/x/y coordinates.
@@ -176,25 +196,15 @@ class SolarTileGenerator:
             if src.nodata is not None:
                 data = np.where(data == src.nodata, np.nan, data)
 
-            # Normalize to 0-1 for visualization
+            # Check if tile has any valid data
             valid_data = data[~np.isnan(data)]
             if len(valid_data) == 0:
                 # Empty tile
                 return None
 
-            # Determine normalization strategy based on instrument
-            if self.instrument_type == 'hmi' and self.observable in ['magnetogram', 'dopplergram', 'mag', 'v']:
-                # HMI magnetogram/dopplergram: centered diverging scale
-                # Use symmetric scale around zero for magnetic field/velocity
-                abs_max = np.percentile(np.abs(valid_data), 99.5)
-                vmin, vmax = -abs_max, abs_max
-                normalized = np.clip((data - vmin) / (vmax - vmin), 0, 1)
-                normalized = np.nan_to_num(normalized, nan=0.5)  # NaN -> middle of scale
-            else:
-                # AIA or HMI continuum: percentile-based normalization
-                vmin, vmax = np.percentile(valid_data, [1.25, 99.5])
-                normalized = np.clip((data - vmin) / (vmax - vmin), 0, 1)
-                normalized = np.nan_to_num(normalized, nan=0)
+            # Normalize using file-level statistics for consistent rendering across tiles
+            normalized = np.clip((data - self.vmin) / (self.vmax - self.vmin), 0, 1)
+            normalized = np.nan_to_num(normalized, nan=self.nan_fill)
 
             # Apply colormap if available and requested
             cmap = None
