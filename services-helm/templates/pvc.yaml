@@ -10,7 +10,7 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   storageClassName: manual
   hostPath:
-    path: /tmp/service-cache
+    path: /data/service-cache
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
