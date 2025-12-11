@@ -15,10 +15,7 @@ import rasterio
 import time
 import torch
 
-from anyio import to_thread
-from anyio import CapacityLimiter
-from anyio.lowlevel import RunVar
-from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request, APIRouter, status, Response, Body, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -59,29 +56,13 @@ def log_rss(label: str) -> None:
         # Best-effort logging only
         pass
 
-inference_limiter = CapacityLimiter(4)
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan manager."""
-    # Startup
-    print("Starting pipeline.")
-
-    limiter = to_thread.current_default_thread_limiter()
-    limiter.total_tokens = 4  # allow only 4 concurrent worker threads
-    RunVar("_default_thread_limiter").set(CapacityLimiter(4))
-    yield
-    # Shutdown
-    print("Shutting down pipeline...")
-
 
 # This will be served by the FastAPI as a container
 # Re-enable docs to see the authorization feature
 # Create without docs
 app = FastAPI(
     docs_url=None,
-    redoc_url=None,
-    lifespan=lifespan
+    redoc_url=None
 )
 
 # Todo Provide a better title
@@ -484,17 +465,16 @@ class InvocationData(BaseModel):
 async def infer_from_model(invocation_data: InvocationData = Body(...)):
     filename = invocation_data.filename
     print(f"Received inference request for model: {invocation_data.model_id} on data: {filename}")
-    final_geojson = await to_thread.run_sync(
-        infer,
+    final_geojson = infer(
         filename,
         invocation_data.scale,
         invocation_data.model_id,
         invocation_data.bounding_box,
         invocation_data.date,
         invocation_data.qa_flags,
-        bool(invocation_data.timeseries or False),
-        limiter=inference_limiter,  # <= THIS is what actually limits concurrency
+        bool(invocation_data.timeseries or False)
     )
+
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
 # Public endpoints (no API key required)
