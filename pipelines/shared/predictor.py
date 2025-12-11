@@ -424,7 +424,7 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
         memory_files.append(memfile)
         datasets.append(ds)
     log_rss("before_mosaic_build")
-    mosaic, transform = merge(memory_files)
+    mosaic, transform = merge(datasets)
     [ds.close() for ds in datasets]
     [memfile.close() for memfile in memory_files]
     prediction_filename = f"{PREDICTION_FOLDER}/{start_time}-predictions.tif"
