@@ -83,12 +83,28 @@ class CropClassificationInfer(Infer):
                 else:
                     image_tensor = torch.from_numpy(image)
 
-                # Normalization
-                if len(self.means) > 0 and len(self.stds) > 0:
+                # Normalization (match device of image tensor and statistics)
+                if len(self.means) > 0 and len(self.stds) > 0 and self.use_cuda:
+                    # Move to GPU for normalization
+                    image_tensor = image_tensor.to(self.device, non_blocking=True)
                     for band in range(image_tensor.shape[0]):
                         band_mask = image_tensor[band] == NO_DATA_FLOAT
-                        band_index = band % len(MEANS)
-                        image_tensor[band][~band_mask] = ((image_tensor[band][~band_mask].float() - self.means[band_index]) / self.stds[band_index]).to(image_tensor.dtype)
+                        band_index = band % len(self.means)
+                        image_tensor[band][~band_mask] = (
+                            (image_tensor[band][~band_mask].float() - self.means[band_index])
+                            / self.stds[band_index]
+                        ).to(image_tensor.dtype)
+                    # Move back to CPU for batching
+                    image_tensor = image_tensor.cpu()
+                elif len(self.means) > 0 and len(self.stds) > 0:
+                    # CPU-only normalization
+                    for band in range(image_tensor.shape[0]):
+                        band_mask = image_tensor[band] == NO_DATA_FLOAT
+                        band_index = band % len(self.means)
+                        image_tensor[band][~band_mask] = (
+                            (image_tensor[band][~band_mask].float() - self.means[band_index])
+                            / self.stds[band_index]
+                        ).to(image_tensor.dtype)
 
                 images_array.append(image_tensor)
                 coords.append(raster_file.lnglat())
