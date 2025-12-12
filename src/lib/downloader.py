@@ -652,18 +652,21 @@ class Downloader:
 
         timeseries_files = [pre_file, current_file, post_file]
 
-        # Merge timeseries
+        # Stack timeseries bands in order: pre, current, post
         datasets = [rasterio.open(f) for f in timeseries_files]
-        mosaic, transform = rio_merge(datasets, method="first")
-        crs = datasets[0].crs
-
-        for ds in datasets:
-            ds.close()
+        try:
+            crs = datasets[0].crs
+            transform = datasets[0].transform
+            band_arrays = [ds.read() for ds in datasets]
+            mosaic = np.concatenate(band_arrays, axis=0)
+        finally:
+            for ds in datasets:
+                ds.close()
 
         # Save as timeseries COG
         output_filename = os.path.join(
             self.cfg.download_folder,
-            f"{generate_digest(date, self.bbox)}_timeseries_merged.tif",
+            f"{generate_digest(date, self.bbox)}_timeseries_stack.tif",
         )
 
         profile = {
