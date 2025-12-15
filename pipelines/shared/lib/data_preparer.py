@@ -66,7 +66,7 @@ class DataPreparer:
                 gpu_mem = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)  # in MB
                 # Example heuristic: use larger batch if GPU has more memory
                 if gpu_mem >= 81152:
-                    self.batch_size = max(batch_size, 60)
+                    self.batch_size = max(batch_size, 120)
                 elif gpu_mem <= 81152:
                     self.batch_size = max(batch_size, 60)
                 else:
