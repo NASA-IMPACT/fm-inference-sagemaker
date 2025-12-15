@@ -7,10 +7,8 @@ import importlib
 import inflection
 import inspect
 import json
-import logging
 import numpy as np
 import os
-import psutil
 import rasterio
 import time
 import torch
@@ -43,18 +41,6 @@ from typing import Optional
 PREDICTION_FOLDER = f"{DOWNLOAD_FOLDER}/predictions"
 os.makedirs(PREDICTION_FOLDER, exist_ok=True)
 
-logger = logging.getLogger(__name__)
-
-def log_rss(label: str) -> None:
-    """Log current process RSS in MB at a checkpoint in the pipeline."""
-    try:
-        process = psutil.Process(os.getpid())
-        rss_mb = process.memory_info().rss / (1024 * 1024)
-        logger.info("RSS at %s: %.1f MB", label, rss_mb)
-        print(f"RSS at {label}: {rss_mb:.1f} MB")
-    except Exception:
-        # Best-effort logging only
-        pass
 
 
 # This will be served by the FastAPI as a container
@@ -352,7 +338,6 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
         return JSONResponse(content=jsonable_encoder(response))
     inference = MODEL[model_id]
 
-    log_rss("start_infer")
     start_time = time.time()
     results = list()
     profiles = list()
@@ -366,10 +351,8 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
         source_bounds = src.bounds
         source_width = src.profile['width']
         source_height = src.profile['height']
-    log_rss("after_read_source")
 
     tiles_generator = DataPreparer(filename, overlap=0, scale=scale, qa_flags=qa_flags, timeseries=timeseries).generate_tiles()
-    log_rss("after_tile_generation")
     if torch.cuda.is_available():
         torch.cuda.synchronize()
 
@@ -387,7 +370,6 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     memory_files = list()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    log_rss("after_tile_infer")
 
     start_time = time.time()
     datasets = []
@@ -404,7 +386,6 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
         ds = memfile.open()
         memory_files.append(memfile)
         datasets.append(ds)
-    log_rss("before_mosaic_build")
     mosaic, transform = merge(datasets)
     [ds.close() for ds in datasets]
     [memfile.close() for memfile in memory_files]
@@ -415,7 +396,6 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     del results
     del profiles
     gc.collect()
-    log_rss("after_mosaic_save")
     print("!!! Mosaic and Save COG Time:", time.time() - start_time)
 
     start_time = time.time()
@@ -443,7 +423,6 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-    log_rss("end_infer")
 
     return {
         model_id: {'s3_link': s3_link, 'qa_link': qa_link, 'stats': stats}
@@ -472,7 +451,7 @@ async def infer_from_model(invocation_data: InvocationData = Body(...)):
         invocation_data.bounding_box,
         invocation_data.date,
         invocation_data.qa_flags,
-        bool(invocation_data.timeseries or False)
+        bool(invocation_data.timeseries)
     )
 
     return JSONResponse(content=jsonable_encoder(final_geojson))
