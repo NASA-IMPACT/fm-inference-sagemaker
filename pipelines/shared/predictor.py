@@ -7,12 +7,12 @@ import importlib
 import inflection
 import inspect
 import json
-import logging
 import numpy as np
 import os
 import rasterio
 import time
 import torch
+
 
 from fastapi import FastAPI, Request, APIRouter, status, Response, Body, Depends, HTTPException
 from fastapi.encoders import jsonable_encoder
@@ -41,12 +41,14 @@ from typing import Optional
 PREDICTION_FOLDER = f"{DOWNLOAD_FOLDER}/predictions"
 os.makedirs(PREDICTION_FOLDER, exist_ok=True)
 
+
+
 # This will be served by the FastAPI as a container
 # Re-enable docs to see the authorization feature
 # Create without docs
 app = FastAPI(
     docs_url=None,
-    redoc_url=None,
+    redoc_url=None
 )
 
 # Todo Provide a better title
@@ -351,7 +353,8 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
         source_height = src.profile['height']
 
     tiles_generator = DataPreparer(filename, overlap=0, scale=scale, qa_flags=qa_flags, timeseries=timeseries).generate_tiles()
-    torch.cuda.synchronize()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
 
     batch_start_time = time.time()
     with torch.no_grad():
@@ -359,12 +362,17 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
             batch_results, batch_profiles = inference.infer(tiles, date)
             results.extend(batch_results)
             profiles.extend(batch_profiles)
+            for memfile in tiles:
+                memfile.close()
+            del tiles
     batch_infer_time = time.time() - batch_start_time
     print(f"Inference time for batch: {batch_infer_time:.2f} seconds")
     memory_files = list()
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     start_time = time.time()
+    datasets = []
     for index, profile in enumerate(profiles):
         memfile = MemoryFile()
         profile.update({
@@ -372,19 +380,27 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
             'dtype': 'float32',
             'nodata': 0
         })
-        with memfile.open(**profile) as memoryfile:
-            memoryfile.write(results[index], 1)
-        memory_files.append(memfile.open())
-    mosaic, transform = merge(memory_files)
+        with memfile.open(**profile) as dst:
+            dst.write(results[index], 1)
+
+        ds = memfile.open()
+        memory_files.append(memfile)
+        datasets.append(ds)
+    mosaic, transform = merge(datasets)
+    [ds.close() for ds in datasets]
     [memfile.close() for memfile in memory_files]
     prediction_filename = f"{PREDICTION_FOLDER}/{start_time}-predictions.tif"
-
     prediction_filename = save_cog(mosaic[0], profile, transform, prediction_filename)
+    del mosaic
+    del memory_files
+    del results
+    del profiles
+    gc.collect()
     print("!!! Mosaic and Save COG Time:", time.time() - start_time)
 
     start_time = time.time()
     # Optimization: Use cached bounds instead of reopening file
-    prediction_filename = crop_file(prediction_filename, source_bounds,height=source_height, width=source_width)
+    prediction_filename = crop_file(prediction_filename, source_bounds, height=source_height, width=source_width)
 
     # Pass cached dimensions to postprocess to avoid reopening file
     # Check if postprocess method accepts additional parameters
@@ -405,6 +421,8 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     print("!!! stats calculation Time:", time.time() - start_time)
     del inference
     gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
     return {
         model_id: {'s3_link': s3_link, 'qa_link': qa_link, 'stats': stats}
@@ -427,14 +445,15 @@ async def infer_from_model(invocation_data: InvocationData = Body(...)):
     filename = invocation_data.filename
     print(f"Received inference request for model: {invocation_data.model_id} on data: {filename}")
     final_geojson = infer(
-        filename=filename,
-        scale=invocation_data.scale,
-        model_id=invocation_data.model_id,
-        bounding_box=invocation_data.bounding_box,
-        date=invocation_data.date,
-        qa_flags=invocation_data.qa_flags,
-        timeseries=invocation_data.timeseries
+        filename,
+        invocation_data.scale,
+        invocation_data.model_id,
+        invocation_data.bounding_box,
+        invocation_data.date,
+        invocation_data.qa_flags,
+        bool(invocation_data.timeseries)
     )
+
     return JSONResponse(content=jsonable_encoder(final_geojson))
 
 # Public endpoints (no API key required)

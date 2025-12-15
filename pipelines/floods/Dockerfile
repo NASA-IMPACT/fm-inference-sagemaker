@@ -26,5 +26,5 @@ ENV STDS="[1201.092, 1219.943, 1397.225, 1447.836, 1471.002, 1365.30]"
 # Expose port
 EXPOSE 8001
 
-# Default command for development (can be overridden by docker-compose)
-CMD ["uvicorn", "predictor:app", "--host", "0.0.0.0", "--port", "8001"]
+
+CMD ["uvicorn", "predictor:app", "--host", "0.0.0.0", "--port", "8001" ]
