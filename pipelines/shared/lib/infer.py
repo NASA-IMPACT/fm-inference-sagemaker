@@ -160,39 +160,47 @@ class Infer:
 
     def qa_flags_to_tif(self, image_file, qa_flags, timeseries=False):
         """
-        Convert predicted masks to GeoJSON format.
-        Args:
-            image_files (list): List of input image file paths.
-
-        Returns:
-            list: List of GeoJSON features.
+        Generate QA mask GeoTIFFs from the HLS QA band.
         """
         with rasterio.open(image_file) as src:
             profile = src.profile
             tile = src.read()
             if timeseries:
-                mask = tile[15]
+                qa_band = tile[15]
             else:
-                mask = tile[6]
-            transform = profile['transform']
-            mask = mask.astype('uint8')  # Ensure mask is in uint8 format
+                qa_band = tile[6]
 
-            # Save mask as GeoTIFF
+            qa_band = qa_band.astype("uint32")
+            transform = profile["transform"]
+            crs = profile["crs"]
+            height, width = qa_band.shape
 
-            output_tif = image_file.replace('.tif', '_qa_mask.tif')
-            with rasterio.open(
-                output_tif,
-                'w',
-                driver='GTiff',
-                height=mask.shape[0],
-                width=mask.shape[1],
-                count=1,
-                dtype=mask.dtype,
-                crs=profile['crs'],
-                transform=transform,
-            ) as dst:
-                dst.write(mask, 1)
-        return output_tif
+            qa_tifs = {}
+            if qa_flags:
+                for flag in qa_flags:
+                    bit_index = QA_INDICES.get(flag)
+                    if bit_index is None:
+                        continue
+
+                    mask = ((qa_band & (1 << bit_index)) != 0).astype("uint8")
+                    output_tif = image_file.replace(".tif", f"_qa_{flag}.tif")
+
+                    with rasterio.open(
+                        output_tif,
+                        "w",
+                        driver="GTiff",
+                        height=height,
+                        width=width,
+                        count=1,
+                        dtype=mask.dtype,
+                        crs=crs,
+                        transform=transform,
+                    ) as dst:
+                        dst.write(mask, 1)
+
+                    qa_tifs[flag] = output_tif
+
+        return qa_tifs
 
     def infer_batch_streaming(self, batch_queue, result_queue, stream_idx=0):
         """
