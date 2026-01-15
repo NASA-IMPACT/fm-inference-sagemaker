@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from ...db.database import get_db
-from ...db.models import FinetunedModel, Inference, PreloadedEvent
+from ...db.models import BaseFM, FinetunedModel, Inference, PreloadedEvent
 from ...lib.utils import get_api_key
 from ...models.finetuned_model import FinetunedModelRead, FinetunedModelUpdate
 from ...models.inference import InferenceRead
@@ -13,13 +13,17 @@ def create_models_router(auth_dependency: Callable) -> APIRouter:
     router = APIRouter(prefix="/v1/models", tags=["models"])
 
     @router.get("", response_model=List[FinetunedModelRead], status_code=status.HTTP_200_OK)
-    def get_models(db: Session = Depends(get_db)):
+    def get_models(base_fm: BaseFM = None, db: Session = Depends(get_db)):
         """Get all finetuned models."""
         try:
-            # Total jobs by status
             models = db.query(
                 FinetunedModel
-            ).all()
+            )
+            if base_fm:
+                models = models.filter(
+                    FinetunedModel.base_fm == base_fm
+                )
+            models = models.all()
             return models
         except Exception as e:
             return {"error": str(e)}
@@ -103,4 +107,3 @@ def create_models_router(auth_dependency: Callable) -> APIRouter:
         except Exception as e:
             return {"error": str(e)}
     return router
-

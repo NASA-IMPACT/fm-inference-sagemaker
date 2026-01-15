@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 
 from ...db.database import get_db
-from ...db.models import FinetunedModel, Inference, PreloadedEvent
+from ...db.models import BaseFM, FinetunedModel, Inference, PreloadedEvent
 from ...lib.downloader import Downloader
 from ...lib.pagination import PaginationHelper
 from ...models.inference import InferenceRead, InferenceUpdate
@@ -25,6 +25,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
     @router.get("", response_model=List[InferenceRead], status_code=status.HTTP_200_OK)
     def get_inferences(
         response: Response,
+        base_fm: BaseFM = None,
         skip: int = 0,
         limit: int = 10,
         claims: Dict[str, Any] = Depends(auth_dependency),
@@ -45,11 +46,16 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
             # Query inferences filtered by user email, ordered by creation date
             query = db.query(Inference).filter(
                 Inference.user_email == user_email
-            ).order_by(Inference.created_at.desc())
+            )
+
+            if base_fm:
+                query = query.filter(
+                    Inference.finetuned_models.any(base_fm=base_fm)
+                )
 
             # Apply pagination and set response headers
             inferences = PaginationHelper.paginate(
-                query=query,
+                query=query.order_by(Inference.created_at.desc()),
                 response=response,
                 base_url="/v1/inferences",
                 skip=skip,
@@ -60,6 +66,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         except HTTPException:
             raise
         except Exception as e:
+            print(e)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
