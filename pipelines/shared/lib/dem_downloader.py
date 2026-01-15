@@ -522,7 +522,7 @@ class DEMDownloader:
                 shutil.copy(veg_output, final_corrected)
 
         artifacts = {
-            "dem_clipped": dem_file,
+            "dem": dem_file,
             "slope": slope_file,
             "solar_incidence": slia_file,
             "terrain_corrected": terrain_output,
