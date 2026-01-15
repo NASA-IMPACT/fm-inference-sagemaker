@@ -179,7 +179,7 @@ class FloodInfer(Infer):
                     height,
                     True,  # use_smart_aerosol
                 )
-                final_prediction = future.result()  # optional: timeout=...
+                result = future.result()  
 
         except Exception as exc:
             self.logger.exception(
@@ -190,11 +190,18 @@ class FloodInfer(Infer):
             return prediction
 
         # Fallback if worker returned a falsy value (e.g., None or "")
-        if not final_prediction:
+        if not result:
             self.logger.warning(
                 "DEM postprocess returned falsy result for %s; using original prediction",
                 prediction,
             )
             return prediction
 
-        return final_prediction
+        if isinstance(result, dict):
+            final_prediction = result.get("final") or prediction
+            # Attach artifacts to this instance for upstream consumers
+            self.postprocess_artifacts = result.get("artifacts", {})
+            return final_prediction
+
+        self.postprocess_artifacts = {}
+        return result
