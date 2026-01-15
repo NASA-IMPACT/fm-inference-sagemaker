@@ -57,3 +57,15 @@ spec:
   - port: 8082
     targetPort: 8001
   type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: surya-rollout-service
+spec:
+  selector:
+    app: surya-rollout-app
+  ports:
+  - port: 8083
+    targetPort: 8001
+  type: ClusterIP

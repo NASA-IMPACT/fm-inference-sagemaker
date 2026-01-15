@@ -39,7 +39,7 @@ app.add_middleware(
 )
 
 # Base directory for TIF files
-TILE_DIR = Path("/root/.cache/surya/inferences/")
+TILE_DIR = Path("/root/.cache/data/surya/geotiff_forecasts/")
 
 
 # Solar colormap mapping using SunPy's official colormaps
@@ -181,9 +181,17 @@ class SolarTileGenerator:
         tile_width_px = self.width / tiles_per_side
         tile_height_px = self.height / tiles_per_side
 
+        # Convert from center-origin tile coordinates to image pixel coordinates
+        # Tile (0,0) at zoom 0 covers the whole image
+        # At higher zooms, x increases right, y increases up (Cartesian/solar convention)
+        # But image pixels have row 0 at top, so we flip y
+
+        # Flip y-axis: tile y=0 should be bottom of image, but image row 0 is top
+        y_flipped = (tiles_per_side - 1) - y
+
         # Calculate pixel coordinates
         col_off = int(x * tile_width_px)
-        row_off = int(y * tile_height_px)
+        row_off = int(y_flipped * tile_height_px)
         width = int(min(tile_width_px, self.width - col_off))
         height = int(min(tile_height_px, self.height - row_off))
 
@@ -238,7 +246,7 @@ def get_tile_generator(instrument: str, timestamp: str, step: int) -> SolarTileG
     """Get or create a tile generator for a given file."""
     "20140107_0348_aia304_step01"
     parsed_datetime = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
-    filename = f"{parsed_datetime.strftime('%Y%m%d_%H%M')}_{instrument}_step{'%02d' % step}.tif"
+    filename = f"{parsed_datetime.strftime('%Y%m%d_%H%M%S')}_{instrument}_step{'%02d' % step}.tif"
     key = f"{instrument}/{filename}"
     if key not in tile_generators:
         tif_path = TILE_DIR / instrument / filename
@@ -336,6 +344,10 @@ async def get_info(tile_info: TileInfoParams):
             colormap_name = SOLAR_COLORMAPS.get(generator.observable)
             colormap_available = colormap_name is not None
 
+        # Calculate center coordinates (origin at Sun center)
+        center_x = (generator.bounds.left + generator.bounds.right) / 2
+        center_y = (generator.bounds.bottom + generator.bounds.top) / 2
+
         return {
             "width": generator.width,
             "height": generator.height,
@@ -345,12 +357,18 @@ async def get_info(tile_info: TileInfoParams):
                 "right": generator.bounds.right,
                 "top": generator.bounds.top
             },
+            "center": {
+                "x": center_x,
+                "y": center_y
+            },
             "instrument_type": generator.instrument_type,
             "wavelength": generator.wavelength,  # AIA only
             "observable": generator.observable,  # HMI only
             "colormap_available": colormap_available,
             "colormap_name": colormap_name,
             "coordinate_system": "Helioprojective",
+            "origin": "center",
+            "tile_origin": "bottom-left",  # y=0 is at bottom, x=0 is at left
             "units": "arcseconds"
         }
     except Exception as e:

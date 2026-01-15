@@ -48,6 +48,10 @@ TEMP_CROP_IMAGE_NAME="crop_classification:temp"
 echo "Building temporary image to get digest: $TEMP_CROP_IMAGE_NAME"
 docker build -t $TEMP_CROP_IMAGE_NAME . -f crop_classification/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
 
+TEMP_SURYA_ROLLOUT_IMAGE_NAME="surya_rollout:temp"
+echo "Building temporary image to get digest: $TEMP_SURYA_ROLLOUT_IMAGE_NAME"
+docker build -t $TEMP_SURYA_ROLLOUT_IMAGE_NAME . -f surya/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
+
 cd -
 
 TILER_IMAGE_NAME="tile_server:temp"
@@ -61,6 +65,7 @@ IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 
 FLOOD_IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_FLOOD_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 BURN_IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_BURN_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 CROP_IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_CROP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
+SURYA_IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_SURYA_ROLLOUT_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
 
 # Create final tag using just the short hash (no colons or special characters)
 IMAGE_TAG="${IMAGE_DIGEST}"
@@ -68,6 +73,7 @@ PREDICTION_APP="inference:${IMAGE_TAG}"
 FLOODS_APP="inference_pipelines/floods:${FLOOD_IMAGE_DIGEST}"
 BURN_SCAR_APP="inference_pipelines/burn_scars:${BURN_IMAGE_DIGEST}"
 CROP_APP="inference_pipelines/crop_classification:${CROP_IMAGE_DIGEST}"
+SURYA_ROLLOUT_APP="inference_pipelines/surya_rollout:${SURYA_IMAGE_DIGEST}"
 export ECR_TILER_IMAGE_NAME="tile_server/tiler:${TILER_DIGEST}"
 
 # Tag the temp image with final name
@@ -75,6 +81,7 @@ docker tag $TEMP_IMAGE_NAME $ECR_URL/$PREDICTION_APP
 docker tag $TEMP_FLOOD_IMAGE_NAME $ECR_URL/$FLOODS_APP
 docker tag $TEMP_BURN_IMAGE_NAME $ECR_URL/$BURN_SCAR_APP
 docker tag $TEMP_CROP_IMAGE_NAME $ECR_URL/$CROP_APP
+docker tag $TEMP_SURYA_ROLLOUT_IMAGE_NAME $ECR_URL/$SURYA_ROLLOUT_APP
 docker tag $TILER_IMAGE_NAME $ECR_URL/$ECR_TILER_IMAGE_NAME
 
 echo "Final image: $ECR_URL/$PREDICTION_APP"
@@ -84,6 +91,7 @@ export TF_VAR_prediction_app_image_url=$ECR_URL/$PREDICTION_APP
 export TF_VAR_floods_app_image_url=$ECR_URL/$FLOODS_APP
 export TF_VAR_burnScar_app_image_url=$ECR_URL/$BURN_SCAR_APP
 export TF_VAR_crop_app_image_url=$ECR_URL/$CROP_APP
+export TF_VAR_surya_rollout_image_url=$ECR_URL/$SURYA_ROLLOUT_APP
 export TF_VAR_tiler_image_url=$ECR_URL/$ECR_TILER_IMAGE_NAME
 
 # Push to ECR
@@ -91,6 +99,7 @@ docker push $TF_VAR_prediction_app_image_url
 docker push $TF_VAR_floods_app_image_url
 docker push $TF_VAR_burnScar_app_image_url
 docker push $TF_VAR_crop_app_image_url
+docker push $TF_VAR_surya_rollout_image_url
 docker push $ECR_URL/$ECR_TILER_IMAGE_NAME
 
 
@@ -101,6 +110,7 @@ docker rmi $TILER_IMAGE_NAME
 docker rmi $TEMP_FLOOD_IMAGE_NAME
 docker rmi $TEMP_BURN_IMAGE_NAME
 docker rmi $TEMP_CROP_IMAGE_NAME
+docker rmi $TEMP_SURYA_ROLLOUT_IMAGE_NAME
 
 # Generate deployment.yaml and ingress.yaml from templates using envsubst
 envsubst < services-helm/configMap.yaml.tmpl > services-helm/configMap.yaml

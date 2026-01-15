@@ -1,0 +1,43 @@
+[project]
+name = "surya"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiapy==0.7.3",
+    "boto3",
+    "datasets",
+    "drms>=0.9.0",
+    "fastapi",
+    "geojson",
+    "geopandas",
+    "gputil",
+    "gunicorn",
+    "h5netcdf>=1.7.3",
+    "hdf5plugin>=6.0.0",
+    "httpx",
+    "huggingface_hub",
+    "inflection",
+    "ipython>=9.8.0",
+    "morecantile",
+    "opencv-python",
+    "osr>=0.0.1",
+    "pandas>=2.3.3",
+    "Pillow>=10.1",
+    "pydantic",
+    "python-dotenv",
+    "rasterio",
+    "rio-cogeo",
+    "scikit-image>=0.25.2",
+    "scipy",
+    "shapely",
+    "starlette",
+    "sunpy>=7.0.3",
+    "tokenizers>=0.19.0",
+    "transformers>=4.40.0",
+    "tqdm",
+    "transitions>=0.9.0",
+    "uvicorn",
+    "xarray>=2025.11.0",
+]

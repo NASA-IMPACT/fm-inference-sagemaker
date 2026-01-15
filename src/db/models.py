@@ -14,6 +14,10 @@ class SourceType(str, enum.Enum):
     huggingface = "huggingface"
     s3 = "s3"
 
+class BaseFM(str, enum.Enum):
+    surya = "surya"
+    prithvi = "prithvi"
+
 inference_finetuned_model = Table(
     "inference_finetuned_model",
     Base.metadata,
@@ -30,6 +34,8 @@ class FinetunedModel(Base):
     source_details = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
     data_config = Column(JSON, nullable=True)
+    base_fm = Column(Enum(BaseFM), nullable=True)
+
 class Inference(Base):
     __tablename__ = "inferences"
     __table_args__ = (
