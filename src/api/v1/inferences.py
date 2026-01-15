@@ -102,7 +102,6 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         # TODO: handle db session properly
         # handle large requests properly with background tasks
         # send back a job id and let the client poll for status/results
-
         t0 = time.time()
         user_groups = claims.get("groups") or claims.get("cognito:groups", [])
         user_email = claims.get("email")
@@ -111,60 +110,73 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
         if not finetuned_models or len(finetuned_models) != len(inference.finetuned_model_ids):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more finetuned models not found")
 
-        # better to upload merged_file to s3 and pass the s3 path to the inference pipeline
-        # for now, we will just pass the local file path
-        # call specific model inference pipeline with the file name/path here.
-        # Check key validity before running anything
-        for finetuned_model in finetuned_models:
+        if finetuned_models[0].name == 'Surya':
+            finetuned_model = finetuned_models[0]
             model_id = str(finetuned_model.source_details.get('model_id'))
-            if model_id not in user_groups:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Key provided is not authorized to run inference on {model_id}")
-        results = {}
-        for finetuned_model in finetuned_models:
-            # print(f"Running inference for model: {model.name} on data: {merged_file}")
-            model_id = str(finetuned_model.source_details.get('model_id'))
-            timeseries = finetuned_model.source_details.get('timeseries', False)
-            downloader = Downloader(
-                inference.query['dates'],
-                inference.query['bounding_box'],
-                finetuned_model.data_config['sources'],
-                timeseries=timeseries
-            )
-            prepared_data = downloader.find_and_prepare_data()
-            for date, merged_file in prepared_data.items():
-                if '.tif' not in merged_file:
+            port = finetuned_model.source_details['port']
+            url = f"http://{model_id.replace('_', '-')}-service:{port}/api/v1/invocations"
+            t = time.time()
+            response = requests.post(url, json={
+                'num_frames': inference.query['num_frames'],
+                'cadence_in_minutes': inference.query['cadence_in_minutes'],
+                'selected_datetime': inference.query['selected_datetime']
+            })
+            inference.results[model_id] = response.json()
+        else:
+            # better to upload merged_file to s3 and pass the s3 path to the inference pipeline
+            # for now, we will just pass the local file path
+            # call specific model inference pipeline with the file name/path here.
+            # Check key validity before running anything
+            for finetuned_model in finetuned_models:
+                model_id = str(finetuned_model.source_details.get('model_id'))
+                if model_id not in user_groups:
+                    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Key provided is not authorized to run inference on {model_id}")
+            results = {}
+            for finetuned_model in finetuned_models:
+                # print(f"Running inference for model: {model.name} on data: {merged_file}")
+                model_id = str(finetuned_model.source_details.get('model_id'))
+                timeseries = finetuned_model.source_details.get('timeseries', False)
+                downloader = Downloader(
+                    inference.query['dates'],
+                    inference.query['bounding_box'],
+                    finetuned_model.data_config['sources'],
+                    timeseries=timeseries
+                )
+                prepared_data = downloader.find_and_prepare_data()
+                for date, merged_file in prepared_data.items():
+                    if '.tif' not in merged_file:
+                        results[model_id] = results.get(model_id, {})
+                        results[model_id][date] = results[model_id].get(date, {})
+                        results[model_id][date] = {}
+                        continue
+                    port = finetuned_model.source_details['port']
+                    # download extra data if needed here
+                    # also calculate any indices if needed here
+                    # pass these extra files to the inference pipeline as needed
+                    url = f"http://{model_id.replace('_', '-')}-service:{port}/api/v1/invocations"
+                    t = time.time()
+                    response = requests.post(url, json={
+                        'filename': merged_file,
+                        'scale': finetuned_model.data_config.get('scaled', False),
+                        'model_id': model_id,
+                        'qa_flags': finetuned_model.data_config.get('qa_flags', ['cloud', 'shadow', 'adjacent_cloud']),
+                        'bounding_box': inference.query['bounding_box'],
+                        'date': date,
+                        'timeseries': timeseries
+                    })
+                    print(f"Inference service Took to respond {time.time() - t:.2f} seconds")
                     results[model_id] = results.get(model_id, {})
                     results[model_id][date] = results[model_id].get(date, {})
-                    results[model_id][date] = {}
-                    continue
-                port = finetuned_model.source_details['port']
-                # download extra data if needed here
-                # also calculate any indices if needed here
-                # pass these extra files to the inference pipeline as needed
-                url = f"http://{model_id.replace('_', '-')}-service:{port}/api/v1/invocations"
-                t = time.time()
-                response = requests.post(url, json={
-                    'filename': merged_file,
-                    'scale': finetuned_model.data_config.get('scaled', False),
-                    'model_id': model_id,
-                    'qa_flags': finetuned_model.data_config.get('qa_flags', ['cloud', 'shadow', 'adjacent_cloud']),
-                    'bounding_box': inference.query['bounding_box'],
-                    'date': date,
-                    'timeseries': timeseries
-                })
-                print(f"Inference service Took to respond {time.time() - t:.2f} seconds")
-                results[model_id] = results.get(model_id, {})
-                results[model_id][date] = results[model_id].get(date, {})
-                results[model_id][date] = response.json()[model_id]
+                    results[model_id][date] = response.json()[model_id]
 
-                infered_results = results[model_id][date]
-                inference.results = inference.results if inference.results else {}
-                inference.results[model_id] = inference.results.get(model_id, {})
-                inference.results[model_id][date] = {
-                    "qa_tif": infered_results['qa_link'],
-                    "s3_link": infered_results['s3_link'],
-                    "stats": infered_results['stats']
-                }
+                    infered_results = results[model_id][date]
+                    inference.results = inference.results if inference.results else {}
+                    inference.results[model_id] = inference.results.get(model_id, {})
+                    inference.results[model_id][date] = {
+                        "qa_tif": infered_results['qa_link'],
+                        "s3_link": infered_results['s3_link'],
+                        "stats": infered_results['stats']
+                    }
 
         # Convert Pydantic model to ORM model before adding to DB
         inference_details = inference.dict()

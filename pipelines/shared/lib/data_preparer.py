@@ -82,13 +82,13 @@ class DataPreparer:
         # Initialize memory pool for array reuse
         self._array_pool = ArrayPool(max_pool_size=batch_size * 2)
 
-    def handle_qa(self, tile):
-        def get_qa_mask_vectorized(qa_band):
+    @staticmethod
+    def get_qa_mask_vectorized(qa_band, qa_flags=['cloud', 'adjacent_cloud', 'shadow', 'snow', 'water', 'aerosol']):
             # Vectorized QA mask calculation using broadcasting
-            if not self.qa_flags:
+            if qa_flags:
                 return np.zeros_like(qa_band, dtype=bool)
 
-            qa_indices = np.array([QA_INDICES.get(flag, 0) for flag in self.qa_flags], dtype=np.uint32)
+            qa_indices = np.array([QA_INDICES.get(flag, 0) for flag in qa_flags], dtype=np.uint32)
             qa_band_uint = qa_band.astype(np.uint32)
 
             # Create shift values with proper shape for broadcasting
@@ -99,22 +99,24 @@ class DataPreparer:
             flags = (qa_band_uint[..., np.newaxis] & shift_values[np.newaxis, ...]) != 0
             return np.any(flags, axis=-1)
 
+
+    def handle_qa(self, tile):
         if self.timeseries:
             # Vectorized operations for timeseries
-            pre_combined = get_qa_mask_vectorized(tile[6])
+            pre_combined = DataPreparer.get_qa_mask_vectorized(tile[6], self.qa_flags)  # QA band for pre period
             for band_idx in range(6):
                 tile[band_idx][pre_combined] = 0.0001
 
-            combined = get_qa_mask_vectorized(tile[15])  # QA band for middle period
+            combined = DataPreparer.get_qa_mask_vectorized(tile[15], self.qa_flags)  # QA band for middle period
             for band_idx in range(9, 15):
                 tile[band_idx][combined] = 0.0001
 
-            post_combined = get_qa_mask_vectorized(tile[24])  # QA band for post period
+            post_combined = DataPreparer.get_qa_mask_vectorized(tile[24], self.qa_flags)  # QA band for post period
             for band_idx in range(18, 24):
                 tile[band_idx][post_combined] = 0.0001
         else:
             # Vectorized operations for single time
-            combined = get_qa_mask_vectorized(tile[6])
+            combined = DataPreparer.get_qa_mask_vectorized(tile[6], self.qa_flags)
             for band_idx in range(6):
                 tile[band_idx][combined] = 0.0001
         return tile

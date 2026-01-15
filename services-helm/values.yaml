@@ -26,6 +26,11 @@ cropContainer:
   pullPolicy: IfNotPresent
   replicaCount: 1
 
+suryaRolloutContainer:
+  imageUrl: ""
+  pullPolicy: IfNotPresent
+  replicaCount: 1
+
 imagePullSecrets: ecr-registry-key
 
 hostServices: ""

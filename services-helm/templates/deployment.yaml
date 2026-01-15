@@ -195,3 +195,43 @@ spec:
         - name: cache-volume
           persistentVolumeClaim:
             claimName: service-cache-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: surya-rollout-app
+  labels:
+    app: surya-rollout-app
+spec:
+  replicas: {{ .Values.suryaRolloutContainer.replicaCount  }}
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: surya-rollout-app
+  template:
+    metadata:
+      labels:
+        app: surya-rollout-app
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets }}
+      runtimeClassName: nvidia
+      containers:
+        - name: pipeline-surya-rollout-container
+          image: {{ .Values.suryaRolloutContainer.imageUrl }}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+          envFrom:
+            - configMapRef:
+                name: surya-rollout-app-envs
+            - configMapRef:
+                name: oidc-envs
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: service-cache-pvc
+---

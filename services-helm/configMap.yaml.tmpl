@@ -66,3 +66,20 @@ data:
    MODEL_WEIGHT_PATH: "${CROP_WEIGHT}"
    CONFIG_PATH: "${CROP_CONFIG}"
    GPU_ID: "${CROP_GPU_ID}"
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: surya-rollout-app-envs
+  namespace: default
+data:
+   BUCKET_NAME: "surya-rollout"
+   USECASE: "surya_rollout"
+   API_KEY_VALIDATION_URL: "https://dev.fm.dsig.net/api/validate"
+   DOWNLOAD_FOLDER: "/root/.cache/data"
+   MODEL_WEIGHT_PATH: "${SURYA_WEIGHT}"
+   CONFIG_PATH: "${SURYA_CONFIG}"
+   GPU_ID: "${SURYA_GPU_ID}"
+   SDO_EMAIL: "${SDO_EMAIL}"
