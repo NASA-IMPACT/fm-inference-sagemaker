@@ -1,3 +1,4 @@
+import boto3
 import gc
 import GPUtil
 import httpx
@@ -5,6 +6,8 @@ import os
 import re
 import torch
 
+from botocore import UNSIGNED
+from botocore.config import Config
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Request, APIRouter, status, Body, Depends, HTTPException
@@ -17,7 +20,8 @@ from typing import Optional, Tuple, List
 
 from lib.consts import (
     CHANNELS, DOWNLOAD_FOLDER, OUTPUT_DIR, EMAIL, FITS_DIR,
-    SURYA_CONFIG_PATH, SURYA_SCALERS_PATH, SURYA_WEIGHTS_PATH
+    SURYA_CONFIG_PATH, SURYA_SCALERS_PATH, SURYA_WEIGHTS_PATH,
+    SURYA_S3_BUCKET
 )
 from lib.rollout_infer import Infer
 from lib.downloader import Downloader
@@ -127,6 +131,96 @@ def load_model():
     infer.load_model()
     return infer
 
+def download_from_s3(ts: datetime) -> Optional[Tuple[str, str]]:
+    """
+    Attempt to download NetCDF data file from S3 for the given timestamp.
+
+    Args:
+        ts: Timestamp to download
+    Returns:
+        Tuple of (ts_key, nc_file_path) if successful, else None
+    """
+    s3 = boto3.client('s3', config=Config(signature_version=UNSIGNED))
+    ts_key = ts.strftime("%Y%m%d_%H%M")
+    year, month = ts.strftime("%Y"), ts.strftime("%m")
+    s3_prefix = f"{year}/{month}"
+    s3_key = f"{s3_prefix}/{ts_key}.nc"
+    nc_file_path = os.path.join(NETCDF_DIR, f"{ts_key}00.nc")
+    try:
+        s3.download_file(SURYA_S3_BUCKET, s3_key, nc_file_path)
+        print(f"Downloaded NetCDF file from S3: {s3_key}")
+        return ts, nc_file_path
+    except Exception as e:
+        print(f"S3 download failed for {s3_key}: {e}")
+        return None, None
+
+
+def parallel_download_from_s3(download_args: List[Tuple[datetime, int, str, str, str]]) -> List[datetime]:
+    """
+    Download NetCDF files from S3 in parallel.
+
+    Args:
+        download_args: List of tuples containing (ts, cadence_minutes, email, fits_dir, wind_data_dir)
+    """
+    nc_files = []
+    downloaded_timestamps = []
+
+    max_workers = min(len(download_args), 4)  # Limit to 4 parallel processes
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(download_from_s3, args[0]): args[0] for args in download_args}
+
+        for future in as_completed(futures):
+            ts = futures[future]
+            ts, nc_file = future.result()
+            if nc_file:
+                nc_files.append(nc_file)
+                print(f"Completed download for timestamp: {ts_key}")
+                downloaded_timestamps.append(ts)
+            else:
+                print(f"S3 download failed for timestamp {ts.strftime('%Y%m%d_%H%M%S')}, will attempt direct download.")
+    return downloaded_timestamps, nc_files
+
+
+def parallel_download_and_preprocess(download_args: List[Tuple[datetime, int, str, str, str]]) -> List[str]:
+    """
+    Download and preprocess NetCDF files in parallel.
+
+    Args:
+        download_args: List of tuples containing (ts, cadence_minutes, email, fits_dir, wind_data_dir)
+    """
+    nc_files = []
+    # Download all timestamps in parallel using ProcessPoolExecutor
+    files_by_timestamp = {}
+
+    max_workers = min(len(download_args), 4)  # Limit to 4 parallel processes
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(download_single_timestamp, args): args[0] for args in download_args}
+
+        for future in as_completed(futures):
+            ts = futures[future]
+            try:
+                ts_key, ts_data = future.result()
+                files_by_timestamp[ts_key] = ts_data
+                print(f"Completed download for timestamp: {ts_key}")
+            except Exception as e:
+                print(f"Error downloading timestamp {ts.strftime('%Y%m%d_%H%M%S')}: {e}")
+
+    # Get sorted list of available timestamps
+    sorted_available_timestamps = sorted(files_by_timestamp.keys())
+    print(f"Downloaded files for {len(sorted_available_timestamps)} timestamps: {sorted_available_timestamps}")
+
+    # Process each timestamp to NetCDF
+    for ts_key in sorted_available_timestamps:
+        ts_data = files_by_timestamp[ts_key]
+        aia_files = sorted(ts_data['aia_files'])
+        hmi_files = ts_data['hmi_files']
+        processor = DataProcess(aia_files, hmi_files)
+        filename = processor.process_timestamp(FITS_DIR, ts_key)
+        nc_files.append(filename)
+
+    return nc_files
+
+ensure_data_available(start_time, 60, 10)
 
 def ensure_data_available(start_time: datetime, cadence_minutes: int = 12, num_frames: int = 1) -> Tuple[List[str], List[str]]:
     """
@@ -181,38 +275,21 @@ def ensure_data_available(start_time: datetime, cadence_minutes: int = 12, num_f
         for ts in timestamps_to_download
     ]
 
-    # Download all timestamps in parallel using ProcessPoolExecutor
-    files_by_timestamp = {}
-    max_workers = min(len(timestamps_to_download), 4)  # Limit to 4 parallel processes
+    # Try Download data from S3 first
+    downloaded_timestamps, s3_ncfiles = parallel_download_from_s3(download_args)
+    nc_files.extend(s3_ncfiles)
 
-    print(f"Starting parallel download with {max_workers} workers for {len(timestamps_to_download)} timestamps...")
+    timestamps_to_download = set(timestamps_to_download) - set(downloaded_timestamps)
 
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(download_single_timestamp, args): args[0] for args in download_args}
+    if timestamps_to_download:
+        download_args = [
+            (ts, cadence_minutes, EMAIL, FITS_DIR, WIND_DATA_DIR)
+            for ts in timestamps_to_download
+        ]
+        prepocessed_timestamps = parallel_download_and_preprocess(download_args)
+        nc_files.extend(prepocessed_timestamps)
 
-        for future in as_completed(futures):
-            ts = futures[future]
-            try:
-                ts_key, ts_data = future.result()
-                files_by_timestamp[ts_key] = ts_data
-                print(f"Completed download for timestamp: {ts_key}")
-            except Exception as e:
-                print(f"Error downloading timestamp {ts.strftime('%Y%m%d_%H%M%S')}: {e}")
-
-    # Get sorted list of available timestamps
-    sorted_available_timestamps = sorted(files_by_timestamp.keys())
-    print(f"Downloaded files for {len(sorted_available_timestamps)} timestamps: {sorted_available_timestamps}")
-
-    # Process each timestamp to NetCDF
-    for ts_key in sorted_available_timestamps:
-        ts_data = files_by_timestamp[ts_key]
-        aia_files = sorted(ts_data['aia_files'])
-        hmi_files = ts_data['hmi_files']
-        print(aia_files, 'AIA FILES')
-        print(hmi_files, 'HMI FILES')
-        processor = DataProcess(aia_files, hmi_files)
-        filename = processor.process_timestamp(FITS_DIR, ts_key)
-        nc_files.append(filename)
+    sorted_nc_files = sorted(nc_files)
 
     return nc_files
 
