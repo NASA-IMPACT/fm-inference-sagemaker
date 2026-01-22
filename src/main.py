@@ -415,12 +415,12 @@ def read_root():
     }
 
 
-@app.get("/system-info", tags=["Info"])
+@app.get("/v1/version", tags=["Info"])
 def system_info():
     """Returns basic system information (version, hostname)."""
     return {
         "version": os.getenv("RELEASE_VERSION", "0.0.1"),
-        "hostname": socket.gethostname(),
+
     }
 
 @app.get("/health", tags=["Info"])
