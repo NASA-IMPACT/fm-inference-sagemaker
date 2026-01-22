@@ -109,6 +109,9 @@ app = FastAPI(
     title="FM Inference Service",
     description="REST API for managing finetuned models and inferences.",
     version= os.getenv("RELEASE_VERSION", "0.0.1"),
+    docs_url="/v1/docs",
+    redoc_url="/v1/redoc",
+    openapi_url="/v1/openapi.json",
     lifespan=lifespan,
     root_path=root_path
 )
@@ -405,7 +408,7 @@ def read_root():
             "inferences": f"{root_path}/v1/inferences",
             "finetuned_models": f"{root_path}/v1/models",
             "preloaded_events": f"{root_path}/v1/preloaded_events",
-            "docs": f"{root_path}/docs",
+            "docs": f"{root_path}/v1/docs",
             "health": f"{root_path}/health"
         }
     }
@@ -424,8 +427,9 @@ def welcome_page(claim = Depends(general_access_dependency)):
     with open(template_file, "r", encoding="utf-8") as f:
         html_content = f.read()
     username = claim.get("username")
+    fm_ui_url = os.getenv("FM_UI_URL", "http://dev.example.com")
     # Replace placeholder with actual username
-    html_content = html_content.replace("{username}", username)
+    html_content = html_content.replace("{username}", username).replace("{fm_ui_url}", fm_ui_url)
     
     return HTMLResponse(content=html_content)
 
