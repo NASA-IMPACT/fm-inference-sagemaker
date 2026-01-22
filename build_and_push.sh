@@ -34,6 +34,27 @@ docker push $ECR_URL/$ECR_IMAGE_NAME
 # Clean up temporary image
 docker rmi $TEMP_IMAGE_NAME
 
+# Post-Push Docker Cleanup (Opt-In)
+if [[ "${CLEANUP_AFTER_PUSH}" == "true" || "${CLEANUP_AFTER_PUSH}" == "aggressive" ]]; then
+    echo "CLEANUP_AFTER_PUSH is set to ${CLEANUP_AFTER_PUSH}. Cleaning up..."
+
+    # Remove the specific image tag/ID that was just built and pushed
+    if docker rmi "$ECR_URL/$ECR_IMAGE_NAME"; then
+        echo "Successfully removed image: $ECR_URL/$ECR_IMAGE_NAME"
+    else
+        echo "Warning: Failed to remove image $ECR_URL/$ECR_IMAGE_NAME. It might be in use."
+    fi
+
+    if [[ "${CLEANUP_AFTER_PUSH}" == "aggressive" ]]; then
+        echo "Performing AGGRESSIVE cleanup (system prune -af --volumes)..."
+        docker system prune -af --volumes
+    else
+        # Run docker image prune -f to remove dangling layers
+        echo "Pruning dangling layers..."
+        docker image prune -f
+    fi
+fi
+
 # Generate deployment.yaml and ingress.yaml from templates using envsubst
 envsubst < k8s-manifests/deployment.yaml.tmpl > k8s-manifests/deployment.yaml
 envsubst < k8s-manifests/ingress.yaml.tmpl > k8s-manifests/ingress.yaml
