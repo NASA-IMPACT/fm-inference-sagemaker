@@ -395,7 +395,6 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     qa_links = {}
     for flag, tif_path in qa_flag_tifs.items():
         qa_links[flag] = upload_cog_to_s3(tif_path)
-    qa_links = qa_flag_tifs
 
     # upload postprocess artifacts to s3
     supplement_links = {}
