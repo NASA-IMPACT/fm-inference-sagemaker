@@ -5,6 +5,7 @@ import hmac
 import json
 import logging
 import os
+import socket
 from fastapi.responses import HTMLResponse
 
 
@@ -414,12 +415,20 @@ def read_root():
     }
 
 
-@app.get("/health")
+@app.get("/system-info", tags=["Info"])
+def system_info():
+    """Returns basic system information (version, hostname)."""
+    return {
+        "version": os.getenv("RELEASE_VERSION", "0.0.1"),
+        "hostname": socket.gethostname(),
+    }
+
+@app.get("/health", tags=["Info"])
 def health_check():
     """Health check endpoint (legacy)."""
     return {"successCode": 200, "status": "healthy"}
 
-@app.get("/welcome")
+@app.get("/welcome", tags=["Info"])
 def welcome_page(claim = Depends(general_access_dependency)):
     """Welcome page for new users."""
     # Read HTML template from file
