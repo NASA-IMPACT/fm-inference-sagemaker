@@ -26,6 +26,7 @@ EMAIL = os.environ.get("SDO_EMAIL", "")
 SURYA_CONFIG_PATH = os.environ.get("SURYA_CONFIG_PATH", "/app/models/config.yaml")
 SURYA_SCALERS_PATH = os.environ.get("SURYA_SCALERS_PATH", "/app/models/scalers.yaml")
 SURYA_WEIGHTS_PATH = os.environ.get("SURYA_WEIGHTS_PATH", "/app/models/surya.366m.v1.pt")
+SURYA_S3_BUCKET = os.environ.get("SURYA_S3_BUCKET", "nasa-surya-bench")
 
 IMAGE_SHAPE = (4096, 4096)
 SATURATION = 16383

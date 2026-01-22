@@ -247,42 +247,6 @@ class Downloader():
         return self._download(start_tai, end_tai, cadence, t_key_base, max_workers)
         # self.download_wind_params()
 
-    # def _download_parallel(self, start_tai, end_tai, cadence, t_key_base, max_workers=5):
-    #     """Download all bands in parallel using ThreadPoolExecutor"""
-    #     download_tasks = [
-    #         ("AIA EUV", self.download_aia_euv),
-    #         ("AIA UV", self.download_aia_uv),
-    #         ("HMI Magnetogram", self.download_hmi_magnetogram),
-    #         ("HMI Vector", self.download_hmi_vector_components),
-    #         ("HMI Velocity", self.download_hmi_velocity),
-    #     ]
-
-    #     results = {}
-    #     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-    #         future_to_task = {
-    #             executor.submit(func, start_tai, end_tai, cadence, t_key_base): name
-    #             for name, func in download_tasks
-    #         }
-
-    #         for future in as_completed(future_to_task):
-    #             task_name = future_to_task[future]
-    #             try:
-    #                 count, downloaded, skipped = future.result()
-    #                 results[task_name] = {
-    #                     'total': count,
-    #                     'downloaded': downloaded,
-    #                     'skipped': skipped
-    #                 }
-    #             except Exception as e:
-    #                 self._thread_safe_print(f"  {task_name}... Error: {str(e)[:30]}")
-    #                 results[task_name] = {
-    #                     'total': 0,
-    #                     'downloaded': [],
-    #                     'skipped': []
-    #                 }
-
-    #     return results
-
     def _download(self, start_tai, end_tai, cadence, t_key_base, max_workers=5):
         """Download all bands in parallel using ThreadPoolExecutor"""
         download_tasks = [

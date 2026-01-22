@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 
 from ...db.database import get_db
-from ...db.models import FinetunedModel, Inference, PreloadedEvent
+from ...db.models import BaseFM, FinetunedModel, Inference, PreloadedEvent
 from ...lib.utils import get_api_key
 from ...models.finetuned_model import FinetunedModelRead
 from ...models.inference import InferenceRead
@@ -12,14 +12,26 @@ from ...models.preloaded_event import PreloadedEventRead, PreloadedEventUpdate
 router = APIRouter(prefix="/v1/preloaded_events", tags=["preloaded_events"])
 
 @router.get("", response_model=list[PreloadedEventRead], status_code=status.HTTP_200_OK)
-def get_preloaded_events(db: Session = Depends(get_db)):
+def get_preloaded_events(
+    base_fm: BaseFM = None,
+    db: Session = Depends(get_db)
+):
     """Get all preloaded events."""
     try:
         # get all preloaded events
         preloaded_events = db.query(
             PreloadedEvent
-        ).all()
+        )
 
+        if base_fm:
+            preloaded_events = preloaded_events.join(
+                PreloadedEvent.inference
+            ).join(
+                Inference.finetuned_models
+            ).filter(
+                Inference.finetuned_models.any(base_fm=base_fm)
+            )
+        preloaded_events = preloaded_events.all()
         return preloaded_events
     except Exception as e:
         return {"error": str(e)}

@@ -66,6 +66,22 @@ SOLAR_COLORMAPS = {
     'ic': 'gray',
 }
 
+# AIA scaling parameters matching Helioviewer's JP2 generation
+# Source: https://aia.cfa.harvard.edu/content/aia_rfilter_jp2gen.pro
+# All channels use log10 scaling (dataScalingType=3) except 4500 which uses linear
+AIA_SCALING_PARAMS = {
+    94:   {'dataMin': 0.25,  'dataMax': 2080.0,   'exptime': 4.99803},
+    131:  {'dataMin': 2.0,   'dataMax': 2800.0,   'exptime': 6.99685},
+    171:  {'dataMin': 15.0,  'dataMax': 25600.0,  'exptime': 4.99803},
+    193:  {'dataMin': 11.0,  'dataMax': 18000.0,  'exptime': 2.99950},
+    211:  {'dataMin': 8.0,   'dataMax': 16220.0,  'exptime': 4.99801},
+    304:  {'dataMin': 30.0,  'dataMax': 2000.0,   'exptime': 4.99441},
+    335:  {'dataMin': 2.0,   'dataMax': 1600.0,   'exptime': 6.99734},
+    1600: {'dataMin': 5.0,   'dataMax': 8800.0,   'exptime': 2.99911},
+    1700: {'dataMin': 100.0, 'dataMax': 32935.0,  'exptime': 1.00026},
+    4500: {'dataMin': 0.25,  'dataMax': 26000.0,  'exptime': 1.00026, 'linear': True},
+}
+
 
 def get_solar_colormap(instrument_type: str, wavelength: int = None, observable: str = None):
     """
@@ -136,6 +152,16 @@ class SolarTileGenerator:
         self.instrument_type = instrument_type  # 'aia' or 'hmi'
         self.wavelength = wavelength  # AIA wavelength
         self.observable = observable  # HMI observable type
+
+        # Determine scaling method based on instrument
+        self.use_log_scaling = False
+        self.aia_params = None
+
+        if self.instrument_type == 'aia' and self.wavelength in AIA_SCALING_PARAMS:
+            self.aia_params = AIA_SCALING_PARAMS[self.wavelength]
+            # Use log10 scaling like Helioviewer (except 4500 which is linear)
+            self.use_log_scaling = not self.aia_params.get('linear', False)
+
         with rasterio.open(tif_path) as src:
             self.width = src.width
             self.height = src.height
@@ -154,13 +180,44 @@ class SolarTileGenerator:
                     abs_max = np.percentile(np.abs(valid_data), 99.5)
                     self.vmin, self.vmax = -abs_max, abs_max
                     self.nan_fill = 0.5  # NaN -> middle of diverging scale
+                elif self.use_log_scaling and self.aia_params:
+                    # AIA with Helioviewer-style log10 scaling
+                    # Use the channel-specific dataMin/dataMax from Helioviewer
+                    self.vmin = self.aia_params['dataMin']
+                    self.vmax = self.aia_params['dataMax']
+                    self.nan_fill = 0.0
                 else:
-                    # AIA or HMI continuum: percentile-based normalization
+                    # Fallback: percentile-based normalization
                     self.vmin, self.vmax = np.percentile(valid_data, [1.25, 99.5])
                     self.nan_fill = 0.0
             else:
                 self.vmin, self.vmax = 0, 1
                 self.nan_fill = 0.0
+
+    def _create_zero_tile(self, tile_size: int = 256, colormap: bool = True) -> bytes:
+        """Create a tile filled with zero values (black for most colormaps)."""
+        # Create array of zeros normalized to 0
+        normalized = np.zeros((tile_size, tile_size), dtype=np.float32)
+
+        # Apply colormap if available and requested
+        cmap = None
+        if colormap:
+            cmap = get_solar_colormap(self.instrument_type, self.wavelength, self.observable)
+
+        if cmap:
+            # Apply colormap to zeros
+            rgba = cmap(normalized)
+            rgb = (rgba[:, :, :3] * 255).astype(np.uint8)
+            img = Image.fromarray(rgb, mode='RGB')
+        else:
+            # Grayscale fallback - zeros become black
+            gray = (normalized * 255).astype(np.uint8)
+            img = Image.fromarray(gray, mode='L')
+
+        # Convert to PNG
+        buffer = io.BytesIO()
+        img.save(buffer, format='PNG')
+        return buffer.getvalue()
 
     def get_tile(self, z: int, x: int, y: int, tile_size: int = 256, colormap: bool = True) -> Optional[bytes]:
         """
@@ -173,9 +230,9 @@ class SolarTileGenerator:
         """
         tiles_per_side = 2 ** z
 
-        # Check if tile coordinates are valid
+        # Check if tile coordinates are beyond bounds - return zero-filled tile
         if x < 0 or x >= tiles_per_side or y < 0 or y >= tiles_per_side:
-            return None
+            return self._create_zero_tile(tile_size, colormap)
 
         # Calculate the window in the source image
         tile_width_px = self.width / tiles_per_side
@@ -208,9 +265,21 @@ class SolarTileGenerator:
             if len(valid_data) == 0:
                 # Empty tile
                 return None
-            # Normalize using file-level statistics for consistent rendering across tiles
-            normalized = np.clip((data - self.vmin) / (self.vmax - self.vmin), 0, 1)
-            normalized = np.nan_to_num(normalized, nan=self.nan_fill)
+
+            # Normalize using appropriate scaling method
+            if self.use_log_scaling:
+                # Helioviewer-style log10 scaling for AIA
+                # Clip to dataMin/dataMax range, then apply log10
+                clipped = np.clip(data, self.vmin, self.vmax)
+                # Apply log10 scaling: log10(data) normalized to [0,1]
+                log_min = np.log10(self.vmin)
+                log_max = np.log10(self.vmax)
+                normalized = (np.log10(np.maximum(clipped, self.vmin)) - log_min) / (log_max - log_min)
+                normalized = np.nan_to_num(normalized, nan=self.nan_fill)
+            else:
+                # Linear normalization for HMI and fallback
+                normalized = np.clip((data - self.vmin) / (self.vmax - self.vmin), 0, 1)
+                normalized = np.nan_to_num(normalized, nan=self.nan_fill)
 
             # Apply colormap if available and requested
             cmap = None
@@ -246,7 +315,7 @@ def get_tile_generator(instrument: str, timestamp: str, step: int) -> SolarTileG
     """Get or create a tile generator for a given file."""
     "20140107_0348_aia304_step01"
     parsed_datetime = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
-    filename = f"{parsed_datetime.strftime('%Y%m%d_%H%M%S')}_{instrument}_step{'%02d' % step}.tif"
+    filename = f"{parsed_datetime.strftime('%Y%m%d_%H%M')}_{instrument}_step{'%02d' % step}.tif"
     key = f"{instrument}/{filename}"
     if key not in tile_generators:
         tif_path = TILE_DIR / instrument / filename
