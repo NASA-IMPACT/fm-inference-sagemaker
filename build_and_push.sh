@@ -112,6 +112,40 @@ docker rmi $TEMP_BURN_IMAGE_NAME
 docker rmi $TEMP_CROP_IMAGE_NAME
 docker rmi $TEMP_SURYA_ROLLOUT_IMAGE_NAME
 
+# Post-Push Docker Cleanup (Opt-In)
+if [[ "${CLEANUP_AFTER_PUSH}" == "true" || "${CLEANUP_AFTER_PUSH}" == "aggressive" ]]; then
+    echo "CLEANUP_AFTER_PUSH is set to ${CLEANUP_AFTER_PUSH}. Cleaning up..."
+
+    # List of all pushed images to remove
+    PUSHED_IMAGES=(
+        "$TF_VAR_prediction_app_image_url"
+        "$TF_VAR_floods_app_image_url"
+        "$TF_VAR_burnScar_app_image_url"
+        "$TF_VAR_crop_app_image_url"
+        "$TF_VAR_surya_rollout_image_url"
+        "$ECR_URL/$ECR_TILER_IMAGE_NAME"
+        "$ECR_URL/$ECR_BASE_IMAGE_NAME"
+    )
+
+    for img in "${PUSHED_IMAGES[@]}"; do
+        # Remove the specific image tag/ID that was just built and pushed
+        if docker rmi "$img"; then
+            echo "Successfully removed image: $img"
+        else
+            echo "Warning: Failed to remove image $img. It might be in use."
+        fi
+    done
+
+    if [[ "${CLEANUP_AFTER_PUSH}" == "aggressive" ]]; then
+        echo "Performing AGGRESSIVE cleanup (system prune -af)..."
+        docker system prune -af
+    else
+        # Run docker image prune -f to remove dangling layers
+        echo "Pruning dangling layers..."
+        docker image prune -f
+    fi
+fi
+
 # Generate deployment.yaml and ingress.yaml from templates using envsubst
 envsubst < services-helm/configMap.yaml.tmpl > services-helm/configMap.yaml
 
