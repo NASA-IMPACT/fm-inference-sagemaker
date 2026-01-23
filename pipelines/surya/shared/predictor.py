@@ -290,7 +290,7 @@ def ensure_data_available(start_time: datetime, cadence_minutes: int = 12, num_f
 
     sorted_nc_files = sorted(nc_files)
 
-    return nc_files
+    return sorted_nc_files
 
 
 # Assign GPU before loading the model

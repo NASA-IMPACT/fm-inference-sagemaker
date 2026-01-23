@@ -137,10 +137,6 @@ class FloodInfer(Infer):
         self.model = self.model.eval()
         self.model.to(self.device)
 
-        # Enable cudnn benchmarking for optimized convolution algorithms
-        if self.use_cuda:
-            torch.backends.cudnn.benchmark = True
-
     def postprocess(
         self,
         bbox,

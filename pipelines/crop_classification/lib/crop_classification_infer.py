@@ -52,10 +52,6 @@ class CropClassificationInfer(Infer):
         self.model.to(self.device)
         self.model = self.model.eval()
 
-        # Enable cudnn benchmarking for optimized convolution algorithms
-        if self.use_cuda:
-            torch.backends.cudnn.benchmark = True
-
     def preprocess(self, images, date):
         """
         Optimized preprocessing with pinned memory for faster transfers

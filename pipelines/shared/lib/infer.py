@@ -23,6 +23,15 @@ class Infer:
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.use_cuda = torch.cuda.is_available()
 
+        # Configure CUDA optimizations before model loading
+        if self.use_cuda:
+            torch.backends.cudnn.benchmark = True
+            # Enable TF32 for faster matrix multiplications and convolutions on Ampere+ GPUs
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            # Set float32 matmul precision to allow mixed precision operations
+            torch.set_float32_matmul_precision('high')
+
         # Stream and queue initialization
         self.num_streams = num_streams if self.use_cuda else 0
         self.streams = [torch.cuda.Stream() for _ in range(self.num_streams)] if self.use_cuda else []
@@ -50,10 +59,6 @@ class Infer:
             self.model = inference_model.model
             self.model.to(self.device)
             self.model = self.model.eval()
-
-            # Enable cudnn benchmarking for optimized convolution algorithms
-            if self.use_cuda:
-                torch.backends.cudnn.benchmark = True
 
     def postprocess(self, bbox, date, predictions, images):
         return predictions
