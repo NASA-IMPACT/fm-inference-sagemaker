@@ -113,8 +113,8 @@ docker rmi $TEMP_CROP_IMAGE_NAME
 docker rmi $TEMP_SURYA_ROLLOUT_IMAGE_NAME
 
 # Post-Push Docker Cleanup (Opt-In)
-if [[ "${CLEANUP_AFTER_PUSH}" == "true" || "${CLEANUP_AFTER_PUSH}" == "aggressive" ]]; then
-    echo "CLEANUP_AFTER_PUSH is set to ${CLEANUP_AFTER_PUSH}. Cleaning up..."
+if [[ "${CLEANUP_AFTER_PUSH}" == "true" ]]; then
+    echo "CLEANUP_AFTER_PUSH is set to true. Cleaning up..."
 
     # List of all pushed images to remove
     PUSHED_IMAGES=(
@@ -136,14 +136,9 @@ if [[ "${CLEANUP_AFTER_PUSH}" == "true" || "${CLEANUP_AFTER_PUSH}" == "aggressiv
         fi
     done
 
-    if [[ "${CLEANUP_AFTER_PUSH}" == "aggressive" ]]; then
-        echo "Performing AGGRESSIVE cleanup (system prune -af)..."
-        docker system prune -af
-    else
-        # Run docker image prune -f to remove dangling layers
-        echo "Pruning dangling layers..."
-        docker image prune -f
-    fi
+    # Run docker image prune -f to remove dangling layers
+    echo "Pruning dangling layers..."
+    docker image prune -f
 fi
 
 # Post-Push Docker Cleanup (Opt-In)
