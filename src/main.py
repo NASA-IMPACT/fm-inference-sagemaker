@@ -5,7 +5,6 @@ import hmac
 import json
 import logging
 import os
-import socket
 from fastapi.responses import HTMLResponse
 
 
