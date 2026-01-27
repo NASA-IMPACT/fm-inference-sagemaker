@@ -152,7 +152,7 @@ def download_from_s3(ts: datetime) -> Optional[Tuple[str, str]]:
         return ts, nc_file_path
     except Exception as e:
         print(f"S3 download failed for {s3_key}: {e}")
-        return None, None
+        return ts, None
 
 
 def parallel_download_from_s3(download_args: List[Tuple[datetime, int, str, str, str]]) -> List[datetime]:
