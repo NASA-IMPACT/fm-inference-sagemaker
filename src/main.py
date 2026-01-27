@@ -422,7 +422,7 @@ def system_info():
 
     }
 
-@app.get("/health", tags=["Info"])
+@app.get("/v1/health", tags=["Info"])
 def health_check():
     """Health check endpoint (legacy)."""
     return {"successCode": 200, "status": "healthy"}
