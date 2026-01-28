@@ -1,172 +1,119 @@
 #!/bin/bash
 
-set -e  # Exit on any error
+set -e
 
-# Ensure required environment variables are set
+# --- CONFIGURATION ---
+MAX_IMAGES=5
+CACHE_RETENTION="168h" # 7 days
+# ---------------------
+
 if [[ -z "$ECR_URL" || -z "$INGRESS_HOST" ]]; then
     echo "Error: ECR_URL and INGRESS_HOST environment variables must be set"
     exit 1
 fi
 
+# Set version tag (used by Terraform/Helm)
 export TF_VAR_fm_services_release_version=$(git describe --tags --exact-match 2>/dev/null || git branch --show-current || git rev-parse --short HEAD)
+echo "Release Version: $TF_VAR_fm_services_release_version"
 
-# Rest of the code remains the same...
-
-
-
-# Build the image first to get the digest
-TEMP_IMAGE_NAME="inference:temp"
-echo "Building temporary image to get digest: $TEMP_IMAGE_NAME"
-# Run the migration during the build
-docker build --build-arg DATABASE_URL=$DATABASE_URL -t $TEMP_IMAGE_NAME .
-
-cd pipelines
-
-# Docker login to ECR
-ECR_PASSWORD=$(aws ecr get-login-password --region us-west-2)
-echo $ECR_PASSWORD | docker login --username AWS --password-stdin $ECR_URL
-
-# Build and push base image first
-BASE_IMAGE_NAME="inference_pipelines:temp"
-echo "Building temporary image to get digest: $BASE_IMAGE_NAME"
-docker build -t $BASE_IMAGE_NAME . -f Dockerfile.base
-BASE_DIGEST=$(docker inspect --format='{{.Id}}' $BASE_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
-export ECR_BASE_IMAGE_NAME="inference_pipelines/base:${BASE_DIGEST}"
-docker tag $BASE_IMAGE_NAME $ECR_URL/$ECR_BASE_IMAGE_NAME
-docker push $ECR_URL/$ECR_BASE_IMAGE_NAME
-
-# Build floods and burn scars images
-TEMP_FLOOD_IMAGE_NAME="floods:temp"
-echo "Building temporary image to get digest: $TEMP_FLOOD_IMAGE_NAME"
-docker build -t $TEMP_FLOOD_IMAGE_NAME . -f floods/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
-
-TEMP_BURN_IMAGE_NAME="burn_scars:temp"
-echo "Building temporary image to get digest: $TEMP_BURN_IMAGE_NAME"
-docker build -t $TEMP_BURN_IMAGE_NAME . -f burn_scars/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
-
-TEMP_CROP_IMAGE_NAME="crop_classification:temp"
-echo "Building temporary image to get digest: $TEMP_CROP_IMAGE_NAME"
-docker build -t $TEMP_CROP_IMAGE_NAME . -f crop_classification/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
-
-TEMP_SURYA_ROLLOUT_IMAGE_NAME="surya_rollout:temp"
-echo "Building temporary image to get digest: $TEMP_SURYA_ROLLOUT_IMAGE_NAME"
-docker build -t $TEMP_SURYA_ROLLOUT_IMAGE_NAME . -f surya/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
-
-cd -
-
-TILER_IMAGE_NAME="tile_server:temp"
-echo "Building temporary image to get digest: $TILER_IMAGE_NAME"
-docker build -t $TILER_IMAGE_NAME . -f tile_server/Dockerfile --build-arg BASE_IMAGE=$ECR_URL/$ECR_BASE_IMAGE_NAME
-
-TILER_DIGEST=$(docker inspect --format='{{.Id}}' $TILER_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
-# Get the image digest (content-based hash) - extract only the hash portion
-IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
-# Get the flood image digest (content-based hash) - extract only the hash portion
-FLOOD_IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_FLOOD_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
-BURN_IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_BURN_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
-CROP_IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_CROP_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
-SURYA_IMAGE_DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_SURYA_ROLLOUT_IMAGE_NAME | cut -d: -f2 | cut -c1-12)
-
-# Create final tag using just the short hash (no colons or special characters)
-IMAGE_TAG="${IMAGE_DIGEST}"
-PREDICTION_APP="inference:${IMAGE_TAG}"
-FLOODS_APP="inference_pipelines/floods:${FLOOD_IMAGE_DIGEST}"
-BURN_SCAR_APP="inference_pipelines/burn_scars:${BURN_IMAGE_DIGEST}"
-CROP_APP="inference_pipelines/crop_classification:${CROP_IMAGE_DIGEST}"
-SURYA_ROLLOUT_APP="inference_pipelines/surya_rollout:${SURYA_IMAGE_DIGEST}"
-export ECR_TILER_IMAGE_NAME="tile_server/tiler:${TILER_DIGEST}"
-
-# Tag the temp image with final name
-docker tag $TEMP_IMAGE_NAME $ECR_URL/$PREDICTION_APP
-docker tag $TEMP_FLOOD_IMAGE_NAME $ECR_URL/$FLOODS_APP
-docker tag $TEMP_BURN_IMAGE_NAME $ECR_URL/$BURN_SCAR_APP
-docker tag $TEMP_CROP_IMAGE_NAME $ECR_URL/$CROP_APP
-docker tag $TEMP_SURYA_ROLLOUT_IMAGE_NAME $ECR_URL/$SURYA_ROLLOUT_APP
-docker tag $TILER_IMAGE_NAME $ECR_URL/$ECR_TILER_IMAGE_NAME
-
-echo "Final image: $ECR_URL/$PREDICTION_APP"
-echo "Using ingress host: $INGRESS_HOST"
-
-export TF_VAR_prediction_app_image_url=$ECR_URL/$PREDICTION_APP
-export TF_VAR_floods_app_image_url=$ECR_URL/$FLOODS_APP
-export TF_VAR_burnScar_app_image_url=$ECR_URL/$BURN_SCAR_APP
-export TF_VAR_crop_app_image_url=$ECR_URL/$CROP_APP
-export TF_VAR_surya_rollout_image_url=$ECR_URL/$SURYA_ROLLOUT_APP
-export TF_VAR_tiler_image_url=$ECR_URL/$ECR_TILER_IMAGE_NAME
-
-# Push to ECR
-docker push $TF_VAR_prediction_app_image_url
-docker push $TF_VAR_floods_app_image_url
-docker push $TF_VAR_burnScar_app_image_url
-docker push $TF_VAR_crop_app_image_url
-docker push $TF_VAR_surya_rollout_image_url
-docker push $ECR_URL/$ECR_TILER_IMAGE_NAME
-
-
-# Clean up temporary image
-docker rmi $TEMP_IMAGE_NAME
-docker rmi $BASE_IMAGE_NAME
-docker rmi $TILER_IMAGE_NAME
-docker rmi $TEMP_FLOOD_IMAGE_NAME
-docker rmi $TEMP_BURN_IMAGE_NAME
-docker rmi $TEMP_CROP_IMAGE_NAME
-docker rmi $TEMP_SURYA_ROLLOUT_IMAGE_NAME
-
-# Post-Push Docker Cleanup (Opt-In)
-if [[ "${CLEANUP_AFTER_PUSH}" == "true" ]]; then
-    echo "CLEANUP_AFTER_PUSH is set to true. Cleaning up..."
-
-    # List of all pushed images to remove
-    PUSHED_IMAGES=(
-        "$TF_VAR_prediction_app_image_url"
-        "$TF_VAR_floods_app_image_url"
-        "$TF_VAR_burnScar_app_image_url"
-        "$TF_VAR_crop_app_image_url"
-        "$TF_VAR_surya_rollout_image_url"
-        "$ECR_URL/$ECR_TILER_IMAGE_NAME"
-        "$ECR_URL/$ECR_BASE_IMAGE_NAME"
-    )
-
-    for img in "${PUSHED_IMAGES[@]}"; do
-        # Remove the specific image tag/ID that was just built and pushed
-        if docker rmi "$img"; then
-            echo "Successfully removed image: $img"
-        else
-            echo "Warning: Failed to remove image $img. It might be in use."
-        fi
-    done
-
-    # Run docker image prune -f to remove dangling layers
-    echo "Pruning dangling layers..."
-    docker image prune -f
+# Initialize Docker Buildx (Persistent Builder)
+if ! docker buildx inspect prediction-builder > /dev/null 2>&1; then
+    docker buildx create --name prediction-builder --use
+else
+    docker buildx use prediction-builder
 fi
 
-# Post-Push Docker Cleanup (Opt-In)
-if [[ "${CLEANUP_AFTER_PUSH}" == "true" || "${CLEANUP_AFTER_PUSH}" == "aggressive" ]]; then
-    echo "CLEANUP_AFTER_PUSH is set to ${CLEANUP_AFTER_PUSH}. Cleaning up..."
+# Login to ECR (Once for all builds)
+aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin $ECR_URL
 
-    # Remove the specific image tag/ID that was just built and pushed
-    if docker rmi "$ECR_URL/$ECR_IMAGE_NAME"; then
-        echo "Successfully removed image: $ECR_URL/$ECR_IMAGE_NAME"
-    else
-        echo "Warning: Failed to remove image $ECR_URL/$ECR_IMAGE_NAME. It might be in use."
+# --- REUSABLE BUILD FUNCTION ---
+# Args: 1=RepoName, 2=Context, 3=Dockerfile, 4=BuildArgs, 5=ExportVarName
+build_and_deploy() {
+    local REPO_NAME="$1"
+    local CONTEXT="$2"
+    local FILE="$3"
+    local ARGS="$4"
+    local VAR_NAME="$5"
+    local TEMP_TAG="$REPO_NAME:temp"
+    
+    echo "--- Processing $REPO_NAME ---"
+    
+    # 1. Build (Persistent Cache automatically used)
+    # We use eval to expand the build args string properly
+    docker buildx build \
+      --platform linux/amd64 \
+      -t $TEMP_TAG \
+      --load \
+      -f $FILE \
+      $ARGS \
+      $CONTEXT
+
+    # 2. Generate Hash & Tag
+    local DIGEST=$(docker inspect --format='{{.Id}}' $TEMP_TAG | cut -d: -f2 | cut -c1-12)
+    local FULL_URL="$ECR_URL/$REPO_NAME:$DIGEST"
+
+    # 3. Push
+    docker tag $TEMP_TAG $FULL_URL
+    docker push $FULL_URL
+
+    # 4. Export the variable for envsubst
+    if [ -n "$VAR_NAME" ]; then
+        export $VAR_NAME=$FULL_URL
+        echo "Exported $VAR_NAME=$FULL_URL"
     fi
 
-    if [[ "${CLEANUP_AFTER_PUSH}" == "aggressive" ]]; then
-        echo "Performing AGGRESSIVE cleanup (system prune -af --volumes)..."
-        docker system prune -af --volumes
-    else
-        # Run docker image prune -f to remove dangling layers
-        echo "Pruning dangling layers..."
-        docker image prune -f
+    # 5. Cleanup ECR (Keep last 5)
+    # We silence the output to keep the logs clean, only reporting errors
+    local TO_DELETE=$(aws ecr describe-images --repository-name $REPO_NAME --query "imageDetails[? not_null(imageTags)].{digest: imageDigest, date: imagePushedAt}" --output json | jq -c "sort_by(.date) | .[:-${MAX_IMAGES}] | .[].digest")
+    
+    if [ -n "$TO_DELETE" ]; then
+        for digest in $TO_DELETE; do
+            clean_digest=$(echo $digest | tr -d '"')
+            aws ecr batch-delete-image --repository-name $REPO_NAME --image-ids imageDigest=$clean_digest > /dev/null
+        done
+        echo "Cleaned up old ECR images."
     fi
-fi
 
-# Generate deployment.yaml and ingress.yaml from templates using envsubst
+    # 6. Cleanup Local
+    docker rmi $TEMP_TAG $FULL_URL 2>/dev/null || true
+}
+
+# --- STEP 1: Build Base Image (Dependency) ---
+echo ">>> Building Base Image..."
+build_and_deploy "inference_pipelines/base" "pipelines" "pipelines/Dockerfile.base" "" "ECR_BASE_IMAGE_NAME"
+
+# --- STEP 2: Build Dependent Services ---
+# These use the Base Image we just built
+BASE_ARG="--build-arg BASE_IMAGE=$ECR_BASE_IMAGE_NAME"
+
+echo ">>> Building Dependent Services..."
+build_and_deploy "inference_pipelines/floods" "pipelines" "pipelines/floods/Dockerfile" "$BASE_ARG" "TF_VAR_floods_app_image_url"
+build_and_deploy "inference_pipelines/burn_scars" "pipelines" "pipelines/burn_scars/Dockerfile" "$BASE_ARG" "TF_VAR_burnScar_app_image_url"
+build_and_deploy "inference_pipelines/crop_classification" "pipelines" "pipelines/crop_classification/Dockerfile" "$BASE_ARG" "TF_VAR_crop_app_image_url"
+build_and_deploy "inference_pipelines/surya_rollout" "pipelines" "pipelines/surya/Dockerfile" "$BASE_ARG" "TF_VAR_surya_rollout_image_url"
+build_and_deploy "tile_server/tiler" "." "tile_server/Dockerfile" "$BASE_ARG" "TF_VAR_tiler_image_url"
+
+# --- STEP 3: Build Main Inference App ---
+echo ">>> Building Inference App..."
+# Note: DATABASE_URL is passed here as requested
+build_and_deploy "inference" "." "Dockerfile" "--build-arg DATABASE_URL=$DATABASE_URL" "TF_VAR_prediction_app_image_url"
+
+# --- STEP 4: Global Cleanup ---
+echo ">>> Performing Final System Prune..."
+docker image prune -f
+docker buildx prune -f --filter "until=$CACHE_RETENTION"
+
+# --- STEP 5: Deploy ---
+echo ">>> Generating Manifests..."
+# Generate ConfigMap from template
 envsubst < services-helm/configMap.yaml.tmpl > services-helm/configMap.yaml
+
+# DEBUG: Print the generated ConfigMap to verify variables were substituted
+echo "--- DEBUG: Generated ConfigMap Preview ---"
+cat services-helm/configMap.yaml
+echo "------------------------------------------"
 
 # Apply Kubernetes manifests
 kubectl apply -f services-helm/configMap.yaml
 
-# Optional: Load image to kind cluster if needed
-# kind load docker-image $ECR_URL/$PREDICTION_APP --name neo-cluster
+echo "Deployment Complete."
