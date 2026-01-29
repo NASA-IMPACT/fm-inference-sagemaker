@@ -87,8 +87,9 @@ def get_url():
     return os.environ.get('DATABASE_URL', 
                          config.get_main_option("sqlalchemy.url"))
 
-
-config.set_main_option('sqlalchemy.url', get_url())
+url = get_url()
+url = url.replace("%", "%%")  # escape for configparser
+config.set_main_option("sqlalchemy.url", url)
 
 if context.is_offline_mode():
     run_migrations_offline()
