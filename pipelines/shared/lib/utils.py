@@ -1,6 +1,7 @@
 import boto3
 import os
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from os import path
 from glob import glob
 from rasterio.io import MemoryFile
@@ -79,3 +80,17 @@ def upload_cog_to_s3(filename: str, prefix: str = "predictions") -> str:
         connection.upload_fileobj(memory_file, BUCKET_NAME, s3_prefix)
 
     return f"s3://{BUCKET_NAME}/{s3_prefix}"
+
+
+def upload_many_to_s3(paths: dict[str, str], max_workers: int = 4) -> dict[str, str]:
+    """Upload many local paths to S3 in parallel; returns key->s3_link."""
+    results: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_key = {
+            executor.submit(upload_cog_to_s3, path): key
+            for key, path in paths.items()
+        }
+        for future in as_completed(future_to_key):
+            key = future_to_key[future]
+            results[key] = future.result()
+    return results
