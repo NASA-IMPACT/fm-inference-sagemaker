@@ -21,7 +21,7 @@ from fastapi.security import APIKeyHeader
 from lib.consts import BUCKET_NAME, LAYERS, CONFIG_PATH, MODEL_WEIGHT_PATH, USECASE, DOWNLOAD_FOLDER, NUM_CLASSES
 from lib.data_preparer import DataPreparer
 from lib.post_process import PostProcess
-from lib.utils import get_boto3_session, upload_cog_to_s3
+from lib.utils import get_boto3_session, upload_cog_to_s3, upload_many_to_s3
 
 from pydantic import BaseModel
 
@@ -387,20 +387,16 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     # Collect any DEM-based postprocessing artifacts attached by the model
     postprocess_artifacts = getattr(inference, "postprocess_artifacts", {}) or {}
 
-    start_time = time.time()
+    
     s3_link = upload_cog_to_s3(postprocessed_filename)
-
+    qa_postprocess_start_time = time.time()
     # QA masks per flag
     qa_flag_tifs = inference.qa_flags_to_tif(filename, qa_flags, timeseries=timeseries)
-    qa_links = {}
-    for flag, tif_path in qa_flag_tifs.items():
-        qa_links[flag] = upload_cog_to_s3(tif_path)
-
+    qa_links = upload_many_to_s3(qa_flag_tifs, max_workers=4)
+    print("!!! QA Postprocess and Upload Time:", time.time() - qa_postprocess_start_time)
     # upload postprocess artifacts to s3
-    supplement_links = {}
-    for name, local_path in postprocess_artifacts.items():
-        supplement_links[name] = upload_cog_to_s3(local_path)
-
+    supplement_links = upload_many_to_s3(postprocess_artifacts, max_workers=4)
+    start_time = time.time()
     stats = inference.calculate_area_from_mask(postprocessed_filename, mask_values=range(1, NUM_CLASSES))
     print("!!! stats calculation Time:", time.time() - start_time)
     del inference
