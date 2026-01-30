@@ -12,7 +12,7 @@ COPY requirements.txt /app/
 
 RUN pip install uv && uv pip install -r /app/requirements.txt --system
 
-COPY alembic /app
+COPY alembic /app/alembic
 
 ADD alembic.ini /app
 
