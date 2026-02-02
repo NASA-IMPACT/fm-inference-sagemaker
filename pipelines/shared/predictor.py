@@ -389,14 +389,16 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
 
     
     s3_link = upload_cog_to_s3(postprocessed_filename)
-    qa_postprocess_start_time = time.time()
-    # QA masks per flag
     qa_flag_tifs = inference.qa_flags_to_tif(filename, qa_flags, timeseries=timeseries)
-    qa_links = upload_many_to_s3(qa_flag_tifs, max_workers=4)
-    print("!!! QA Postprocess and Upload Time:", time.time() - qa_postprocess_start_time)
-    # upload postprocess artifacts to s3
-    supplement_links = upload_many_to_s3(postprocess_artifacts, max_workers=4)
-    start_time = time.time()
+
+    qa_postprocess_start_time = time.time()
+    # QA and supplemental outputs
+    qa_and_postprocess = {**postprocess_artifacts, **qa_flag_tifs}
+    qa_and_postprocess_links = upload_many_to_s3(qa_and_postprocess, max_workers=4)
+    qa_links = {k: qa_and_postprocess_links[k] for k in qa_flag_tifs.keys()}
+    supplement_links = {k: qa_and_postprocess_links[k] for k in postprocess_artifacts.keys()}
+    print("!!! QA Postprocess Upload Time:", time.time() - qa_postprocess_start_time)
+    
     stats = inference.calculate_area_from_mask(postprocessed_filename, mask_values=range(1, NUM_CLASSES))
     print("!!! stats calculation Time:", time.time() - start_time)
     del inference
