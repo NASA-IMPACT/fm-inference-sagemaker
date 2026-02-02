@@ -169,14 +169,16 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
                     results[model_id][date] = results[model_id].get(date, {})
                     results[model_id][date] = response.json()[model_id]
 
-                    infered_results = results[model_id][date]
-                    inference.results = inference.results if inference.results else {}
-                    inference.results[model_id] = inference.results.get(model_id, {})
-                    inference.results[model_id][date] = {
-                        "qa_tif": infered_results['qa_link'],
-                        "s3_link": infered_results['s3_link'],
-                        "stats": infered_results['stats']
-                    }
+                infered_results = results[model_id][date]
+                inference.results = inference.results or {}
+                inference.results[model_id] = inference.results.get(model_id, {})
+                result_entry = {
+                    "s3_link": infered_results['s3_link'],
+                    "stats": infered_results['stats'],
+                }
+                result_entry['qa_links'] = infered_results.get("qa_links", {})
+                result_entry["postprocess_links"] = infered_results.get("postprocess_links", {})
+                inference.results[model_id][date] = result_entry
 
         # Convert Pydantic model to ORM model before adding to DB
         inference_details = inference.dict()

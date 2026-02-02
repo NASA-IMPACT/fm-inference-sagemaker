@@ -521,4 +521,17 @@ class DEMDownloader:
                 final_corrected = os.path.join(postproc_dir, flood_detection_file.replace('.tif', '_final_corrected.tif'))
                 shutil.copy(veg_output, final_corrected)
 
-        return final_corrected
+        artifacts = {
+            "dem": dem_file,
+            "slope": slope_file,
+            "solar_incidence": slia_file,
+            "terrain_corrected": terrain_output,
+            "aerosol_corrected": aerosol_output,
+            "vegetation_corrected": veg_output,
+            "ndvi": ndvi_file,
+        }
+
+        return {
+            "final": final_corrected,
+            "artifacts": artifacts,
+        }

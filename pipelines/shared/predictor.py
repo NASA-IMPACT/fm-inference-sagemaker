@@ -1,4 +1,3 @@
-import boto3
 import gc
 import geopandas as gpd
 import GPUtil
@@ -22,7 +21,7 @@ from fastapi.security import APIKeyHeader
 from lib.consts import BUCKET_NAME, LAYERS, CONFIG_PATH, MODEL_WEIGHT_PATH, USECASE, DOWNLOAD_FOLDER, NUM_CLASSES
 from lib.data_preparer import DataPreparer
 from lib.post_process import PostProcess
-from lib.utils import get_boto3_session
+from lib.utils import get_boto3_session, upload_cog_to_s3, upload_many_to_s3
 
 from pydantic import BaseModel
 
@@ -30,9 +29,6 @@ from rasterio.io import MemoryFile
 from rasterio.mask import mask
 from rasterio.merge import merge
 from rasterio.warp import calculate_default_transform, reproject, Resampling
-
-from rio_cogeo.cogeo import cog_translate
-from rio_cogeo.profiles import cog_profiles
 
 from shapely.geometry import shape, box
 
@@ -89,7 +85,7 @@ def download_from_s3(s3_path, download_path='config'):
     bucket = s3_connection.Bucket(BUCKET_NAME)
     filename = s3_path.split('/')[-1]
     file_path = f"{download_path}/{filename}"
-    if not(os.path.exists(file_path)):
+    if not os.path.exists(file_path):
         os.makedirs(download_path, exist_ok=True)
         os.makedirs('predictions', exist_ok=True)
         bucket.download_file(s3_path.replace(f's3://{BUCKET_NAME}/', ''), file_path)
@@ -283,30 +279,6 @@ def crop_file(filename, bbox, width=None, height=None, src_handle=None):
     return filename
 
 
-def upload_to_s3(filename):
-    output_profile = cog_profiles.get('deflate')
-    output_profile.update(dict(BIGTIFF="IF_SAFER"))
-
-    config = dict(
-        GDAL_NUM_THREADS="ALL_CPUS",
-        GDAL_TIFF_INTERNAL_MASK=True,
-        GDAL_TIFF_OVR_BLOCKSIZE="512",
-    )
-    s3_prefix = f"predictions/{filename.split('/')[-1]}"
-    with MemoryFile() as memory_file:
-        cog_translate(
-            filename,
-            memory_file.name,
-            output_profile,
-            config=config,
-            quiet=True,
-            in_memory=True,
-        )
-        connection = boto3.client('s3')
-        connection.upload_fileobj(memory_file, BUCKET_NAME, s3_prefix)
-
-    return f"s3://{BUCKET_NAME}/{s3_prefix}"
-
 def post_process(detections, transform):
     contours, shape = PostProcess.prepare_contours(detections)
     detections = PostProcess.extract_shapes(detections, contours, transform, shape)
@@ -407,16 +379,26 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
     postprocess_method = getattr(inference, 'postprocess')
     sig = inspect.signature(postprocess_method)
     if 'source_width' in sig.parameters and 'source_height' in sig.parameters:
-        postprocessed_filename = inference.postprocess(bounding_box, date, prediction_filename, filename,
-                                                       source_width=source_width, source_height=source_height)
+        postprocessed_filename = inference.postprocess(bounding_box, date,prediction_filename,filename,source_width=source_width,source_height=source_height)
     else:
         postprocessed_filename = inference.postprocess(bounding_box, date, prediction_filename, filename)
     print("!!! Crop and Postprocess Time:", time.time() - start_time)
 
-    start_time = time.time()
-    s3_link = upload_to_s3(postprocessed_filename)
-    qa_tif = inference.qa_flags_to_tif(filename, qa_flags, timeseries=timeseries)
-    qa_link = upload_to_s3(qa_tif)
+    # Collect any DEM-based postprocessing artifacts attached by the model
+    postprocess_artifacts = getattr(inference, "postprocess_artifacts", {}) or {}
+
+    
+    s3_link = upload_cog_to_s3(postprocessed_filename)
+    qa_flag_tifs = inference.qa_flags_to_tif(filename, qa_flags, timeseries=timeseries)
+
+    qa_postprocess_start_time = time.time()
+    # QA and supplemental outputs
+    qa_and_postprocess = {**postprocess_artifacts, **qa_flag_tifs}
+    qa_and_postprocess_links = upload_many_to_s3(qa_and_postprocess, max_workers=4)
+    qa_links = {k: qa_and_postprocess_links[k] for k in qa_flag_tifs.keys()}
+    supplement_links = {k: qa_and_postprocess_links[k] for k in postprocess_artifacts.keys()}
+    print("!!! QA Postprocess Upload Time:", time.time() - qa_postprocess_start_time)
+    
     stats = inference.calculate_area_from_mask(postprocessed_filename, mask_values=range(1, NUM_CLASSES))
     print("!!! stats calculation Time:", time.time() - start_time)
     del inference
@@ -425,7 +407,12 @@ def infer(filename, scale, model_id, bounding_box, date, qa_flags, timeseries=Fa
         torch.cuda.empty_cache()
 
     return {
-        model_id: {'s3_link': s3_link, 'qa_link': qa_link, 'stats': stats}
+        model_id: {
+            's3_link': s3_link,
+            'qa_links': qa_links,
+            'stats': stats,
+            'postprocess_links': supplement_links,
+        }
     }
 
 # Define a model for the POST request body
