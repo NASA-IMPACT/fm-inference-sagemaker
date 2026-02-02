@@ -170,7 +170,7 @@ def create_inference_router(auth_dependency: Callable) -> APIRouter:
                     results[model_id][date] = response.json()[model_id]
 
                     infered_results = results[model_id][date]
-                    inference.results = inference.results if inference.results else {}
+                    inference.results = inference.results or {}
                     inference.results[model_id] = inference.results.get(model_id, {})
                     result_entry = {
                         "s3_link": infered_results['s3_link'],
