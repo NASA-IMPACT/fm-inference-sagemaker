@@ -1,34 +1,51 @@
-# Use regular Python base image for local development
-FROM python:3.12-slim
+# Optimized Multi-Stage Production Dockerfile
+# Stage 1: Build stage
+FROM python:3.12-slim AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y gcc g++ && apt-get clean git && apt-get install -y gdal-bin libgdal-dev
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        git \
+        libgdal-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install Python dependencies
-COPY requirements.txt /app/
+# Install uv and dependencies
+COPY requirements.txt .
+# Use torch-cpu to save space
+RUN pip install --no-cache-dir uv && \
+    uv pip install --system --no-cache -r requirements.txt \
+    --extra-index-url https://download.pytorch.org/whl/cpu
 
-RUN pip install uv && uv pip install -r /app/requirements.txt --system
+# Stage 2: Runtime stage
+FROM python:3.12-slim
 
+WORKDIR /app
+
+# Install GDAL runtime libraries only
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gdal-bin \
+        libgdal36 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed python packages from builder
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy application files
 COPY alembic /app/alembic
-
-ADD alembic.ini /app
-
-ARG DATABASE_URL
-
-ENV DATABASE_URL=$DATABASE_URL
-
-# RUN alembic -x dburl="${DATABASE_URL}" revision --autogenerate -m "create tables" && \
-#     alembic -x dburl="${DATABASE_URL}" upgrade head
-
-# Copy the rest of the application
+COPY alembic.ini /app/
 COPY src /app/src
+
+# Environment
+ENV PYTHONUNBUFFERED=1
 
 # Expose port
 EXPOSE 8000
 
-# Default command for development (can be overridden by docker-compose)
-# Making K8s control the process with a service account
+# Command
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,3 +1,4 @@
+
 **/__pycache__/
 *.pyc
 *.pyo
@@ -9,7 +10,11 @@ __pypackages__/
 .DS_Store
 .env
 
-k8s-manifests/deployment.yaml
+# Build artifacts
+*-local
+*-slim
+test-report-*.txt
 
+k8s-manifests/deployment.yaml
 k8s-manifests/ingress.yaml
 
