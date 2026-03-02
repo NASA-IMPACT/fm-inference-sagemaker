@@ -13,6 +13,7 @@ DRY_RUN_CLEANUP="${DRY_RUN_CLEANUP:-false}"
 CLEANUP_AFTER_PUSH="${CLEANUP_AFTER_PUSH:-false}" # Auto-cleanup local images after successful push
 SKIP_PUSH="${SKIP_PUSH:-false}" # Skip pushing to ECR (for local testing)
 SKIP_DEPLOY="${SKIP_DEPLOY:-false}" # Skip Kubernetes deployment
+PARALLEL_BUILDS="${PARALLEL_BUILDS:-true}" # Build service images in parallel
 
 # Service definitions (single source of truth): name:dockerfile
 SERVICES=(
@@ -22,13 +23,24 @@ SERVICES=(
     "surya_rollout:surya/Dockerfile"
 )
 
-# Map service names to Terraform variable names
-declare -A SERVICE_TF_VARS=(
-    [floods]="TF_VAR_floods_app_image_url"
-    [burn_scars]="TF_VAR_burnScar_app_image_url"
-    [crop_classification]="TF_VAR_crop_app_image_url"
-    [surya_rollout]="TF_VAR_surya_rollout_image_url"
+# Map service names to Terraform variable names (name:tf_var)
+SERVICE_TF_VARS=(
+    "floods:TF_VAR_floods_app_image_url"
+    "burn_scars:TF_VAR_burnScar_app_image_url"
+    "crop_classification:TF_VAR_crop_app_image_url"
+    "surya_rollout:TF_VAR_surya_rollout_image_url"
 )
+
+# Lookup helper: get_tf_var <service_name> prints the matching TF var (or empty)
+get_tf_var() {
+    local name=$1
+    for entry in "${SERVICE_TF_VARS[@]}"; do
+        if [[ "${entry%%:*}" == "$name" ]]; then
+            echo "${entry#*:}"
+            return
+        fi
+    done
+}
 
 # Tracking for cleanup
 PUSHED_IMAGES=()
@@ -157,8 +169,8 @@ if [[ "$SKIP_PUSH" != "true" ]]; then
     MAIN_CACHE_ARGS=(--cache-from "$ECR_URL/inference:latest")
 fi
 
-docker build \
-    "${MAIN_CACHE_ARGS[@]}" \
+docker buildx build --platform linux/amd64 \
+    ${MAIN_CACHE_ARGS[@]+"${MAIN_CACHE_ARGS[@]}"} \
     --build-arg DATABASE_URL="${DATABASE_URL:-}" \
     -t "$INFERENCE_IMAGE" \
     -f Dockerfile .
@@ -179,7 +191,7 @@ if [[ "$SKIP_PUSH" != "true" ]]; then
 fi
 
 BASE_IMAGE="base:latest-local"
-docker build "${CACHE_FROM_ARGS[@]}" -t "$BASE_IMAGE" -f Dockerfile.base .
+docker buildx build --platform linux/amd64 ${CACHE_FROM_ARGS[@]+"${CACHE_FROM_ARGS[@]}"} -t "$BASE_IMAGE" -f Dockerfile.base .
 
 BASE_DIGEST=$(docker inspect --format='{{.Id}}' "$BASE_IMAGE" | cut -d: -f2 | cut -c1-12)
 BASE_TAG="inference_pipelines/base:${BASE_DIGEST}"
@@ -192,9 +204,13 @@ else
     INTERNAL_BASE_REF="$ECR_URL/$BASE_TAG"
 fi
 
-# Build service images in parallel
+# Build service images
 echo "" >&2
-echo "Building service images in parallel..." >&2
+if [[ "$PARALLEL_BUILDS" == "true" ]]; then
+    echo "Building service images in parallel..." >&2
+else
+    echo "Building service images sequentially..." >&2
+fi
 BUILD_TMPDIR=$(mktemp -d)
 PIDS=()
 
@@ -212,8 +228,8 @@ for s_data in "${SERVICES[@]}"; do
         fi
 
         svc_img="${service}:latest-local"
-        docker build \
-            "${S_CACHE_FROM_ARGS[@]}" \
+        docker buildx build --platform linux/amd64 \
+            ${S_CACHE_FROM_ARGS[@]+"${S_CACHE_FROM_ARGS[@]}"} \
             --build-arg BASE_IMAGE="$INTERNAL_BASE_REF" \
             -t "$svc_img" \
             -f "$dockerfile" .
@@ -222,12 +238,17 @@ for s_data in "${SERVICES[@]}"; do
         echo "inference_pipelines/${service}:${s_digest}" > "$BUILD_TMPDIR/${service}.tag"
     ) &
     PIDS+=($!)
+
+    # If sequential mode, wait for each build before starting the next
+    if [[ "$PARALLEL_BUILDS" != "true" ]]; then
+        wait "${PIDS[-1]}" || { echo "Error: $service build failed!" >&2; rm -rf "$BUILD_TMPDIR"; exit 1; }
+    fi
 done
 
-# Wait for all parallel builds
+# Wait for all parallel builds (no-op in sequential mode since we already waited)
 BUILD_FAILED=0
 for pid in "${PIDS[@]}"; do
-    wait "$pid" || BUILD_FAILED=1
+    wait "$pid" 2>/dev/null || BUILD_FAILED=1
 done
 
 if [[ $BUILD_FAILED -ne 0 ]]; then
@@ -257,8 +278,8 @@ if [[ "$SKIP_PUSH" != "true" ]]; then
 fi
 
 TILER_IMAGE="tiler:latest-local"
-docker build \
-    "${T_CACHE_FROM_ARGS[@]}" \
+docker buildx build --platform linux/amd64 \
+    ${T_CACHE_FROM_ARGS[@]+"${T_CACHE_FROM_ARGS[@]}"} \
     --build-arg BASE_IMAGE="$INTERNAL_BASE_REF" \
     -t "$TILER_IMAGE" \
     -f tile_server/Dockerfile .
@@ -317,7 +338,7 @@ if [[ "$SKIP_PUSH" != "true" ]]; then
 
     for tag in "${SERVICE_TAGS[@]}"; do
         svc_name=$(echo "$tag" | cut -d/ -f2 | cut -d: -f1)
-        tf_var="${SERVICE_TF_VARS[$svc_name]:-}"
+        tf_var=$(get_tf_var "$svc_name")
         if [[ -n "$tf_var" ]]; then
             export "$tf_var=$ECR_URL/$tag"
         fi
@@ -356,6 +377,32 @@ if [[ "$CLEANUP_AFTER_PUSH" == "true" && ${#PUSHED_IMAGES[@]} -gt 0 ]]; then
             echo "    Removing $img..." >&2
             docker rmi "$img" 2>/dev/null || echo "    Failed to remove $img" >&2
         fi
+    done
+fi
+
+# Remove stale local tags from prior builds (keeps only the current build's tag per repo)
+if [[ "$CLEANUP_AFTER_PUSH" == "true" && "$SKIP_PUSH" != "true" ]]; then
+    echo "  Removing stale local tags from previous builds..." >&2
+
+    # repo:keep_tag pairs
+    IMAGES_TO_CLEAN=(
+        "$ECR_URL/inference:${IMAGE_DIGEST}"
+        "$ECR_URL/inference_pipelines/base:${BASE_DIGEST}"
+        "$ECR_URL/tile_server/tiler:${TILER_DIGEST}"
+    )
+    for tag in "${SERVICE_TAGS[@]}"; do
+        svc_repo=$(echo "$tag" | cut -d: -f1)       # e.g. inference_pipelines/floods
+        svc_digest=$(echo "$tag" | cut -d: -f2)      # e.g. abc123def456
+        IMAGES_TO_CLEAN+=("$ECR_URL/$svc_repo:$svc_digest")
+    done
+
+    for entry in "${IMAGES_TO_CLEAN[@]}"; do
+        IMAGE_NAME="${entry%:*}"
+        KEEP_TAG="${entry##*:}"
+        docker images "$IMAGE_NAME" --format "{{.Tag}}" | grep -v "^${KEEP_TAG}$" | grep -v "^<none>$" | while read TAG; do
+            echo "    Removing old tag: $IMAGE_NAME:$TAG" >&2
+            docker rmi "$IMAGE_NAME:$TAG" 2>/dev/null || echo "    Failed to remove $IMAGE_NAME:$TAG" >&2
+        done
     done
 fi
 
