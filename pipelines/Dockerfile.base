@@ -40,12 +40,6 @@ RUN python3.11 -m pip install --no-cache-dir --force-reinstall --no-deps numpy &
     python3.11 -c "import numpy; print('NumPy working:', numpy.__version__)" || \
     echo "NumPy test failed, will build GDAL without NumPy"
 
-# Force baseline x86-64 ISA for all compilations (including cmake checks).
-# Prevents QEMU "Illegal instruction" crashes when cross-compiling linux/amd64
-# on ARM hosts — QEMU can't emulate SSE4.2/AVX instructions that -O3 may emit.
-ENV CFLAGS="-march=x86-64" CXXFLAGS="-march=x86-64"
-
-# PROJ build: -j1 + retry for QEMU resilience
 RUN cd /tmp && \
     wget https://download.osgeo.org/proj/proj-9.3.0.tar.gz && \
     tar -xzf proj-9.3.0.tar.gz && \
@@ -60,13 +54,7 @@ RUN cd /tmp && \
         -DENABLE_CURL=OFF \
         -DBUILD_TESTING=OFF \
         -DBUILD_APPS=OFF && \
-    proj_ok=0 && \
-    for attempt in 1 2 3; do \
-        echo "PROJ build attempt $attempt..." && \
-        make -j1 VERBOSE=1 && proj_ok=1 && break; \
-        echo "PROJ build failed (attempt $attempt), retrying..."; \
-    done && \
-    test "$proj_ok" = "1" && \
+    make -j$(nproc) VERBOSE=1 && \
     make install && \
     cd /tmp && \
     rm -rf proj-9.3.0*
@@ -93,17 +81,11 @@ RUN cd gdal-3.11.3/build && \
         -DPython_LOOKUP_VERSION=3.11 \
         -DSWIG_EXECUTABLE=/usr/bin/swig
 
-# Build GDAL: --parallel 1 + retry to work around QEMU "Illegal instruction" crashes.
-# Use bash -o pipefail so build failures aren't masked by the tee pipe.
+# Build GDAL with full parallelism
 RUN cd gdal-3.11.3/build && \
     echo "=== Starting GDAL Build ===" && \
-    gdal_ok=0 && \
-    for attempt in 1 2 3; do \
-        echo "GDAL build attempt $attempt..." && \
-        bash -c 'set -o pipefail; cmake --build ./ --parallel 1 2>&1 | tee build.log' && gdal_ok=1 && break; \
-        echo "=== BUILD FAILED (attempt $attempt) - Last 50 lines ===" && tail -50 build.log; \
-    done && \
-    test "$gdal_ok" = "1"
+    cmake --build ./ --parallel $(nproc) 2>&1 | tee build.log || \
+    (echo "=== BUILD FAILED - Last 50 lines ===" && tail -50 build.log && exit 1)
 
 # Install
 RUN cd gdal-3.11.3/build && \
