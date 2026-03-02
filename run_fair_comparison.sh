@@ -14,10 +14,16 @@ set -euo pipefail
 # --platform linux/amd64. The difference is parallel vs sequential builds
 # and script overhead.
 #
+# Safety: Set SKIP_PRUNE=true to skip Docker prune between cold runs.
+#         This avoids destroying images/volumes used by other services
+#         on shared machines.
+#
 # Validation: Both scripts use set -e / set -euo pipefail, so exit code 0
 # guarantees all 7 images were built. We additionally count build messages
 # in the log as a sanity check.
 ##############################################################################
+
+SKIP_PRUNE="${SKIP_PRUNE:-false}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RESULTS_FILE="$SCRIPT_DIR/build_timing_fair_comparison.txt"
@@ -34,6 +40,11 @@ header() {
 }
 
 prune_all() {
+    if [[ "$SKIP_PRUNE" == "true" ]]; then
+        echo "  SKIP_PRUNE=true: Skipping Docker prune (shared environment safety)."
+        echo "  Note: 'cold' results reflect whatever cache state exists."
+        return 0
+    fi
     echo "  Pruning all Docker images and build cache (cold start)..."
     docker system prune -af --volumes 2>&1 | tail -3
     docker builder prune -af 2>&1 | tail -3
