@@ -25,7 +25,7 @@ RUN uv pip install -e .
 
 RUN git clone https://github.com/NASA-IMPACT/Surya.git /tmp/surya_source && \
     cd /tmp/surya_source && \
-    uv pip install --no-cache . && \
+    uv pip install --no-cache --reinstall-package surya . && \
     rm -rf /tmp/surya_source
 
 # Download Surya model from HuggingFace using git-lfs
