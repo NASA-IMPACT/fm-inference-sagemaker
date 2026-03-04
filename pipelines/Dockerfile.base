@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y software-properties-common && \
         cmake ninja-build \
         swig4.0 python3-setuptools \
         python3.11 python3-pip python3.11-venv python3.11-dev \
-        sqlite3 \
+        sqlite3 libsqlite3-dev \
         ffmpeg libsm6 libxext6 libgl1 && \
     ln -sf /usr/bin/swig4.0 /usr/bin/swig && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
