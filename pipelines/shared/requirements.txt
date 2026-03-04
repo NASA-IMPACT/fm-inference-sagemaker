@@ -18,7 +18,6 @@ rasterio
 rio-cogeo
 scipy
 shapely
-shapely
 starlette
 terratorch==1.0.2
 tqdm
