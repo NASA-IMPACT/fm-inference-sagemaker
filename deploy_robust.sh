@@ -169,7 +169,7 @@ if [[ "$SKIP_PUSH" != "true" ]]; then
     MAIN_CACHE_ARGS=(--cache-from "$ECR_URL/inference:latest")
 fi
 
-docker buildx build --platform linux/amd64 \
+docker build \
     ${MAIN_CACHE_ARGS[@]+"${MAIN_CACHE_ARGS[@]}"} \
     --build-arg DATABASE_URL="${DATABASE_URL:-}" \
     -t "$INFERENCE_IMAGE" \
@@ -191,7 +191,7 @@ if [[ "$SKIP_PUSH" != "true" ]]; then
 fi
 
 BASE_IMAGE="base:latest-local"
-docker buildx build --platform linux/amd64 ${CACHE_FROM_ARGS[@]+"${CACHE_FROM_ARGS[@]}"} -t "$BASE_IMAGE" -f Dockerfile.base .
+docker build ${CACHE_FROM_ARGS[@]+"${CACHE_FROM_ARGS[@]}"} -t "$BASE_IMAGE" -f Dockerfile.base .
 
 BASE_DIGEST=$(docker inspect --format='{{.Id}}' "$BASE_IMAGE" | cut -d: -f2 | cut -c1-12)
 BASE_TAG="inference_pipelines/base:${BASE_DIGEST}"
@@ -228,7 +228,7 @@ for s_data in "${SERVICES[@]}"; do
         fi
 
         svc_img="${service}:latest-local"
-        docker buildx build --platform linux/amd64 \
+        docker build \
             ${S_CACHE_FROM_ARGS[@]+"${S_CACHE_FROM_ARGS[@]}"} \
             --build-arg BASE_IMAGE="$INTERNAL_BASE_REF" \
             -t "$svc_img" \
@@ -278,7 +278,7 @@ if [[ "$SKIP_PUSH" != "true" ]]; then
 fi
 
 TILER_IMAGE="tiler:latest-local"
-docker buildx build --platform linux/amd64 \
+docker build \
     ${T_CACHE_FROM_ARGS[@]+"${T_CACHE_FROM_ARGS[@]}"} \
     --build-arg BASE_IMAGE="$INTERNAL_BASE_REF" \
     -t "$TILER_IMAGE" \
