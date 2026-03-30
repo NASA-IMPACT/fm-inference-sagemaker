@@ -11,7 +11,7 @@ export INGRESS_HOST="your-ingress-host.com"
 export DATABASE_URL="postgresql://..."
 
 # Run deployment
-./deploy_robust.sh
+./build_and_push.sh
 ```
 
 ## What It Does
@@ -28,16 +28,16 @@ Control behavior with environment variables:
 
 ```bash
 # Keep 10 images instead of 5
-MAX_IMAGES_TO_KEEP=10 ./deploy_robust.sh
+MAX_IMAGES_TO_KEEP=10 ./build_and_push.sh
 
 # Preview cleanup without deleting
-DRY_RUN_CLEANUP=true ./deploy_robust.sh
+DRY_RUN_CLEANUP=true ./build_and_push.sh
 
 # Automatically remove locally tagged images after successful push
-CLEANUP_AFTER_PUSH=true ./deploy_robust.sh
+CLEANUP_AFTER_PUSH=true ./build_and_push.sh
 
 # Test build locally without pushing or deploying
-SKIP_PUSH=true SKIP_DEPLOY=true ./deploy_robust.sh
+SKIP_PUSH=true SKIP_DEPLOY=true ./build_and_push.sh
 ```
 
 ## Multistage Builds
@@ -95,5 +95,5 @@ With caching enabled:
     ECR_URL: ${{ secrets.ECR_URL }}
     INGRESS_HOST: ${{ secrets.INGRESS_HOST }}
     CLEANUP_AFTER_PUSH: true
-  run: ./deploy_robust.sh
+  run: ./build_and_push.sh
 ```
