@@ -1,8 +1,8 @@
-from typing import List, TypeVar, Generic
+from typing import List, TypeVar
 from sqlalchemy.orm import Query
 from fastapi import Response
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class PaginationHelper:
@@ -10,11 +10,7 @@ class PaginationHelper:
 
     @staticmethod
     def paginate(
-        query: Query,
-        response: Response,
-        base_url: str,
-        skip: int = 0,
-        limit: int = 10
+        query: Query, response: Response, base_url: str, skip: int = 0, limit: int = 10
     ) -> List[T]:
         """
         Paginate a SQLAlchemy query and set appropriate response headers.
@@ -50,7 +46,9 @@ class PaginationHelper:
         # Previous link
         if skip > 0:
             previous_skip = max(0, skip - limit)
-            previous_link = f'<{base_url}?skip={previous_skip}&limit={limit}>; rel="prev"'
+            previous_link = (
+                f'<{base_url}?skip={previous_skip}&limit={limit}>; rel="prev"'
+            )
             links.append(previous_link)
 
         # First link

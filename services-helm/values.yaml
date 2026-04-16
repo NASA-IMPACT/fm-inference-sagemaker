@@ -5,6 +5,10 @@ predictionContainer:
   imageUrl: ""
   pullPolicy: IfNotPresent
   replicaCount: 1
+  resources_request_cpu: "2"
+  resources_request_memory: "8Gi"
+  resources_limit_cpu: "3"
+  resources_limit_memory: "12Gi"
 
 tileServiceContainer:
   imageUrl: ""
@@ -31,6 +35,17 @@ suryaRolloutContainer:
   pullPolicy: IfNotPresent
   replicaCount: 1
 
+
+goServicesContainer:
+  imageUrl: "ghcr.io/amarouane-abdelhak/temporalio-fib-worker:1.x.2"
+  replicaCount: 5
+  resources_request_cpu: "500m"
+  resources_request_memory: "512Mi"
+  resources_limit_cpu: "2000m"
+  resources_limit_memory: "1Gi"
+
+
+
 imagePullSecrets: ecr-registry-key
 
 hostServices: ""
@@ -42,3 +57,6 @@ ingressPrediction:
 ingressSunTiler:
   path: /api/tiles
   tlsSecretName: ingress-tls
+
+ingresGoServices:
+  path: /api/predict/v1/go

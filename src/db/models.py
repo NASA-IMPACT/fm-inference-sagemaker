@@ -1,34 +1,70 @@
 import uuid
+import enum
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, DateTime, Enum, ForeignKey, Boolean, Table, JSON, CheckConstraint
-
+    Column,
+    String,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Table,
+    JSON,
+    CheckConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base, relationship
-import enum
 
 Base = declarative_base()
+
+
+# Wrapper needed for Python 3.12 + SQLAlchemy 2.x compatibility
+# (uuid.uuid4 has __annotations__=None which breaks wrap_callable)
+def _gen_uuid():
+    return uuid.uuid4()
+
 
 class SourceType(str, enum.Enum):
     huggingface = "huggingface"
     s3 = "s3"
 
+
+class InferenceStatus(str, enum.Enum):
+    queued = "queued"
+    download = "download"
+    pre_inference = "pre_inference"
+    inference = "inference"
+    post_inference = "post_inference"
+    complete = "complete"
+    failed = "failed"
+
+
 class BaseFM(str, enum.Enum):
     surya = "surya"
     prithvi = "prithvi"
 
+
 inference_finetuned_model = Table(
     "inference_finetuned_model",
     Base.metadata,
-    Column("inference_id", UUID(as_uuid=True), ForeignKey("inferences.id"), primary_key=True),
-    Column("finetuned_model_id", UUID(as_uuid=True), ForeignKey("finetuned_models.id"), primary_key=True)
+    Column(
+        "inference_id",
+        UUID(as_uuid=True),
+        ForeignKey("inferences.id"),
+        primary_key=True,
+    ),
+    Column(
+        "finetuned_model_id",
+        UUID(as_uuid=True),
+        ForeignKey("finetuned_models.id"),
+        primary_key=True,
+    ),
 )
+
 
 class FinetunedModel(Base):
     __tablename__ = "finetuned_models"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=_gen_uuid)
     name = Column(String, nullable=False)
     source_type = Column(Enum(SourceType), nullable=False)
     source_details = Column(JSON, nullable=False)
@@ -36,34 +72,47 @@ class FinetunedModel(Base):
     data_config = Column(JSON, nullable=True)
     base_fm = Column(Enum(BaseFM), nullable=True)
 
+
 class Inference(Base):
     __tablename__ = "inferences"
     __table_args__ = (
         CheckConstraint(
             "user_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'",
-            name='valid_email_format'
+            name="valid_email_format",
         ),
     )
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=_gen_uuid)
     name = Column(String, nullable=False)
-    query = Column(JSON, nullable=True) # contains bbox, date, or date range
+    query = Column(JSON, nullable=True)  # contains bbox, date, or date range
+    status = Column(
+        Enum(InferenceStatus), nullable=False, default=InferenceStatus.queued
+    )
+    error_stage = Column(String, nullable=True)
+    error_message = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.now(timezone.utc),
+        onupdate=datetime.now(timezone.utc),
+        nullable=False,
+    )
     user_email = Column(String(254), nullable=False)
     finetuned_models = relationship(
-        "FinetunedModel",
-        secondary=inference_finetuned_model,
-        backref="inferences"
+        "FinetunedModel", secondary=inference_finetuned_model, backref="inferences"
     )
 
     results = Column(JSON, nullable=True)  # Store results as JSON
 
+
 class PreloadedEvent(Base):
     __tablename__ = "preloaded_events"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=_gen_uuid)
     event_name = Column(String, nullable=False)
     event_details = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.now(timezone.utc), nullable=False)
-    inference_id = Column(UUID(as_uuid=True), ForeignKey("inferences.id"), nullable=True)
+    inference_id = Column(
+        UUID(as_uuid=True), ForeignKey("inferences.id"), nullable=True
+    )
     inference = relationship("Inference", backref="preloaded_events")

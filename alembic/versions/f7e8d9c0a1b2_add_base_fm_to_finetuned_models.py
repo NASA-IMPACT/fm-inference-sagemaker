@@ -5,19 +5,20 @@ Revises: bcca3e997123
 Create Date: 2026-01-13 11:38:17.000000
 
 """
+
 from alembic import op
 import sqlalchemy as sa
 import sys
 from pathlib import Path
 
 # Add src directory to path to import models
-sys.path.append(str(Path(__file__).parent.parent.parent / 'src'))
+sys.path.append(str(Path(__file__).parent.parent.parent / "src"))
 from db.models import BaseFM
 
 
 # revision identifiers, used by Alembic.
-revision = 'f7e8d9c0a1b2'
-down_revision = 'bcca3e997123'
+revision = "f7e8d9c0a1b2"
+down_revision = "bcca3e997123"
 branch_labels = None
 depends_on = None
 
@@ -34,19 +35,18 @@ def upgrade() -> None:
 
     if not result:
         # Create enum type using raw SQL for better compatibility
-        connection.execute(
-            sa.text("CREATE TYPE basefm AS ENUM ('surya', 'prithvi')")
-        )
+        connection.execute(sa.text("CREATE TYPE basefm AS ENUM ('surya', 'prithvi')"))
 
     # Add the base_fm column to finetuned_models table
-    op.add_column('finetuned_models',
-        sa.Column('base_fm', sa.Enum(BaseFM, name='basefm'), nullable=True)
+    op.add_column(
+        "finetuned_models",
+        sa.Column("base_fm", sa.Enum(BaseFM, name="basefm"), nullable=True),
     )
 
 
 def downgrade() -> None:
     # Drop the base_fm column
-    op.drop_column('finetuned_models', 'base_fm')
+    op.drop_column("finetuned_models", "base_fm")
 
     # Drop the BaseFM enum type
     connection = op.get_bind()

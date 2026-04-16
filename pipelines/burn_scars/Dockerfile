@@ -15,6 +15,7 @@ COPY shared/lib /app/lib
 COPY burn_scars/lib /app/lib
 
 COPY shared/predictor.py /app/
+COPY shared/inference_worker.py /app/inference_worker.py
 
 ENV USECASE=burn_scars
 
@@ -25,4 +26,7 @@ ENV STDS="[0.0308373261231399,0.03775894607078924,0.05499340234906741,0.07072351
 EXPOSE 8001
 
 # Default command for development (can be overridden by docker-compose)
-CMD ["uvicorn", "predictor:app", "--host", "0.0.0.0", "--port", "8001"]
+COPY burn_scars/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+CMD ["/app/entrypoint.sh"]

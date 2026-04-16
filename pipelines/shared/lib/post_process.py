@@ -6,10 +6,7 @@ import rasterio.warp
 from geojson import Feature, Polygon
 from PIL import Image, ImageDraw
 from rasterio.crs import CRS
-from scipy.interpolate import splprep, splev
-from skimage.morphology import disk, binary_closing
 from shapely import geometry
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 AREA_THRESHOLD = 0.05
@@ -32,7 +29,9 @@ class PostProcess:
         bitmap = np.where(predictions > PREDICT_THRESHOLD, 255, 0).astype(dtype="uint8")
         img_blurred = cv2.blur(bitmap, BLUR_FACTOR)
         # Vectorized thresholding for blurred image
-        thresholded_img = np.where(img_blurred > BLUR_THRESHOLD, 255, 0).astype(dtype="uint8")
+        thresholded_img = np.where(img_blurred > BLUR_THRESHOLD, 255, 0).astype(
+            dtype="uint8"
+        )
         contours, _ = cv2.findContours(
             thresholded_img,
             cv2.RETR_EXTERNAL,
@@ -74,8 +73,10 @@ class PostProcess:
                 new_polygon = list(zip(x_arr.tolist(), y_arr.tolist()))
 
                 # Vectorized coordinate conversion
-                res_array = [cls.convert_xy_to_latlon(px, py, transform)
-                            for px, py in new_polygon]
+                res_array = [
+                    cls.convert_xy_to_latlon(px, py, transform)
+                    for px, py in new_polygon
+                ]
 
                 # Optimized mask creation and score calculation
                 img = Image.new("L", (shape[0], shape[1]), 0)
@@ -100,7 +101,9 @@ class PostProcess:
                     properties={
                         "score": shape[1],
                     },
-                    geometry=Polygon([[[float(lon), float(lat)] for lon, lat in shape[0]]]),
+                    geometry=Polygon(
+                        [[[float(lon), float(lat)] for lon, lat in shape[0]]]
+                    ),
                 )
             )
         # just return the list of features, wrapping is done in main.py
@@ -148,11 +151,16 @@ class PostProcess:
 
                 # Filter out intersecting polygons
                 polygon_indices = [
-                    idx for idx in polygon_indices
+                    idx
+                    for idx in polygon_indices
                     if not computed_polygons[idx].intersects(selected_polygon)
                 ]
 
-        return np.array(selected_shapes, dtype='object')[selected_indices] if selected_indices else np.array([])
+        return (
+            np.array(selected_shapes, dtype="object")[selected_indices]
+            if selected_indices
+            else np.array([])
+        )
 
     @classmethod
     def convert_xy_to_latlon(cls, row, col, transform):

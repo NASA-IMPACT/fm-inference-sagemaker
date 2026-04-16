@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import time
 import hashlib
 import datetime
 import traceback
@@ -16,7 +15,6 @@ from concurrent.futures import (
 from dataclasses import dataclass
 from earthaccess import search_data, download
 from typing import List, Tuple, Optional, Dict
-from rasterio.merge import merge as rio_merge
 
 
 # -------------------------
@@ -54,19 +52,23 @@ DOWNLOAD_FOLDER = os.environ.get("DOWNLOAD_FOLDER", "/root/.cache/")
 WIDTH, HEIGHT = (256, 256)
 DELTA = 90
 
+
 def _init_gdal_env():
     global gdal
     from osgeo import gdal as _gdal
+
     gdal = _gdal
-    os.environ.update({
-        "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
-        "GDAL_TIFF_INTERNAL_MASK": "YES",
-        "GDAL_TIFF_OVR_BLOCKSIZE": "256",
-        "GDAL_NUM_THREADS": "ALL_CPUS",
-        "GDAL_CACHEMAX": "8192",
-        "GDAL_WARP_MEMORY_LIMIT": "1073741824",
-        "GDAL_TIFF_DIRECT_IO": "YES",
-    })
+    os.environ.update(
+        {
+            "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+            "GDAL_TIFF_INTERNAL_MASK": "YES",
+            "GDAL_TIFF_OVR_BLOCKSIZE": "256",
+            "GDAL_NUM_THREADS": "ALL_CPUS",
+            "GDAL_CACHEMAX": "8192",
+            "GDAL_WARP_MEMORY_LIMIT": "1073741824",
+            "GDAL_TIFF_DIRECT_IO": "YES",
+        }
+    )
 
 
 def generate_digest(date: str, bbox: Tuple[float, float, float, float]) -> str:
@@ -98,9 +100,7 @@ def convert_band_to_uint16_vrt(src_file: str, out_dir: str) -> str:
     vrt_path = os.path.join(
         out_dir, os.path.basename(src_file).replace(".tif", "_u16.vrt")
     )
-    gdal.Translate(
-        vrt_path, src_file, format="VRT", outputType=gdal.GDT_UInt16
-    )
+    gdal.Translate(vrt_path, src_file, format="VRT", outputType=gdal.GDT_UInt16)
     return vrt_path
 
 
@@ -158,9 +158,7 @@ def merge_granule_tiffs(
 
     # Validate inputs
     valid_tiffs = [
-        t
-        for t in cropped_tiffs
-        if os.path.exists(t) and os.path.getsize(t) > 0
+        t for t in cropped_tiffs if os.path.exists(t) and os.path.getsize(t) > 0
     ]
     if not valid_tiffs:
         return ""
@@ -194,7 +192,6 @@ def merge_granule_tiffs(
         gdal.Translate(out_file, vrt_path, options=warp_opts)
 
     except Exception:
-
         return ""
 
     # 3️ Clean up temporary VRT
@@ -219,18 +216,14 @@ def worker_merge_and_crop(
     """
     _init_gdal_env()
     if not filenames:
-
         return "", None
 
     try:
         # Validate input files
         valid_files = [
-            f
-            for f in filenames
-            if os.path.exists(f) and os.path.getsize(f) > 0
+            f for f in filenames if os.path.exists(f) and os.path.getsize(f) > 0
         ]
         if not valid_files:
-
             return "", None
 
         # Convert bands to Float32 VRTs
@@ -241,22 +234,16 @@ def worker_merge_and_crop(
                 if os.path.exists(vrt):
                     vrt_bands.append(vrt)
             except Exception:
-
                 continue
 
         if not vrt_bands:
             return "", None
 
         # Merge, crop, and save GeoTIFF
-        cropped_tiff = merge_bands_crop_to_tiff(
-            uuid, vrt_bands, cfg
-        )
+        cropped_tiff = merge_bands_crop_to_tiff(uuid, vrt_bands, cfg)
 
         # Verify output
-        if (
-            not os.path.exists(cropped_tiff)
-            or os.path.getsize(cropped_tiff) == 0
-        ):
+        if not os.path.exists(cropped_tiff) or os.path.getsize(cropped_tiff) == 0:
             return "", None
 
         return cropped_tiff, "EPSG:4326"
@@ -271,10 +258,10 @@ def _download_granule_links(
 ) -> Tuple[str, List[str]]:
     """Download granule links and return list of downloaded files."""
     try:
+        earthaccess.login(strategy="environment")
         filenames = download(links, local_path=download_folder, threads=32)
         return (granule_id, filenames if filenames else [])
     except Exception:
-
         return (granule_id, [])
 
 
@@ -305,15 +292,19 @@ def search_and_download_granules(cfg, layer, date_range, bbox, cloud_cover):
             if f".{band}." in link
         ]
 
-        if all(any(f".{band}." in l for l in links)
-               for band in cfg.bands_map.get(layer, [])):
+        if all(
+            any(f".{band}." in link for link in links)
+            for band in cfg.bands_map.get(layer, [])
+        ):
             granule_link_list.append((granule.uuid, links))
 
     # Parallel downloads
     downloaded_granules = []
     with ThreadPoolExecutor(max_workers=cfg.thread_workers) as dl_executor:
         futures = {
-            dl_executor.submit(_download_granule_links, gid, links, cfg.download_folder): gid
+            dl_executor.submit(
+                _download_granule_links, gid, links, cfg.download_folder
+            ): gid
             for gid, links in granule_link_list
         }
         for f in as_completed(futures):
@@ -347,20 +338,22 @@ def process_downloaded_granules(cfg, downloaded_granules, date):
     return merge_results
 
 
-def create_empty_fallback(cfg,current_merged_file, final_filename):
+def create_empty_fallback(cfg, current_merged_file, final_filename):
     """Create an empty GeoTIFF matching reference file."""
     try:
         with rasterio.open(current_merged_file) as src:
             meta = src.meta.copy()
-            meta.update({
-                "driver": "GTiff",
-                "count": src.count,
-                "tiled": True,
-                "blockxsize": cfg.width,
-                "blockysize": cfg.height,
-                "dtype": "float32",
-                "nodata": -9999,
-            })
+            meta.update(
+                {
+                    "driver": "GTiff",
+                    "count": src.count,
+                    "tiled": True,
+                    "blockxsize": cfg.width,
+                    "blockysize": cfg.height,
+                    "dtype": "float32",
+                    "nodata": -9999,
+                }
+            )
             empty_data = np.full(
                 (src.count, src.height, src.width), -9999, dtype="float32"
             )
@@ -394,20 +387,24 @@ def prepare_merged_file_per_date(
 
     merged_files = []
     for layer in layers:
-        downloaded_granules = search_and_download_granules(cfg, layer, date_range, bbox, cloud_cover)
+        downloaded_granules = search_and_download_granules(
+            cfg, layer, date_range, bbox, cloud_cover
+        )
         merge_results = process_downloaded_granules(cfg, downloaded_granules, date)
         merged_files.extend(merge_results)
 
     # Handle empty case
     if not merged_files:
         if empty and current_merged_file:
-            if create_empty_fallback(cfg,current_merged_file, final_filename):
+            if create_empty_fallback(cfg, current_merged_file, final_filename):
                 return final_filename, timings
         return "", timings
 
     # Final mosaic merge
     try:
-        final_file = merge_granule_tiffs(cfg, merged_files, final_filename, timings, date)
+        final_file = merge_granule_tiffs(
+            cfg, merged_files, final_filename, timings, date
+        )
         return final_file, timings
     except Exception:
         traceback.print_exc()
@@ -479,9 +476,7 @@ class Downloader:
                 try:
                     datetime.datetime.strptime(date.strip(), "%Y-%m-%d")
                 except ValueError:
-                    raise ValueError(
-                        "Incorrect date format, should be YYYY-MM-DD"
-                    )
+                    raise ValueError("Incorrect date format, should be YYYY-MM-DD")
             date_list = [d.strip() for d in date_list]
         else:
             # Single date
@@ -504,16 +499,15 @@ class Downloader:
         Returns:
             Dictionary mapping dates to processed file paths.
         """
+        self.login()
+
         results: Dict[str, str] = {}
-        start_global = time.perf_counter()
 
         if self.timeseries:
             # Timeseries mode
             with ProcessPoolExecutor(max_workers=self.process_workers) as pool:
                 futures = {
-                    pool.submit(
-                        self.prepare_data_for_date_timeseries, date
-                    ): date
+                    pool.submit(self.prepare_data_for_date_timeseries, date): date
                     for date in self.dates
                 }
                 for f in as_completed(futures):
@@ -549,7 +543,6 @@ class Downloader:
                         if isinstance(local_timings, dict):
                             self.timings.update(local_timings)
                     except Exception:
-
                         results[date] = ""
 
         return results
@@ -559,9 +552,7 @@ class Downloader:
         """Convert date to start/end datetime strings."""
         return (f"{date}T00:00:00Z", f"{date}T23:59:59Z")
 
-    def prepare_date_range(
-        self, date: str, delta: int = DELTA
-    ) -> Tuple[str, str]:
+    def prepare_date_range(self, date: str, delta: int = DELTA) -> Tuple[str, str]:
         """Calculate date range with delta offset."""
         date_obj = datetime.datetime.strptime(date, "%Y-%m-%d")
         start_time = date_obj + datetime.timedelta(days=delta)
@@ -583,8 +574,6 @@ class Downloader:
         if direction < 0:
             min_delta, max_delta = max_delta, min_delta
         base_dt = datetime.datetime.strptime(base_date, "%Y-%m-%d")
-        direction_label = "pre" if direction == -1 else "post"
-
 
         for step in range(min_delta, max_delta + 1):
             candidate_dt = base_dt + datetime.timedelta(days=step)
@@ -608,7 +597,6 @@ class Downloader:
         self, date: str
     ) -> Tuple[Dict[str, str], Dict]:
         """Prepare timeseries data (pre/current/post) for a single date."""
-        t0 = time.perf_counter()
         prepared_data: Dict[str, str] = {}
         local_timings: Dict = {}
 

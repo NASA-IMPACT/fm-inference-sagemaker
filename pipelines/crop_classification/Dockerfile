@@ -16,6 +16,8 @@ COPY shared/lib /app/lib
 COPY crop_classification/lib /app/lib
 
 COPY shared/predictor.py /app/
+COPY shared/inference_worker.py /app/inference_worker.py
+
 
 ENV USECASE=crop_classification
 
@@ -27,4 +29,7 @@ ENV NUM_CLASSES="13"
 EXPOSE 8001
 
 # Default command for development (can be overridden by docker-compose)
-CMD ["uvicorn", "predictor:app", "--host", "0.0.0.0", "--port", "8001"]
+COPY crop_classification/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+CMD ["/app/entrypoint.sh"]

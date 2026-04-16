@@ -1,0 +1,21 @@
+name: Lint
+
+on:
+  pull_request:
+
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ruff Lint
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "check --exclude .venv"
+
+      - name: Ruff Format Check
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --check --exclude .venv"

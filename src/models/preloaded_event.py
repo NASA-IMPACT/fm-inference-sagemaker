@@ -1,8 +1,14 @@
-from pydantic import BaseModel, Field, validator
-from typing import Optional, List
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional
 from uuid import UUID
 from datetime import datetime, timezone
-import enum
+
+from pydantic import BaseModel, validator
+
+if TYPE_CHECKING:
+    from .inference import InferenceRead
+
 
 class PreloadedEventBase(BaseModel):
     id: UUID
@@ -15,21 +21,27 @@ class PreloadedEventBase(BaseModel):
         from_attributes = True
         # Ensure all datetime fields are timezone-aware and serialized in UTC
         json_encoders = {
-            datetime: lambda v: v.isoformat() if v.tzinfo else v.replace(tzinfo=timezone.utc).isoformat()
+            datetime: lambda v: (
+                v.isoformat()
+                if v.tzinfo
+                else v.replace(tzinfo=timezone.utc).isoformat()
+            )
         }
+
 
 class PreloadedEventRead(PreloadedEventBase):
     inference: Optional["InferenceRead"]
 
-    @validator('created_at', pre=True)
+    @validator("created_at", pre=True)
     def validate_created_at(cls, value):
         if isinstance(value, datetime) and value.tzinfo is None:
             # If datetime is naive, assume it's UTC
             return value.replace(tzinfo=timezone.utc)
         return value
 
+
 class PreloadedEventUpdate(PreloadedEventBase):
-    event_name: Optional[str] = ''
+    event_name: Optional[str] = ""
     event_details: Optional[dict] = {}
     inference_id: Optional[UUID]
     created_at: Optional[datetime] = None

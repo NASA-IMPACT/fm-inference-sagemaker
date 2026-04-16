@@ -12,10 +12,12 @@ RUN mkdir /app/lib
 # Copy the rest of the application
 COPY shared/lib /app/lib
 
+
 COPY floods/lib /app/lib
 
 
 COPY shared/predictor.py /app/
+COPY shared/inference_worker.py /app/inference_worker.py
 
 ENV USECASE=floods
 
@@ -27,4 +29,7 @@ ENV STDS="[1201.092, 1219.943, 1397.225, 1447.836, 1471.002, 1365.30]"
 EXPOSE 8001
 
 
-CMD ["uvicorn", "predictor:app", "--host", "0.0.0.0", "--port", "8001" ]
+COPY floods/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+CMD ["/app/entrypoint.sh"]

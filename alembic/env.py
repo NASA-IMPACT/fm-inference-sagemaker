@@ -8,9 +8,10 @@ from alembic import context
 # Import your models here
 import sys
 import os
+
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
-from src.db.models import Base, FinetunedModel, Inference, PreloadedEvent
+from src.db.models import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -71,21 +72,20 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
 
+
 def get_url():
-    url = context.get_x_argument(as_dictionary=True).get('dburl')
+    url = context.get_x_argument(as_dictionary=True).get("dburl")
     if url:
         return url
-    
+
     # Fallback to environment variable
-    return os.environ.get('DATABASE_URL', 
-                         config.get_main_option("sqlalchemy.url"))
+    return os.environ.get("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
+
 
 url = get_url()
 url = url.replace("%", "%%")  # escape for configparser

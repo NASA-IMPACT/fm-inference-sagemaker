@@ -22,18 +22,73 @@ spec:
     targetPort: 8090
   type: ClusterIP
 ---
+
+
 apiVersion: v1
 kind: Service
 metadata:
   name: floods-service
+spec:
+  clusterIP: None
+  selector:
+    app: floods-app
+  ports:
+  - port: 8080
+    targetPort: 8001
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: floods-service-lb
 spec:
   selector:
     app: floods-app
   ports:
   - port: 8080
     targetPort: 8001
-  type: ClusterIP
+
 ---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: crop-classification-service
+spec:
+  clusterIP: None
+  selector:
+    app: crop-classification-app
+  ports:
+  - port: 8082
+    targetPort: 8001
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: crop-classification-service-lb
+spec:
+  selector:
+    app: crop-classification-app
+  ports:
+  - port: 8082
+    targetPort: 8001
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: burn-scars-service-lb
+spec:
+  selector:
+    app: burn-scars-app
+  ports:
+  - port: 8081
+    targetPort: 8001
+
+---
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -44,20 +99,9 @@ spec:
   ports:
   - port: 8081
     targetPort: 8001
-  type: ClusterIP
+  clusterIP: None
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  name: crop-classification-service
-spec:
-  selector:
-    app: crop-classification-app
-  ports:
-  - port: 8082
-    targetPort: 8001
-  type: ClusterIP
----
+
 apiVersion: v1
 kind: Service
 metadata:
@@ -68,4 +112,32 @@ spec:
   ports:
   - port: 8083
     targetPort: 8001
+  clusterIP: None
+---
+
+
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: surya-rollout-service-lb
+spec:
+  selector:
+    app: surya-rollout-app
+  ports:
+  - port: 8083
+    targetPort: 8001
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-services-service
+spec:
+  selector:
+    app: go-services-app
+  ports:
+  - port: 80
+    targetPort: 8080
   type: ClusterIP
+---

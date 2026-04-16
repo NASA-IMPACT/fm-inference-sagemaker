@@ -1,0 +1,69 @@
+config:
+  target: "{{ $processEnvironment.TARGET_HOST }}"
+  http:
+    timeout: 30
+  processor: "./processor.js"
+  phases:
+      # Phase 1: Baseline — confirm service is healthy
+      - name: Baseline
+        duration: 60
+        arrivalRate: 1
+
+      # Phase 2: Gentle ramp — find where latency starts climbing
+      - name: Ramp to 5
+        duration: 120
+        arrivalRate: 1
+        rampTo: 5
+
+      # Phase 3: Hold — let HPA react and stabilize
+      - name: Hold at 5
+        duration: 180
+
+        arrivalRate: 5
+
+      # Phase 4: Push further
+      - name: Ramp to 10
+        duration: 120
+        arrivalRate: 5
+        rampTo: 10
+
+      # Phase 5: Hold — observe if it stabilizes or degrades
+      - name: Hold at 10
+        duration: 180
+        arrivalRate: 10
+
+      # Phase 6: Push to 20
+      - name: Ramp to 20
+        duration: 120
+        arrivalRate: 10
+        rampTo: 20
+
+      # Phase 7: Hold — likely where you'll see the ceiling
+      - name: Hold at 20
+        duration: 180
+        arrivalRate: 20
+
+  payload:
+    path: "payload.csv"
+    order: sequence
+    skipHeader: true
+    delimiter: ","
+    fields:
+      - "bounding_box"
+      - "dates"
+      - "finetuned_model_id"
+      - "name"
+scenarios:
+  - name: "Run Inference"
+    flow:
+      - function: "parsePayload"
+      - post:
+          url: "{{ $processEnvironment.TARGET_PATH }}"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.R2O_TOKEN }}"
+          json:
+            name: "{{ name }}"
+            query:
+              dates: "{{ dates }}"
+              bounding_box: "{{ bounding_box }}"
+            finetuned_model_ids: ["{{ finetuned_model_id }}"]

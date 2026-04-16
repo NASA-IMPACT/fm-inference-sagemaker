@@ -28,7 +28,9 @@ COPY src /app/src
 
 # Expose port
 EXPOSE 8000
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Default command for development (can be overridden by docker-compose)
 # Making K8s control the process with a service account
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT [ "/app/entrypoint.sh" ]

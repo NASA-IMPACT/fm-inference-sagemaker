@@ -1,0 +1,40 @@
+config:
+  target: "{{ $processEnvironment.TARGET_HOST }}"
+  http:
+    timeout: 300
+  processor: "./processor.js"
+  phases:
+    - name: "Warm up"
+      duration: 60
+      arrivalRate: 1
+    - name: "Gradual ramp up"
+      duration: 120
+      arrivalRate: 10
+      rampTo: 50
+    - name: "Sustain max load"
+      duration: 240
+      arrivalRate: 50
+  payload:
+    path: "payload.csv"
+    order: sequence
+    skipHeader: true
+    delimiter: ","
+    fields:
+      - "bounding_box"
+      - "dates"
+      - "finetuned_model_id"
+      - "name"
+scenarios:
+  - name: "Run Inference"
+    flow:
+      - function: "parsePayload"
+      - post:
+          url: "{{ $processEnvironment.TARGET_PATH }}"
+          headers:
+            Authorization: "Bearer {{ $processEnvironment.R2O_TOKEN }}"
+          json:
+            name: "{{ name }}"
+            query:
+              dates: "{{ dates }}"
+              bounding_box: "{{ bounding_box }}"
+            finetuned_model_ids: ["{{ finetuned_model_id }}"]
