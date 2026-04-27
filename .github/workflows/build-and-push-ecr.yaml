@@ -1,0 +1,360 @@
+name: Build and Push to ECR
+
+on:
+  push:
+    branches:
+      - dev
+
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Named tag for images (e.g., v0.1.0). Defaults to git SHA."
+        required: false
+        type: string
+      skip_cleanup:
+        description: "Skip ECR old-image cleanup"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Build only — do not push to ECR"
+        required: false
+        type: boolean
+        default: false
+
+  workflow_call:
+    inputs:
+      image_tag:
+        description: "Named tag for images (e.g., v0.1.0). Defaults to git SHA."
+        required: false
+        type: string
+      skip_cleanup:
+        description: "Skip ECR old-image cleanup"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Build only — do not push to ECR"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: true
+      AWS_SECRET_ACCESS_KEY:
+        required: true
+      ECR_URL:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-west-2
+  MAX_IMAGES_TO_KEEP: 5
+
+jobs:
+  # ── Build and push the base pipeline image ──────────────────────────
+  build-base:
+    runs-on: ubuntu-latest
+    outputs:
+      base_image_ref: ${{ steps.refs.outputs.base_image_ref }}
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${{ secrets.ECR_URL }}"
+
+      - name: Pull cache image
+        run: |
+          docker pull "${{ secrets.ECR_URL }}/inference_pipelines/base:latest" 2>/dev/null || true
+
+      - name: Build base image
+        working-directory: pipelines
+        run: |
+          docker build \
+            --cache-from "${{ secrets.ECR_URL }}/inference_pipelines/base:latest" \
+            -t base:local \
+            -f Dockerfile.base .
+
+      - name: Compute tags and push
+        id: refs
+        run: |
+          set -euo pipefail
+          ECR_URL="${{ secrets.ECR_URL }}"
+          DIGEST=$(docker inspect --format='{{.Id}}' base:local | cut -d: -f2 | cut -c1-12)
+
+          # Determine named tag
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            NAMED_TAG="${{ inputs.image_tag }}"
+          else
+            NAMED_TAG="${GITHUB_SHA:0:12}"
+          fi
+
+          REPO="inference_pipelines/base"
+          docker tag base:local "${ECR_URL}/${REPO}:${DIGEST}"
+          docker tag base:local "${ECR_URL}/${REPO}:${NAMED_TAG}"
+          docker tag base:local "${ECR_URL}/${REPO}:latest"
+
+          if [ "${{ inputs.dry_run }}" != "true" ]; then
+            docker push "${ECR_URL}/${REPO}:${DIGEST}"
+            docker push "${ECR_URL}/${REPO}:${NAMED_TAG}"
+            docker push "${ECR_URL}/${REPO}:latest"
+          else
+            echo "DRY RUN: skipping push"
+          fi
+
+          echo "base_image_ref=${ECR_URL}/${REPO}:${DIGEST}" >> "$GITHUB_OUTPUT"
+
+  # ── Build and push the main inference image ─────────────────────────
+  build-inference:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${{ secrets.ECR_URL }}"
+
+      - name: Pull cache image
+        run: |
+          docker pull "${{ secrets.ECR_URL }}/inference:latest" 2>/dev/null || true
+
+      - name: Build inference image
+        run: |
+          docker build \
+            --cache-from "${{ secrets.ECR_URL }}/inference:latest" \
+            -t inference:local \
+            -f Dockerfile .
+
+      - name: Compute tags and push
+        run: |
+          set -euo pipefail
+          ECR_URL="${{ secrets.ECR_URL }}"
+          DIGEST=$(docker inspect --format='{{.Id}}' inference:local | cut -d: -f2 | cut -c1-12)
+
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            NAMED_TAG="${{ inputs.image_tag }}"
+          else
+            NAMED_TAG="${GITHUB_SHA:0:12}"
+          fi
+
+          docker tag inference:local "${ECR_URL}/inference:${DIGEST}"
+          docker tag inference:local "${ECR_URL}/inference:${NAMED_TAG}"
+          docker tag inference:local "${ECR_URL}/inference:latest"
+
+          if [ "${{ inputs.dry_run }}" != "true" ]; then
+            docker push "${ECR_URL}/inference:${DIGEST}"
+            docker push "${ECR_URL}/inference:${NAMED_TAG}"
+            docker push "${ECR_URL}/inference:latest"
+          else
+            echo "DRY RUN: skipping push"
+          fi
+
+  # ── Build and push service images (depend on base) ─────────────────
+  build-services:
+    needs: build-base
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: floods
+            dockerfile: pipelines/floods/Dockerfile
+            ecr_repo: inference_pipelines/floods
+            context: pipelines
+
+          - service: burn_scars
+            dockerfile: pipelines/burn_scars/Dockerfile
+            ecr_repo: inference_pipelines/burn_scars
+            context: pipelines
+
+          - service: crop_classification
+            dockerfile: pipelines/crop_classification/Dockerfile
+            ecr_repo: inference_pipelines/crop_classification
+            context: pipelines
+
+          - service: surya_rollout
+            dockerfile: pipelines/surya/Dockerfile
+            ecr_repo: inference_pipelines/surya_rollout
+            context: pipelines
+
+          - service: tiler
+            dockerfile: tile_server/Dockerfile
+            ecr_repo: tile_server/tiler
+            context: .
+
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${{ secrets.ECR_URL }}"
+
+      - name: Pull cache image
+        run: |
+          docker pull "${{ secrets.ECR_URL }}/${{ matrix.ecr_repo }}:latest" 2>/dev/null || true
+
+      - name: Pull base image
+        run: |
+          docker pull "${{ needs.build-base.outputs.base_image_ref }}"
+
+      - name: Build ${{ matrix.service }}
+        run: |
+          docker build \
+            --cache-from "${{ secrets.ECR_URL }}/${{ matrix.ecr_repo }}:latest" \
+            --build-arg BASE_IMAGE="${{ needs.build-base.outputs.base_image_ref }}" \
+            -t "${{ matrix.service }}:local" \
+            -f "${{ matrix.dockerfile }}" \
+            "${{ matrix.context }}"
+
+      - name: Compute tags and push
+        run: |
+          set -euo pipefail
+          ECR_URL="${{ secrets.ECR_URL }}"
+          DIGEST=$(docker inspect --format='{{.Id}}' "${{ matrix.service }}:local" | cut -d: -f2 | cut -c1-12)
+
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            NAMED_TAG="${{ inputs.image_tag }}"
+          else
+            NAMED_TAG="${GITHUB_SHA:0:12}"
+          fi
+
+          REPO="${{ matrix.ecr_repo }}"
+          docker tag "${{ matrix.service }}:local" "${ECR_URL}/${REPO}:${DIGEST}"
+          docker tag "${{ matrix.service }}:local" "${ECR_URL}/${REPO}:${NAMED_TAG}"
+          docker tag "${{ matrix.service }}:local" "${ECR_URL}/${REPO}:latest"
+
+          if [ "${{ inputs.dry_run }}" != "true" ]; then
+            docker push "${ECR_URL}/${REPO}:${DIGEST}"
+            docker push "${ECR_URL}/${REPO}:${NAMED_TAG}"
+            docker push "${ECR_URL}/${REPO}:latest"
+          else
+            echo "DRY RUN: skipping push"
+          fi
+
+  # ── Clean up old ECR images ─────────────────────────────────────────
+  cleanup:
+    if: ${{ !inputs.skip_cleanup && !inputs.dry_run }}
+    needs: [build-inference, build-base, build-services]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Prune old ECR images
+        run: |
+          set -euo pipefail
+          KEEP=${{ env.MAX_IMAGES_TO_KEEP }}
+
+          REPOS=(
+            "inference"
+            "inference_pipelines/base"
+            "inference_pipelines/floods"
+            "inference_pipelines/burn_scars"
+            "inference_pipelines/crop_classification"
+            "inference_pipelines/surya_rollout"
+            "tile_server/tiler"
+          )
+
+          for REPO in "${REPOS[@]}"; do
+            echo "=== Cleaning $REPO (keeping $KEEP newest) ==="
+
+            if ! aws ecr describe-repositories \
+                --repository-names "$REPO" \
+                --region "${{ env.AWS_REGION }}" &>/dev/null; then
+              echo "  Repo does not exist, skipping"
+              continue
+            fi
+
+            TOTAL=$(aws ecr describe-images \
+              --repository-name "$REPO" \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'length(imageDetails)' \
+              --output text 2>/dev/null || echo "0")
+
+            if [ "$TOTAL" -le "$KEEP" ]; then
+              echo "  Only $TOTAL images, no cleanup needed"
+              continue
+            fi
+
+            TO_DELETE=$((TOTAL - KEEP))
+            echo "  Deleting $TO_DELETE old images..."
+
+            DIGESTS=$(aws ecr describe-images \
+              --repository-name "$REPO" \
+              --region "${{ env.AWS_REGION }}" \
+              --query 'sort_by(imageDetails,& imagePushedAt)[*].imageDigest' \
+              --output text | tr '\t' '\n' | head -n "$TO_DELETE")
+
+            for DIGEST in $DIGESTS; do
+              aws ecr batch-delete-image \
+                --repository-name "$REPO" \
+                --region "${{ env.AWS_REGION }}" \
+                --image-ids imageDigest="$DIGEST" > /dev/null || true
+            done
+
+            echo "  Cleaned up $TO_DELETE images"
+          done
