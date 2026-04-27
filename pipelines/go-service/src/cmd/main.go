@@ -28,7 +28,7 @@ func main() {
 		writeTimeout:      time.Second * 5,
 		idleTimeout:       time.Second * 30,
 		addr:              ":8080",
-		basePath:          getEnv("QUEUE_BASE_PATH","/api/predict/v1/go"),
+		basePath:          getEnv("QUEUE_BASE_PATH","/api/predict/v2"),
 		jwtSecret:         getEnv("JWT_SECRET_KEY", ""),
 	}
 

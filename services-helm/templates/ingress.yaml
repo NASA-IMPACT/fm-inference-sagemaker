@@ -46,7 +46,7 @@ spec:
   - host: {{ .Values.hostServices }}
     http:
       paths:
-      - path: {{ .Values.ingresGoServices.path }}
+      - path: {{ .Values.ingressV2Services.path }}
         pathType: Prefix
         backend:
           service:
