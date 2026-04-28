@@ -112,6 +112,17 @@ jobs:
     outputs:
       base_image_ref: ${{ steps.refs.outputs.base_image_ref }}
     steps:
+      - name: Free disk space (needed for dry_run artifact export)
+        if: inputs.dry_run == true
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
       - name: Checkout
         uses: actions/checkout@v4
 
