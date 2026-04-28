@@ -1,0 +1,34 @@
+# =============================================================================
+# Surya base image: pre-downloads the HuggingFace model (~2GB)
+#
+# Rebuild only when the model version changes. This avoids downloading
+# the model on every service build (~10 min savings).
+# =============================================================================
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+WORKDIR /app
+
+# Install Python 3.12 and create virtual environment
+RUN uv python install 3.12
+RUN uv venv /app/.venv --python 3.12
+
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Install GDAL Python bindings matching system GDAL version
+RUN uv pip install gdal==$(gdal-config --version)
+
+# Verify GDAL installation
+RUN python -c "from osgeo import gdal; print('GDAL version:', gdal.__version__)"
+
+# Download Surya model from HuggingFace using git-lfs
+RUN apt-get update && apt-get install -y git-lfs && git lfs install && \
+    git clone https://huggingface.co/nasa-ibm-ai4science/Surya-1.0 /app/models/surya && \
+    rm -rf /app/models/surya/.git && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Set model path environment variables
+ENV SURYA_CONFIG_PATH=/app/models/surya/config.yaml
+ENV SURYA_SCALERS_PATH=/app/models/surya/scalers.yaml
+ENV SURYA_WEIGHTS_PATH=/app/models/surya/surya.366m.v1.pt

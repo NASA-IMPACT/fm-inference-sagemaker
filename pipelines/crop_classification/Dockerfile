@@ -8,14 +8,8 @@ COPY crop_classification/requirements.txt /app/crop_classification-requirements.
 
 RUN uv pip install -r /app/crop_classification-requirements.txt --system
 
-RUN mkdir /app/lib
-
-# Copy the rest of the application
-COPY shared/lib /app/lib
-
+# Service-specific lib overlays (shared/lib and predictor.py are in base)
 COPY crop_classification/lib /app/lib
-
-COPY shared/predictor.py /app/
 
 ENV USECASE=crop_classification
 

@@ -19,3 +19,8 @@ RUN python3.11 -c "from osgeo import gdal; print('GDAL:', gdal.__version__)" && 
     python3.11 -c "import numpy; print('NumPy:', numpy.__version__)" && \
     python3.11 -c "import rasterio; print('Rasterio:', rasterio.__version__)" && \
     gdal-config --version
+
+# Bake shared library code used by floods, burn_scars, crop_classification
+RUN mkdir -p /app/lib
+COPY shared/lib /app/lib
+COPY shared/predictor.py /app/

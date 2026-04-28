@@ -8,14 +8,8 @@ COPY floods/requirements.txt /app/floods-requirements.txt
 
 RUN uv pip install -r /app/floods-requirements.txt --system
 
-RUN mkdir /app/lib
-# Copy the rest of the application
-COPY shared/lib /app/lib
-
+# Service-specific lib overlays (shared/lib and predictor.py are in base)
 COPY floods/lib /app/lib
-
-
-COPY shared/predictor.py /app/
 
 ENV USECASE=floods
 

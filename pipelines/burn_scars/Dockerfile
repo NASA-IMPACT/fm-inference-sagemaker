@@ -8,13 +8,8 @@ COPY burn_scars/requirements.txt /app/burn_scars-requirements.txt
 
 RUN uv pip install -r /app/burn_scars-requirements.txt --system
 
-RUN mkdir /app/lib
-# Copy the rest of the application
-COPY shared/lib /app/lib
-
+# Service-specific lib overlays (shared/lib and predictor.py are in base)
 COPY burn_scars/lib /app/lib
-
-COPY shared/predictor.py /app/
 
 ENV USECASE=burn_scars
 

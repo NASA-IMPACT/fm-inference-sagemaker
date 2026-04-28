@@ -21,6 +21,11 @@ on:
         required: false
         type: boolean
         default: false
+      build_surya_base:
+        description: "Rebuild the surya base image (model download + Python 3.12). Only needed when model changes."
+        required: false
+        type: boolean
+        default: false
 
   workflow_call:
     inputs:
@@ -35,6 +40,11 @@ on:
         default: false
       build_static_base:
         description: "Rebuild the static base image (CUDA/PROJ/GDAL). Only needed when those versions change."
+        required: false
+        type: boolean
+        default: false
+      build_surya_base:
+        description: "Rebuild the surya base image (model download + Python 3.12). Only needed when model changes."
         required: false
         type: boolean
         default: false
@@ -304,11 +314,6 @@ jobs:
             ecr_repo: inference_pipelines/crop_classification
             context: pipelines
 
-          - service: surya_rollout
-            dockerfile: pipelines/surya/Dockerfile
-            ecr_repo: inference_pipelines/surya_rollout
-            context: pipelines
-
           - service: tiler
             dockerfile: tile_server/Dockerfile
             ecr_repo: tile_server/tiler
@@ -395,3 +400,135 @@ jobs:
             docker push "${ECR_URL}/${REPO}:${NAMED_TAG}"
             docker push "${ECR_URL}/${REPO}:latest"
           fi
+
+  # ── Rebuild surya base (model download + Python 3.12) — only on demand
+  build-surya-base:
+    if: inputs.build_surya_base == true
+    needs: build-base
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        if: inputs.dry_run != true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        if: inputs.dry_run != true
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${{ secrets.ECR_URL }}"
+
+      - name: Pull base image from ECR
+        if: inputs.dry_run != true
+        run: |
+          docker pull "${{ needs.build-base.outputs.base_image_ref }}"
+
+      - name: Download base image artifact (dry run)
+        if: inputs.dry_run == true
+        uses: actions/download-artifact@v4
+        with:
+          name: base-image
+          path: /tmp
+
+      - name: Load base image (dry run)
+        if: inputs.dry_run == true
+        run: docker load -i /tmp/base-image.tar
+
+      - name: Build surya base image
+        working-directory: pipelines
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            BASE_REF="base:local"
+          else
+            BASE_REF="${{ needs.build-base.outputs.base_image_ref }}"
+          fi
+
+          docker build \
+            --build-arg BASE_IMAGE="${BASE_REF}" \
+            -t surya-base:local \
+            -f surya/Dockerfile.base .
+
+      - name: Push surya base image
+        if: inputs.dry_run != true
+        run: |
+          set -euo pipefail
+          ECR_URL="${{ secrets.ECR_URL }}"
+          REPO="inference_pipelines/surya-base"
+          docker tag surya-base:local "${ECR_URL}/${REPO}:latest"
+          docker push "${ECR_URL}/${REPO}:latest"
+          echo "Pushed ${ECR_URL}/${REPO}:latest"
+
+  # ── Build and push surya service image ──────────────────────────────
+  build-surya:
+    needs: [build-base, build-surya-base]
+    if: ${{ !cancelled() && needs.build-base.result == 'success' && (needs.build-surya-base.result == 'success' || needs.build-surya-base.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        if: inputs.dry_run != true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        if: inputs.dry_run != true
+        run: |
+          aws ecr get-login-password --region "$AWS_REGION" \
+            | docker login --username AWS --password-stdin "${{ secrets.ECR_URL }}"
+
+      - name: Pull surya base from ECR
+        if: inputs.dry_run != true
+        run: |
+          docker pull "${{ secrets.ECR_URL }}/inference_pipelines/surya-base:latest"
+
+      - name: Pull cache image
+        if: inputs.dry_run != true
+        run: |
+          docker pull "${{ secrets.ECR_URL }}/inference_pipelines/surya_rollout:latest" 2>/dev/null || true
+
+      - name: Build surya service
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "DRY RUN: surya requires surya-base from ECR, skipping"
+            exit 0
+          fi
+
+          docker build \
+            --cache-from "${{ secrets.ECR_URL }}/inference_pipelines/surya_rollout:latest" \
+            --build-arg BASE_IMAGE="${{ secrets.ECR_URL }}/inference_pipelines/surya-base:latest" \
+            -t surya_rollout:local \
+            -f pipelines/surya/Dockerfile \
+            pipelines
+
+      - name: Compute tags and push
+        if: inputs.dry_run != true
+        run: |
+          set -euo pipefail
+          ECR_URL="${{ secrets.ECR_URL }}"
+          DIGEST=$(docker inspect --format='{{.Id}}' surya_rollout:local | cut -d: -f2 | cut -c1-12)
+
+          if [ -n "${{ inputs.image_tag }}" ]; then
+            NAMED_TAG="${{ inputs.image_tag }}"
+          else
+            NAMED_TAG="${GITHUB_SHA:0:12}"
+          fi
+
+          REPO="inference_pipelines/surya_rollout"
+          docker tag surya_rollout:local "${ECR_URL}/${REPO}:${DIGEST}"
+          docker tag surya_rollout:local "${ECR_URL}/${REPO}:${NAMED_TAG}"
+          docker tag surya_rollout:local "${ECR_URL}/${REPO}:latest"
+
+          docker push "${ECR_URL}/${REPO}:${DIGEST}"
+          docker push "${ECR_URL}/${REPO}:${NAMED_TAG}"
+          docker push "${ECR_URL}/${REPO}:latest"
