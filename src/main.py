@@ -363,17 +363,17 @@ def _authenticate_with_cognito_sync(username: str, password: str) -> dict:
             )
 
         access_token = auth_response["AuthenticationResult"]["AccessToken"]
+        id_token = auth_response["AuthenticationResult"].get("IdToken")
         user_response = cognito_client.get_user(AccessToken=access_token)
 
         user_attributes = {}
         for attr in user_response["UserAttributes"]:
             user_attributes[attr["Name"]] = attr["Value"]
 
-        groups_response = cognito_client.admin_list_groups_for_user(
-            UserPoolId=COGNITO_USER_POOL_ID, Username=username
-        )
-
-        groups = [group["GroupName"] for group in groups_response["Groups"]]
+        groups = get_jwt_payload(access_token).get("cognito:groups")
+        if not groups and id_token:
+            groups = get_jwt_payload(id_token).get("cognito:groups")
+        groups = groups or []
 
         return {
             "username": username,
@@ -381,7 +381,7 @@ def _authenticate_with_cognito_sync(username: str, password: str) -> dict:
             "cognito:groups": groups,
             "user_attributes": user_attributes,
             "access_token": access_token,
-            "id_token": auth_response["AuthenticationResult"].get("IdToken"),
+            "id_token": id_token,
             "refresh_token": auth_response["AuthenticationResult"].get("RefreshToken"),
         }
 
