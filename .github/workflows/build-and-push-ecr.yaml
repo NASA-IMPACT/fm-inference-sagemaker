@@ -207,7 +207,7 @@ jobs:
             docker push "${ECR_URL}/${REPO}:${NAMED_TAG}"
             docker push "${ECR_URL}/${REPO}:latest"
 
-            echo "base_image_ref=${ECR_URL}/${REPO}:${DIGEST}" >> "$GITHUB_OUTPUT"
+            echo "base_image_ref=${REPO}:${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Free space before save (dry run)
@@ -345,7 +345,7 @@ jobs:
       - name: Pull base image from ECR
         if: inputs.dry_run != true
         run: |
-          docker pull "${{ needs.build-base.outputs.base_image_ref }}"
+          docker pull "${{ secrets.ECR_URL }}/${{ needs.build-base.outputs.base_image_ref }}"
 
       - name: Download base image artifact (dry run)
         if: inputs.dry_run == true
@@ -364,7 +364,7 @@ jobs:
             BASE_REF="base:local"
             CACHE_ARGS=""
           else
-            BASE_REF="${{ needs.build-base.outputs.base_image_ref }}"
+            BASE_REF="${{ secrets.ECR_URL }}/${{ needs.build-base.outputs.base_image_ref }}"
             CACHE_ARGS="--cache-from ${{ secrets.ECR_URL }}/${{ matrix.ecr_repo }}:latest"
           fi
 
@@ -427,7 +427,7 @@ jobs:
       - name: Pull base image from ECR
         if: inputs.dry_run != true
         run: |
-          docker pull "${{ needs.build-base.outputs.base_image_ref }}"
+          docker pull "${{ secrets.ECR_URL }}/${{ needs.build-base.outputs.base_image_ref }}"
 
       - name: Download base image artifact (dry run)
         if: inputs.dry_run == true
@@ -446,7 +446,7 @@ jobs:
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             BASE_REF="base:local"
           else
-            BASE_REF="${{ needs.build-base.outputs.base_image_ref }}"
+            BASE_REF="${{ secrets.ECR_URL }}/${{ needs.build-base.outputs.base_image_ref }}"
           fi
 
           docker build \
