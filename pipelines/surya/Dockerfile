@@ -6,8 +6,8 @@ WORKDIR /app
 # Copy pyproject.toml for uv to install dependencies
 COPY surya/pyproject.toml /app/pyproject.toml
 
-# Install Python dependencies using uv (includes transformers/tokenizers for Surya compatibility)
-RUN uv pip install -e .
+# Install Python dependencies from pyproject.toml
+RUN uv pip install .
 
 # Install Surya library from source
 RUN git clone https://github.com/NASA-IMPACT/Surya.git /tmp/surya_source && \
