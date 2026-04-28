@@ -189,6 +189,13 @@ jobs:
             echo "base_image_ref=${ECR_URL}/${REPO}:${DIGEST}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Free space before save (dry run)
+        if: inputs.dry_run == true
+        run: |
+          docker rmi static-base:local 2>/dev/null || true
+          rm -f /tmp/static-base-image.tar 2>/dev/null || true
+          docker image prune -f
+
       - name: Save base image for service builds (dry run)
         if: inputs.dry_run == true
         run: docker save base:local -o /tmp/base-image.tar
