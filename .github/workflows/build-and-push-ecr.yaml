@@ -453,6 +453,16 @@ jobs:
     if: ${{ !cancelled() && needs.build-base.result == 'success' && (needs.build-surya-base.result == 'success' || needs.build-surya-base.result == 'skipped') }}
     runs-on: ubuntu-latest
     steps:
+      - name: Free disk space (surya-base image is very large)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
       - name: Checkout
         uses: actions/checkout@v4
 
