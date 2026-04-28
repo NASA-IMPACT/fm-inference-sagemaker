@@ -1,151 +1,21 @@
 # =============================================================================
-# Stage 1: Builder — compile PROJ, GDAL, and install Python packages
+# Pipeline base image: adds Python requirements on top of the static base
+#
+# The static base (Dockerfile.base-static) has CUDA, PROJ, GDAL, and NumPy
+# pre-compiled. This layer only installs the shared Python requirements,
+# so it rebuilds in ~2-3 minutes instead of ~42 minutes.
 # =============================================================================
-FROM nvidia/cuda:12.1.1-base-ubuntu22.04 AS builder
+ARG STATIC_BASE_IMAGE
+FROM ${STATIC_BASE_IMAGE}
 
-WORKDIR /build
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install build-time + runtime system dependencies
-# Build-only: gcc, g++, cmake, ninja-build, swig4.0, wget, python3.11-dev, python3-setuptools
-# Runtime (also needed here for pip): ffmpeg, libsm6, libxext6, libgl1, sqlite3
-RUN apt-get update && apt-get install -y software-properties-common && \
-    add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt-get update && \
-    apt-get install -y \
-        gcc g++ wget git \
-        cmake ninja-build \
-        swig4.0 python3-setuptools \
-        python3.11 python3-pip python3.11-venv python3.11-dev \
-        sqlite3 libsqlite3-dev \
-        ffmpeg libsm6 libxext6 libgl1 && \
-    ln -sf /usr/bin/swig4.0 /usr/bin/swig && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-RUN update-alternatives --install /usr/bin/python3 python /usr/bin/python3.11 2 && \
-    update-alternatives --install /usr/bin/python3 python /usr/bin/python3.10 1 && \
-    update-alternatives --set python /usr/bin/python3.11
-
-RUN python3.11 -m ensurepip --upgrade && \
-    python3.11 -m pip install --upgrade pip && \
-    python3.11 -m pip install uv
-
-# Install compatible setuptools for GDAL build
-RUN python3.11 -m pip install "setuptools<66" wheel
-
-# Install NumPy before GDAL
-RUN python3.11 -m pip install --no-cache-dir --force-reinstall --no-deps numpy && \
-    python3.11 -c "import numpy; print('NumPy working:', numpy.__version__)" || \
-    echo "NumPy test failed, will build GDAL without NumPy"
-
-# Build PROJ 9.3.0
-RUN cd /tmp && \
-    wget https://download.osgeo.org/proj/proj-9.3.0.tar.gz && \
-    tar -xzf proj-9.3.0.tar.gz && \
-    cd proj-9.3.0 && \
-    mkdir build && \
-    cd build && \
-    cmake .. \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr/local \
-        -DBUILD_SHARED_LIBS=ON \
-        -DENABLE_TIFF=OFF \
-        -DENABLE_CURL=OFF \
-        -DBUILD_TESTING=OFF \
-        -DBUILD_APPS=OFF && \
-    make -j$(nproc) VERBOSE=1 && \
-    make install && \
-    cd /tmp && \
-    rm -rf proj-9.3.0*
-
-# Build GDAL 3.11.3 with Python bindings
-RUN wget https://download.osgeo.org/gdal/3.11.3/gdal-3.11.3.tar.gz && \
-    tar zxvf gdal-3.11.3.tar.gz && \
-    mkdir -p gdal-3.11.3/build && \
-    cd gdal-3.11.3/build && \
-    GDAL_PYTHON_BINDINGS_WITHOUT_NUMPY=1 cmake .. -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DCMAKE_INSTALL_PREFIX=/usr/local \
-        -DBUILD_SHARED_LIBS=ON \
-        -DBUILD_PYTHON_BINDINGS=ON \
-        -DPython_LOOKUP_VERSION=3.11 \
-        -DSWIG_EXECUTABLE=/usr/bin/swig && \
-    cmake --build ./ --parallel $(nproc) 2>&1 | tee build.log || \
-    (echo "=== BUILD FAILED - Last 50 lines ===" && tail -50 build.log && exit 1)
-
-RUN cd gdal-3.11.3/build && \
-    cmake --install ./ && \
-    cd ../.. && \
-    rm -rf gdal-3.11.3*
-
-ENV GDAL_DATA=/usr/local/share/gdal
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-ENV PATH=/usr/local/bin:$PATH
-ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages:$PYTHONPATH
-
-# Reinstall NumPy after GDAL build
-RUN python3.11 -m pip install --no-cache-dir --force-reinstall numpy --root-user-action=ignore
+WORKDIR /app
 
 # Install shared Python requirements
 COPY shared/requirements.txt /app/requirements.txt
 RUN uv pip install -r /app/requirements.txt --system
-
-# =============================================================================
-# Stage 2: Runtime — only runtime dependencies, no build tools
-# =============================================================================
-FROM nvidia/cuda:12.1.1-base-ubuntu22.04
-
-WORKDIR /app
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Runtime APT deps. Removed: cmake, ninja-build, swig, wget,
-# python3.11-dev, python3-setuptools, gdal-bin, libgdal-dev
-# Kept gcc/g++: needed by downstream surya Dockerfile to compile GDAL Python bindings
-RUN apt-get update && apt-get install -y software-properties-common && \
-    add-apt-repository -y ppa:deadsnakes/ppa && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        gcc g++ \
-        python3.11 python3-pip python3.11-venv \
-        ffmpeg libsm6 libxext6 libgl1 \
-        sqlite3 \
-        git && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-RUN update-alternatives --install /usr/bin/python3 python /usr/bin/python3.11 2 && \
-    update-alternatives --install /usr/bin/python3 python /usr/bin/python3.10 1 && \
-    update-alternatives --set python /usr/bin/python3.11
-
-RUN python3.11 -m ensurepip --upgrade && \
-    python3.11 -m pip install --upgrade pip && \
-    python3.11 -m pip install uv
-
-# Copy compiled PROJ + GDAL + Python packages from builder
-COPY --from=builder /usr/local/lib/ /usr/local/lib/
-COPY --from=builder /usr/local/bin/ /usr/local/bin/
-COPY --from=builder /usr/local/share/gdal/ /usr/local/share/gdal/
-COPY --from=builder /usr/local/share/proj/ /usr/local/share/proj/
-COPY --from=builder /usr/local/include/ /usr/local/include/
-COPY --from=builder /usr/local/lib/python3.11/ /usr/local/lib/python3.11/
-
-# Set environment variables
-ENV GDAL_DATA=/usr/local/share/gdal
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-ENV PATH=/usr/local/bin:$PATH
-ENV PYTHONPATH=/usr/local/lib/python3.11/site-packages:$PYTHONPATH
-
-# Register shared libraries
-RUN ldconfig
 
 # Verify key dependencies work
 RUN python3.11 -c "from osgeo import gdal; print('GDAL:', gdal.__version__)" && \
     python3.11 -c "import numpy; print('NumPy:', numpy.__version__)" && \
     python3.11 -c "import rasterio; print('Rasterio:', rasterio.__version__)" && \
     gdal-config --version
-
-WORKDIR /app
-
-# Copy requirements (for downstream reference)
-COPY shared/requirements.txt /app/
