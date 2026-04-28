@@ -338,11 +338,6 @@ jobs:
           aws ecr get-login-password --region "$AWS_REGION" \
             | docker login --username AWS --password-stdin "${{ secrets.ECR_URL }}"
 
-      - name: Pull cache image
-        if: inputs.dry_run != true
-        run: |
-          docker pull "${{ secrets.ECR_URL }}/${{ matrix.ecr_repo }}:latest" 2>/dev/null || true
-
       - name: Pull base image from ECR
         if: inputs.dry_run != true
         run: |
@@ -363,14 +358,11 @@ jobs:
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             BASE_REF="base:local"
-            CACHE_ARGS=""
           else
             BASE_REF="${{ secrets.ECR_URL }}/${{ needs.build-base.outputs.base_image_ref }}"
-            CACHE_ARGS="--cache-from ${{ secrets.ECR_URL }}/${{ matrix.ecr_repo }}:latest"
           fi
 
           docker build \
-            $CACHE_ARGS \
             --build-arg BASE_IMAGE="${BASE_REF}" \
             -t "${{ matrix.service }}:local" \
             -f "${{ matrix.dockerfile }}" \
