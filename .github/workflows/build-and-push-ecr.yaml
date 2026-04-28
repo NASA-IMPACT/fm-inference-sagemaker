@@ -294,6 +294,7 @@ jobs:
   # ── Build and push service images (depend on base) ─────────────────
   build-services:
     needs: build-base
+    if: ${{ !cancelled() && needs.build-base.result == 'success' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -403,7 +404,7 @@ jobs:
 
   # ── Rebuild surya base (model download + Python 3.12) — only on demand
   build-surya-base:
-    if: inputs.build_surya_base == true
+    if: ${{ inputs.build_surya_base == true && !cancelled() && needs.build-base.result == 'success' }}
     needs: build-base
     runs-on: ubuntu-latest
     steps:
