@@ -250,19 +250,9 @@ jobs:
           aws ecr get-login-password --region "$AWS_REGION" \
             | docker login --username AWS --password-stdin "${{ secrets.ECR_URL }}"
 
-      - name: Pull cache image
-        if: inputs.dry_run != true
-        run: |
-          docker pull "${{ secrets.ECR_URL }}/inference:latest" 2>/dev/null || true
-
       - name: Build inference image
         run: |
-          CACHE_ARGS=""
-          if [ "${{ inputs.dry_run }}" != "true" ]; then
-            CACHE_ARGS="--cache-from ${{ secrets.ECR_URL }}/inference:latest"
-          fi
           docker build \
-            $CACHE_ARGS \
             -t inference:local \
             -f Dockerfile .
 
@@ -485,11 +475,6 @@ jobs:
         run: |
           docker pull "${{ secrets.ECR_URL }}/inference_pipelines/surya-base:latest"
 
-      - name: Pull cache image
-        if: inputs.dry_run != true
-        run: |
-          docker pull "${{ secrets.ECR_URL }}/inference_pipelines/surya_rollout:latest" 2>/dev/null || true
-
       - name: Build surya service
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
@@ -498,7 +483,6 @@ jobs:
           fi
 
           docker build \
-            --cache-from "${{ secrets.ECR_URL }}/inference_pipelines/surya_rollout:latest" \
             --build-arg BASE_IMAGE="${{ secrets.ECR_URL }}/inference_pipelines/surya-base:latest" \
             -t surya_rollout:local \
             -f pipelines/surya/Dockerfile \
