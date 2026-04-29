@@ -26,6 +26,11 @@ on:
         required: false
         type: boolean
         default: false
+      force_all:
+        description: "Force rebuild all images regardless of changed files"
+        required: false
+        type: boolean
+        default: false
 
   workflow_call:
     inputs:
@@ -48,6 +53,11 @@ on:
         required: false
         type: boolean
         default: false
+      force_all:
+        description: "Force rebuild all images regardless of changed files"
+        required: false
+        type: boolean
+        default: false
     secrets:
       AWS_ACCESS_KEY_ID:
         required: true
@@ -63,6 +73,82 @@ env:
   AWS_REGION: us-west-2
 
 jobs:
+  # ── Detect which files changed to skip unnecessary builds ───────────
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      base: ${{ steps.changes.outputs.base }}
+      inference: ${{ steps.changes.outputs.inference }}
+      floods: ${{ steps.changes.outputs.floods }}
+      burn_scars: ${{ steps.changes.outputs.burn_scars }}
+      crop_classification: ${{ steps.changes.outputs.crop_classification }}
+      tiler: ${{ steps.changes.outputs.tiler }}
+      surya: ${{ steps.changes.outputs.surya }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed paths
+        id: changes
+        run: |
+          set -euo pipefail
+
+          # For workflow_dispatch/workflow_call with force_all, build everything
+          if [ "${{ inputs.force_all }}" = "true" ]; then
+            echo "force_all=true — building all images"
+            for key in base inference floods burn_scars crop_classification tiler surya; do
+              echo "${key}=true" >> "$GITHUB_OUTPUT"
+            done
+            exit 0
+          fi
+
+          # Get changed files vs parent commit
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "FULL_BUILD")
+
+          if [ "$CHANGED" = "FULL_BUILD" ]; then
+            echo "Cannot determine changes — building all images"
+            for key in base inference floods burn_scars crop_classification tiler surya; do
+              echo "${key}=true" >> "$GITHUB_OUTPUT"
+            done
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED"
+          echo "---"
+
+          # Helper: check if any changed file matches a pattern
+          matches() { echo "$CHANGED" | grep -qE "$1" && echo "true" || echo "false"; }
+
+          BASE=$(matches "^pipelines/(Dockerfile\.base|shared/)")
+          INFERENCE=$(matches "^(Dockerfile|requirements\.txt|src/|alembic/)")
+          FLOODS=$(matches "^pipelines/floods/")
+          BURN_SCARS=$(matches "^pipelines/burn_scars/")
+          CROP=$(matches "^pipelines/crop_classification/")
+          TILER=$(matches "^tile_server/")
+          SURYA=$(matches "^pipelines/surya/")
+
+          # If base changed, all services need rebuilding
+          if [ "$BASE" = "true" ]; then
+            FLOODS=true
+            BURN_SCARS=true
+            CROP=true
+            TILER=true
+            SURYA=true
+          fi
+
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+          echo "inference=${INFERENCE}" >> "$GITHUB_OUTPUT"
+          echo "floods=${FLOODS}" >> "$GITHUB_OUTPUT"
+          echo "burn_scars=${BURN_SCARS}" >> "$GITHUB_OUTPUT"
+          echo "crop_classification=${CROP}" >> "$GITHUB_OUTPUT"
+          echo "tiler=${TILER}" >> "$GITHUB_OUTPUT"
+          echo "surya=${SURYA}" >> "$GITHUB_OUTPUT"
+
+          echo "Build decisions: base=$BASE inference=$INFERENCE floods=$FLOODS burn_scars=$BURN_SCARS crop=$CROP tiler=$TILER surya=$SURYA"
+
   # ── Rebuild static base (CUDA + PROJ + GDAL) — only on demand ──────
   build-static-base:
     if: inputs.build_static_base == true
@@ -116,8 +202,8 @@ jobs:
 
   # ── Build and push the base pipeline image ──────────────────────────
   build-base:
-    needs: build-static-base
-    if: ${{ !cancelled() && (needs.build-static-base.result == 'success' || needs.build-static-base.result == 'skipped') }}
+    needs: [build-static-base, detect-changes]
+    if: ${{ !cancelled() && (needs.build-static-base.result == 'success' || needs.build-static-base.result == 'skipped') && (needs.detect-changes.outputs.base == 'true' || needs.detect-changes.outputs.floods == 'true' || needs.detect-changes.outputs.burn_scars == 'true' || needs.detect-changes.outputs.crop_classification == 'true' || needs.detect-changes.outputs.tiler == 'true' || needs.detect-changes.outputs.surya == 'true') }}
     runs-on: ubuntu-latest
     outputs:
       base_image_ref: ${{ steps.refs.outputs.base_image_ref }}
@@ -231,6 +317,8 @@ jobs:
 
   # ── Build and push the main inference image ─────────────────────────
   build-inference:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.inference == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -283,7 +371,7 @@ jobs:
 
   # ── Build and push service images (depend on base) ─────────────────
   build-services:
-    needs: build-base
+    needs: [build-base, detect-changes]
     if: ${{ !cancelled() && needs.build-base.result == 'success' }}
     runs-on: ubuntu-latest
     strategy:
@@ -294,28 +382,41 @@ jobs:
             dockerfile: pipelines/floods/Dockerfile
             ecr_repo: inference_pipelines/floods
             context: pipelines
+            change_key: floods
 
           - service: burn_scars
             dockerfile: pipelines/burn_scars/Dockerfile
             ecr_repo: inference_pipelines/burn_scars
             context: pipelines
+            change_key: burn_scars
 
           - service: crop_classification
             dockerfile: pipelines/crop_classification/Dockerfile
             ecr_repo: inference_pipelines/crop_classification
             context: pipelines
+            change_key: crop_classification
 
           - service: tiler
             dockerfile: tile_server/Dockerfile
             ecr_repo: tile_server/tiler
             context: .
+            change_key: tiler
 
     steps:
+      - name: Check if service needs building
+        id: check
+        run: |
+          CHANGES='${{ toJSON(needs.detect-changes.outputs) }}'
+          SHOULD_BUILD=$(echo "$CHANGES" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('${{ matrix.change_key }}','false'))")
+          echo "should_build=${SHOULD_BUILD}" >> "$GITHUB_OUTPUT"
+          echo "${{ matrix.service }}: should_build=${SHOULD_BUILD}"
+
       - name: Checkout
+        if: steps.check.outputs.should_build == 'true'
         uses: actions/checkout@v6
 
       - name: Configure AWS credentials
-        if: inputs.dry_run != true
+        if: steps.check.outputs.should_build == 'true' && inputs.dry_run != true
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -323,28 +424,29 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
-        if: inputs.dry_run != true
+        if: steps.check.outputs.should_build == 'true' && inputs.dry_run != true
         run: |
           aws ecr get-login-password --region "$AWS_REGION" \
             | docker login --username AWS --password-stdin "${{ secrets.ECR_URL }}"
 
       - name: Pull base image from ECR
-        if: inputs.dry_run != true
+        if: steps.check.outputs.should_build == 'true' && inputs.dry_run != true
         run: |
           docker pull "${{ secrets.ECR_URL }}/${{ needs.build-base.outputs.base_image_ref }}"
 
       - name: Download base image artifact (dry run)
-        if: inputs.dry_run == true
+        if: steps.check.outputs.should_build == 'true' && inputs.dry_run == true
         uses: actions/download-artifact@v8
         with:
           name: base-image
           path: /tmp
 
       - name: Load base image (dry run)
-        if: inputs.dry_run == true
+        if: steps.check.outputs.should_build == 'true' && inputs.dry_run == true
         run: docker load -i /tmp/base-image.tar
 
       - name: Build ${{ matrix.service }}
+        if: steps.check.outputs.should_build == 'true'
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             BASE_REF="base:local"
@@ -359,6 +461,7 @@ jobs:
             "${{ matrix.context }}"
 
       - name: Compute tags and push
+        if: steps.check.outputs.should_build == 'true'
         run: |
           set -euo pipefail
           DIGEST=$(docker inspect --format='{{.Id}}' "${{ matrix.service }}:local" | cut -d: -f2 | cut -c1-12)
@@ -387,7 +490,7 @@ jobs:
   # ── Rebuild surya base (model download + Python 3.12) — only on demand
   build-surya-base:
     if: ${{ inputs.build_surya_base == true && !cancelled() && needs.build-base.result == 'success' }}
-    needs: build-base
+    needs: [build-base, detect-changes]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -449,8 +552,8 @@ jobs:
 
   # ── Build and push surya service image ──────────────────────────────
   build-surya:
-    needs: [build-base, build-surya-base]
-    if: ${{ !cancelled() && needs.build-base.result == 'success' && (needs.build-surya-base.result == 'success' || needs.build-surya-base.result == 'skipped') }}
+    needs: [build-base, build-surya-base, detect-changes]
+    if: ${{ !cancelled() && needs.build-base.result == 'success' && (needs.build-surya-base.result == 'success' || needs.build-surya-base.result == 'skipped') && needs.detect-changes.outputs.surya == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Free disk space (surya-base image is very large)
