@@ -10,7 +10,7 @@ from lib.dem_downloader import DEMDownloader
 from terratorch.tasks import SemanticSegmentationTask
 
 
-logger = logging.getLogger(__name__)  # flood inference logger
+logger = logging.getLogger(__name__)  # flood inference module
 
 
 def _flood_postprocess_worker(
