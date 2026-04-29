@@ -3,11 +3,6 @@ FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
-COPY burn_scars/requirements.txt /app/burn_scars-requirements.txt
-
-RUN uv pip install -r /app/burn_scars-requirements.txt --system
-
 # Service-specific lib overlays (shared/lib and predictor.py are in base)
 COPY burn_scars/lib /app/lib
 

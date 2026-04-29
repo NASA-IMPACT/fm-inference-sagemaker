@@ -3,11 +3,6 @@ FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
-COPY crop_classification/requirements.txt /app/crop_classification-requirements.txt
-
-RUN uv pip install -r /app/crop_classification-requirements.txt --system
-
 # Service-specific lib overlays (shared/lib and predictor.py are in base)
 COPY crop_classification/lib /app/lib
 

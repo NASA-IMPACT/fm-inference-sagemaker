@@ -3,11 +3,6 @@ FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
-COPY floods/requirements.txt /app/floods-requirements.txt
-
-RUN uv pip install -r /app/floods-requirements.txt --system
-
 # Service-specific lib overlays (shared/lib and predictor.py are in base)
 COPY floods/lib /app/lib
 

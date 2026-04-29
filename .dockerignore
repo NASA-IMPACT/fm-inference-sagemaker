@@ -1,0 +1,33 @@
+.git
+.github
+.gitignore
+.dockerignore
+.venv
+.env
+.idea
+.vscode
+.DS_Store
+
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# Build artifacts
+*-local
+*-slim
+test-report-*.txt
+
+# Docs
+README.md
+*.md
+
+# Shell scripts
+build_and_push.sh
+
+# Helm / k8s
+services-helm
+k8s-manifests
+
+# Docker compose (not needed in image builds)
+docker-compose*.yml
+Dockerfile.dev
