@@ -6,22 +6,16 @@ Minimal version without early aiapy import
 
 import drms
 import os
-import sys
-import calendar
 import time
 import logging
 import threading
 import requests
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta
-from glob import glob
 from typing import List, Tuple, Optional, Dict
-import re
-import pandas as pd
 
 # Suppress verbose logging
-logging.getLogger('drms').setLevel(logging.WARNING)
+logging.getLogger("drms").setLevel(logging.WARNING)
 
 TAI_DATETIME_FORMAT = "%Y.%m.%d_%H:%M:%S_TAI"
 
@@ -36,36 +30,37 @@ RECORDS = {
         "channels": ["94", "131", "171", "193", "211", "304", "335"],
         "num_channels": 7,
         # Pattern: aia.lev1_euv_12s.2016-02-20T165948Z.WAVELENGTH.image_lev1.fits
-        "file_pattern": r"aia\.lev1_euv_12s\.\d{4}-\d{2}-\d{2}T\d{6}Z\.({channels})\.image_lev1\.fits"
+        "file_pattern": r"aia\.lev1_euv_12s\.\d{4}-\d{2}-\d{2}T\d{6}Z\.({channels})\.image_lev1\.fits",
     },
     "aia_uv": {
         "jsoc_query": "aia.lev1_uv_24s",
         "channels": ["1600"],
         "num_channels": 1,
-        "file_pattern": r"aia\.lev1_uv_24s\.\d{4}-\d{2}-\d{2}T\d{6}Z\.({channels})\.image_lev1\.fits"
+        "file_pattern": r"aia\.lev1_uv_24s\.\d{4}-\d{2}-\d{2}T\d{6}Z\.({channels})\.image_lev1\.fits",
     },
     "hmi_mag": {
         "jsoc_query": "hmi.M_720s",
         "num_channels": 1,
         # Pattern: hmi.M_720s.20160220_170000_TAI.magnetogram.fits
-        "file_pattern": r"hmi\.M_720s\.\d{8}_\d{6}_TAI\.magnetogram\.fits"
+        "file_pattern": r"hmi\.M_720s\.\d{8}_\d{6}_TAI\.magnetogram\.fits",
     },
     "hmi_b": {
         "jsoc_query": "hmi.B_720s",
         "segments": ["field", "inclination", "azimuth", "disambig"],
         "num_channels": 4,
         # Pattern: hmi.B_720s.20160220_170000_TAI.field.fits
-        "file_pattern": r"hmi\.B_720s\.\d{8}_\d{6}_TAI\.({segments})\.fits"
+        "file_pattern": r"hmi\.B_720s\.\d{8}_\d{6}_TAI\.({segments})\.fits",
     },
     "hmi_vel": {
         "jsoc_query": "hmi.V_720s",
         "num_channels": 1,
         # Pattern: hmi.V_720s.20160220_170000_TAI.Dopplergram.fits
-        "file_pattern": r"hmi\.V_720s\.\d{8}_\d{6}_TAI\.Dopplergram\.fits"
-    }
+        "file_pattern": r"hmi\.V_720s\.\d{8}_\d{6}_TAI\.Dopplergram\.fits",
+    },
 }
 
-class Downloader():
+
+class Downloader:
     """Downloader class for Surya's SDO data pipeline"""
 
     def __init__(self, email, output_dir, wind_data_dir):
@@ -81,7 +76,7 @@ class Downloader():
         """Load export ID cache from disk."""
         if os.path.exists(self._export_cache_file):
             try:
-                with open(self._export_cache_file, 'r') as f:
+                with open(self._export_cache_file, "r") as f:
                     return json.load(f)
             except (json.JSONDecodeError, IOError):
                 return {}
@@ -92,7 +87,7 @@ class Downloader():
         os.makedirs(os.path.dirname(self._export_cache_file), exist_ok=True)
         with self._cache_lock:
             try:
-                with open(self._export_cache_file, 'w') as f:
+                with open(self._export_cache_file, "w") as f:
                     json.dump(self._export_cache, f, indent=2)
             except IOError:
                 pass
@@ -126,12 +121,14 @@ class Downloader():
         """Create a new drms client (thread-safe)"""
         return drms.Client(email=self.email)
 
-    def _thread_safe_print(self, message, end='\n', flush=False):
+    def _thread_safe_print(self, message, end="\n", flush=False):
         """Thread-safe print function"""
         with self._print_lock:
             print(message, end=end, flush=flush)
 
-    def _download_file(self, url: str, output_path: str, retries: int = 3, timeout: int = 60) -> Tuple[bool, str]:
+    def _download_file(
+        self, url: str, output_path: str, retries: int = 3, timeout: int = 60
+    ) -> Tuple[bool, str]:
         """Download a single file using requests with retry logic.
 
         Args:
@@ -155,8 +152,8 @@ class Downloader():
                 response.raise_for_status()
 
                 # Write to temp file first, then rename (atomic)
-                temp_path = output_path + '.tmp'
-                with open(temp_path, 'wb') as f:
+                temp_path = output_path + ".tmp"
+                with open(temp_path, "wb") as f:
                     for chunk in response.iter_content(chunk_size=8192):
                         if chunk:
                             f.write(chunk)
@@ -164,22 +161,18 @@ class Downloader():
                 os.rename(temp_path, output_path)
                 return True, filename
 
-            except requests.exceptions.RequestException as e:
+            except requests.exceptions.RequestException:
                 if attempt < retries - 1:
-                    time.sleep(2 ** attempt)  # Exponential backoff
+                    time.sleep(2**attempt)  # Exponential backoff
                 else:
                     return False, filename
-            except Exception as e:
+            except Exception:
                 return False, filename
 
         return False, filename
 
     def _download_files_parallel(
-        self,
-        urls: List[str],
-        output_dir: str,
-        max_workers: int = 10,
-        label: str = ""
+        self, urls: List[str], output_dir: str, max_workers: int = 10, label: str = ""
     ) -> Tuple[int, int, int]:
         """Download multiple files in parallel using requests.
 
@@ -199,7 +192,7 @@ class Downloader():
         skipped = []
 
         for url in urls:
-            filename = url.split('/')[-1]
+            filename = url.split("/")[-1]
             output_path = os.path.join(output_dir, filename)
 
             if os.path.exists(output_path):
@@ -228,7 +221,9 @@ class Downloader():
 
         return len(urls), downloaded, skipped
 
-    def download(self, start_datetime, end_datetime, cadence="12m", parallel=True, max_workers=5):
+    def download(
+        self, start_datetime, end_datetime, cadence="12m", parallel=True, max_workers=5
+    ):
         """Download SDO data for given datetime range and cadence
 
         Args:
@@ -263,14 +258,22 @@ class Downloader():
             self._thread_safe_print(f"Scheduling download task: {name}")
             count, downloaded, skipped = func(start_tai, end_tai, cadence, t_key_base)
             results[name] = {
-                'total': count,
-                'downloaded': downloaded,
-                'skipped': skipped
+                "total": count,
+                "downloaded": downloaded,
+                "skipped": skipped,
             }
 
         return results
 
-    def build_query(self, record, start_tai, end_tai=None, cadence=None, wavelengths=None, segment=None):
+    def build_query(
+        self,
+        record,
+        start_tai,
+        end_tai=None,
+        cadence=None,
+        wavelengths=None,
+        segment=None,
+    ):
         """Build JSOC query string for given record.
 
         Args:
@@ -300,7 +303,9 @@ class Downloader():
         else:
             return f"{record}{time_part}"
 
-    def _get_export_urls(self, query: str, label: str, timeout: int = 3600) -> Optional[List[str]]:
+    def _get_export_urls(
+        self, query: str, label: str, timeout: int = 3600
+    ) -> Optional[List[str]]:
         """Get download URLs from JSOC export request.
 
         Uses cached export IDs when available to avoid redundant server-side processing.
@@ -324,8 +329,12 @@ class Downloader():
                 try:
                     export_request = client.export_from_id(cached_export_id)
                     if export_request and export_request.status == 0:
-                        urls = list(export_request.urls.url) if hasattr(export_request.urls, 'url') else list(export_request.urls)
-                        self._thread_safe_print(f"(cached) ", end='')
+                        urls = (
+                            list(export_request.urls.url)
+                            if hasattr(export_request.urls, "url")
+                            else list(export_request.urls)
+                        )
+                        self._thread_safe_print("(cached) ", end="")
                         return urls
                     else:
                         # Export no longer valid, invalidate cache
@@ -335,7 +344,7 @@ class Downloader():
                     self._invalidate_cached_export(query)
 
             # Make new export request
-            export_request = client.export(query, method='url', protocol='fits')
+            export_request = client.export(query, method="url", protocol="fits")
             export_request.wait(timeout=timeout)
 
             if export_request and export_request.status == 0:
@@ -343,7 +352,11 @@ class Downloader():
                 if export_request.id:
                     self._cache_export_id(query, export_request.id)
 
-                urls = list(export_request.urls.url) if hasattr(export_request.urls, 'url') else list(export_request.urls)
+                urls = (
+                    list(export_request.urls.url)
+                    if hasattr(export_request.urls, "url")
+                    else list(export_request.urls)
+                )
                 return urls
 
             return None
@@ -355,7 +368,9 @@ class Downloader():
             del export_request
             del client
 
-    def _download_query(self, query: str, label: str, max_workers: int = 10) -> Tuple[int, int]:
+    def _download_query(
+        self, query: str, label: str, max_workers: int = 10
+    ) -> Tuple[int, int]:
         """Generic download method using drms for URL discovery and parallel requests for download.
 
         Args:
@@ -366,13 +381,13 @@ class Downloader():
         Returns:
             Tuple of (total_files, skipped_files)
         """
-        self._thread_safe_print(f"  {label}... ", end='')
+        self._thread_safe_print(f"  {label}... ", end="")
 
         # Step 1: Get URLs from JSOC
         urls = self._get_export_urls(query, label)
 
         if not urls:
-            self._thread_safe_print(f"No data found")
+            self._thread_safe_print("No data found")
             return 0, 0
 
         total = len(urls)
@@ -389,29 +404,39 @@ class Downloader():
         elif len(downloaded) > 0:
             self._thread_safe_print(f"({downloaded} downloaded, {skipped} skipped)")
         else:
-            self._thread_safe_print(f"(failed to download)")
+            self._thread_safe_print("(failed to download)")
 
         return total, downloaded, skipped
 
     def download_aia_euv(self, start_tai, end_tai=None, cadence=None, t_key_base=None):
         """Download AIA EUV channels"""
         query = self.build_query(
-            RECORDS["aia_euv"]["jsoc_query"], start_tai, end_tai, cadence,
-            wavelengths=RECORDS["aia_euv"]["channels"]
+            RECORDS["aia_euv"]["jsoc_query"],
+            start_tai,
+            end_tai,
+            cadence,
+            wavelengths=RECORDS["aia_euv"]["channels"],
         )
-        count, downloaded, skipped = self._download_query(query, "AIA EUV (7 wavelengths)")
+        count, downloaded, skipped = self._download_query(
+            query, "AIA EUV (7 wavelengths)"
+        )
         return count, downloaded, skipped
 
     def download_aia_uv(self, start_tai, end_tai=None, cadence=None, t_key_base=None):
         """Download AIA UV 1600Å"""
         query = self.build_query(
-            RECORDS["aia_uv"]["jsoc_query"], start_tai, end_tai, cadence,
-            wavelengths=RECORDS["aia_uv"]["channels"]
+            RECORDS["aia_uv"]["jsoc_query"],
+            start_tai,
+            end_tai,
+            cadence,
+            wavelengths=RECORDS["aia_uv"]["channels"],
         )
         count, downloaded, skipped = self._download_query(query, "AIA UV 1600Å")
         return count, downloaded, skipped
 
-    def download_hmi_magnetogram(self, start_tai, end_tai=None, cadence=None, t_key_base=None):
+    def download_hmi_magnetogram(
+        self, start_tai, end_tai=None, cadence=None, t_key_base=None
+    ):
         """Download HMI magnetogram"""
         query = self.build_query(
             RECORDS["hmi_mag"]["jsoc_query"], start_tai, end_tai, cadence
@@ -419,7 +444,9 @@ class Downloader():
         count, downloaded, skipped = self._download_query(query, "HMI Magnetogram")
         return count, downloaded, skipped
 
-    def download_hmi_vector_components(self, start_tai, end_tai=None, cadence=None, t_key_base=None, max_workers=10):
+    def download_hmi_vector_components(
+        self, start_tai, end_tai=None, cadence=None, t_key_base=None, max_workers=10
+    ):
         """Download HMI vector components using parallel requests.
 
         Args:
@@ -432,21 +459,24 @@ class Downloader():
         segments = RECORDS["hmi_b"]["segments"]
         label = f"HMI Vector ({len(segments)} components)"
 
-        self._thread_safe_print(f"  {label}... ", end='')
+        self._thread_safe_print(f"  {label}... ", end="")
 
         # Collect all URLs from all segments
         all_urls = []
         for segment in segments:
             query = self.build_query(
-                RECORDS["hmi_b"]["jsoc_query"], start_tai, end_tai, cadence,
-                segment=segment
+                RECORDS["hmi_b"]["jsoc_query"],
+                start_tai,
+                end_tai,
+                cadence,
+                segment=segment,
             )
             urls = self._get_export_urls(query, f"{label}/{segment}")
             if urls:
                 all_urls.extend(urls)
 
         if not all_urls:
-            self._thread_safe_print(f"No data found")
+            self._thread_safe_print("No data found")
             return 0, [], []
 
         # Download all files in parallel
@@ -460,11 +490,13 @@ class Downloader():
         elif len(downloaded) > 0:
             self._thread_safe_print(f"({downloaded} downloaded, {skipped} skipped)")
         else:
-            self._thread_safe_print(f"(failed to download)")
+            self._thread_safe_print("(failed to download)")
 
         return total, downloaded, skipped
 
-    def download_hmi_velocity(self, start_tai, end_tai=None, cadence=None, t_key_base=None):
+    def download_hmi_velocity(
+        self, start_tai, end_tai=None, cadence=None, t_key_base=None
+    ):
         """Download HMI velocity"""
         query = self.build_query(
             RECORDS["hmi_vel"]["jsoc_query"], start_tai, end_tai, cadence

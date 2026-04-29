@@ -3,7 +3,7 @@ FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
-# Service-specific lib overlays (shared/lib and predictor.py are in base)
+# Service-specific lib overlays (shared/lib, predictor.py, inference_worker.py are in base)
 COPY crop_classification/lib /app/lib
 
 ENV USECASE=crop_classification
@@ -15,5 +15,7 @@ ENV NUM_CLASSES="13"
 # Expose port
 EXPOSE 8001
 
-# Default command for development (can be overridden by docker-compose)
-CMD ["uvicorn", "predictor:app", "--host", "0.0.0.0", "--port", "8001"]
+COPY crop_classification/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+CMD ["/app/entrypoint.sh"]

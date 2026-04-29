@@ -1,0 +1,52 @@
+config:
+  target: "{{ $processEnvironment.TARGET_HOST }}"
+  http:
+    timeout: 30                # More realistic than 300s
+    pool: 50                   # Reuse connections
+  phases:
+    - name: "Warm up"
+      duration: 120
+      arrivalRate: 5
+
+    - name: "Ramp up to normal traffic"
+      duration: 300
+      arrivalRate: 10
+      rampTo: 100
+
+    - name: "Sustain peak traffic"
+      duration: 600
+      arrivalRate: 100
+
+    - name: "Stress spike"
+      duration: 120
+      arrivalRate: 150
+
+    - name: "Cool down"
+      duration: 180
+      arrivalRate: 20
+
+  payload:
+    path: "payload.csv"
+    order: random
+    skipHeader: true
+    delimiter: ","
+    fields:
+      - "event_id"
+
+  defaults:
+    headers:
+      Accept: "application/json"
+      Content-Type: "application/json"
+
+  ensure:
+    maxErrorRate: 1    # Fail test if >1% errors
+
+scenarios:
+  - name: "Get All Preloaded Events"
+    flow:
+      - get:
+          url: "{{ $processEnvironment.TARGET_PATH }}/preloaded_events"
+  - name: "Get Individual Preloaded Event"
+    flow:
+      - get:
+          url: "{{ $processEnvironment.TARGET_PATH }}/preloaded_events/{{ event_id }}"

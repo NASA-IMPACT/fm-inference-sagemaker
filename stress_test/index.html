@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Artillery Test Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Inter', -apple-system, sans-serif; background: #f1f5f9; padding: 20px; color: #0f172a; }
+        .container { max-width: 1200px; margin: auto; }
+        
+        /* Drag and Drop Zone */
+        #drop-zone {
+            border: 2px dashed #64748b;
+            border-radius: 12px;
+            padding: 50px;
+            text-align: center;
+            background: white;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        #drop-zone.hover { border-color: #2563eb; background: #f8fafc; transform: scale(1.01); }
+        #drop-zone p { margin: 0; font-size: 1.2rem; color: #475569; }
+        #drop-zone span { font-weight: bold; color: #2563eb; text-decoration: underline; }
+
+        /* Stats Grid */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 30px; }
+        .stat-card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 6px solid #3b82f6; }
+        .stat-card.success { border-left-color: #10b981; }
+        .stat-card.danger { border-left-color: #ef4444; }
+        .stat-card h3 { margin: 0; font-size: 0.75rem; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; }
+        .stat-card p { margin: 12px 0 0; font-size: 1.75rem; font-weight: 800; color: #1e293b; }
+
+        .dashboard-content { display: none; animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Tables & Charts */
+        .section-box { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 25px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 14px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f8fafc; font-weight: 600; color: #475569; }
+        .chart-container { height: 400px; position: relative; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Artillery Performance Analysis</h1>
+    
+    <div id="drop-zone">
+        <p>Drag & Drop your <span>Artillery JSON report</span> here or click to select</p>
+        <input type="file" id="file-input" hidden accept=".json">
+    </div>
+
+    <div id="dashboard" class="dashboard-content">
+        <div class="stats-grid" id="stats-grid"></div>
+
+        <div class="section-box">
+            <h3>Latency Breakdown (ms)</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Metric Type</th>
+                        <th>Min</th>
+                        <th>p50 (Median)</th>
+                        <th>p95</th>
+                        <th>p99</th>
+                        <th>Max</th>
+                    </tr>
+                </thead>
+                <tbody id="latency-body"></tbody>
+            </table>
+        </div>
+
+        <div class="section-box chart-container">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    let chart;
+
+    dropZone.onclick = () => fileInput.click();
+    dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('hover'); };
+    dropZone.ondragleave = () => dropZone.classList.remove('hover');
+    dropZone.ondrop = (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('hover');
+        handleFile(e.dataTransfer.files[0]);
+    };
+
+    fileInput.onchange = (e) => handleFile(e.target.files[0]);
+
+    function handleFile(file) {
+        if (!file || !file.name.endsWith('.json')) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                processData(JSON.parse(e.target.result));
+            } catch (err) {
+                alert("Invalid JSON file provided.");
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function processData(data) {
+        const agg = data.aggregate.counters;
+        const lat = data.aggregate.summaries['http.response_time'];
+        
+        // Calculations
+        const total = agg['http.requests'] || 0;
+        const successCount = agg['http.codes.201'] || 0;
+        const successRate = total > 0 ? ((successCount / total) * 100).toFixed(1) : 0;
+        const errorCount = (agg['http.codes.500'] || 0) + (agg['http.codes.502'] || 0);
+
+        // Update Stats Grid
+        document.getElementById('stats-grid').innerHTML = `
+            <div class="stat-card"><h3>Total Requests</h3><p>${total.toLocaleString()}</p></div>
+            <div class="stat-card success"><h3>Success Rate</h3><p>${successRate}%</p></div>
+            <div class="stat-card danger"><h3>Server Errors (5xx)</h3><p>${errorCount.toLocaleString()}</p></div>
+            <div class="stat-card danger"><h3>Timeouts</h3><p>${(agg['errors.ETIMEDOUT'] || 0).toLocaleString()}</p></div>
+        `;
+
+        // Update Latency Table
+        document.getElementById('latency-body').innerHTML = `
+            <tr>
+                <td><strong>Global Response Time</strong></td>
+                <td>${lat.min}</td>
+                <td>${lat.p50}</td>
+                <td>${lat.p95}</td>
+                <td>${lat.p99}</td>
+                <td>${lat.max}</td>
+            </tr>
+        `;
+
+        // Chart Data
+        const steps = data.intermediate || [];
+        const labels = steps.map((_, i) => `+${(i+1)*10}s`);
+        const p50s = steps.map(s => s.summaries?.['http.response_time']?.p50 || 0);
+        const errs = steps.map(s => {
+            const c = s.counters || {};
+            return (c['http.codes.500'] || 0) + (c['http.codes.502'] || 0) + (c['errors.ETIMEDOUT'] || 0);
+        });
+
+        if(chart) chart.destroy();
+        chart = new Chart(document.getElementById('trendChart'), {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    { label: 'p50 Latency (ms)', data: p50s, borderColor: '#2563eb', tension: 0.3, yAxisID: 'y' },
+                    { label: 'Errors per Step', data: errs, borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', fill: true, tension: 0.3, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { type: 'linear', position: 'left', title: { display: true, text: 'Latency (ms)' } },
+                    y1: { type: 'linear', position: 'right', title: { display: true, text: 'Errors' }, grid: { drawOnChartArea: false } }
+                }
+            }
+        });
+
+        document.getElementById('dashboard').style.display = 'block';
+        dropZone.style.display = 'none'; // Optional: hide upload after processing
+    }
+</script>
+</body>
+</html>

@@ -18,3 +18,14 @@ test-report-*.txt
 k8s-manifests/deployment.yaml
 k8s-manifests/ingress.yaml
 
+node_modules
+env.sh
+stress_test/.agents
+stress_test/.claude
+stress_test/skills-lock.json
+stress_test/report_*
+
+
+.agents/
+.claude/
+skills-lock.json

@@ -11,7 +11,6 @@ import re
 import gc
 import json
 import warnings
-from glob import glob
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -20,60 +19,59 @@ from sunpy.map import Map, contains_full_disk
 
 # AIA/HMI processing
 import aiapy.calibrate as ac
-from aiapy.calibrate import normalize_exposure, register, update_pointing, correct_degradation
+from aiapy.calibrate import (
+    normalize_exposure,
+    register,
+    update_pointing,
+    correct_degradation,
+)
 from skimage.transform import SimilarityTransform, warp
 from sunpy.util.exceptions import SunpyUserWarning, SunpyMetadataWarning
 from aiapy.util.exceptions import AiapyUserWarning
-
-warnings.filterwarnings('ignore')
-warnings.simplefilter('ignore', category=SunpyMetadataWarning)
-warnings.simplefilter('ignore', category=AiapyUserWarning)
-warnings.simplefilter('ignore', category=SunpyUserWarning)
-
 from lib.consts import SATURATION, TARGET_SOLAR_RADIUS, IMAGE_SHAPE, FITS_DIR
+
+warnings.filterwarnings("ignore")
+warnings.simplefilter("ignore", category=SunpyMetadataWarning)
+warnings.simplefilter("ignore", category=AiapyUserWarning)
+warnings.simplefilter("ignore", category=SunpyUserWarning)
 
 OUTPUT_DIR = os.path.join(FITS_DIR, "processed_netcdf")
 
 HIA_MAP_VAR_DICT = {
-    'V': {
-        'var_name': 'hmi_v',
-        'unit': 'm/s',
-        'description': 'HMI LOS Dopplergrams'
+    "V": {"var_name": "hmi_v", "unit": "m/s", "description": "HMI LOS Dopplergrams"},
+    "M": {"var_name": "hmi_m", "unit": "Gauss", "description": "HMI LOS Magnetograms"},
+    "Bx": {
+        "var_name": "hmi_bx",
+        "unit": "Gauss",
+        "description": "x-component of HMI vector magnetic field",
     },
-    'M': {
-        'var_name': 'hmi_m',
-        'unit': 'Gauss',
-        'description': 'HMI LOS Magnetograms'
+    "By": {
+        "var_name": "hmi_by",
+        "unit": "Gauss",
+        "description": "y-component of HMI vector magnetic field",
     },
-    'Bx': {
-        'var_name': 'hmi_bx',
-        'unit': 'Gauss',
-        'description': 'x-component of HMI vector magnetic field'
+    "Bz": {
+        "var_name": "hmi_bz",
+        "unit": "Gauss",
+        "description": "z-component of HMI vector magnetic field",
     },
-    'By': {
-        'var_name': 'hmi_by',
-        'unit': 'Gauss',
-        'description': 'y-component of HMI vector magnetic field'
-    },
-    'Bz': {
-        'var_name': 'hmi_bz',
-        'unit': 'Gauss',
-        'description': 'z-component of HMI vector magnetic field'
-    }
 }
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 
 def load_correction_table():
     try:
         correction_table = ac.util.get_correction_table()
         return correction_table
-    except Exception as e:
+    except Exception:
         return None
+
 
 CORRECTION_TABLE = load_correction_table()
 
-class DataProcess():
+
+class DataProcess:
     def __init__(self, aia_files, hmi_files):
         self.map = None
         self.aia_files = aia_files
@@ -87,11 +85,11 @@ class DataProcess():
             valid_mask = (mdata > 0).astype(float)
             mdata[mdata <= 0.0] = 0.0
         elif map_type == "hmi":
-            valid_mask = (mdata < 1.E6).astype(float)
+            valid_mask = (mdata < 1.0e6).astype(float)
         else:
-            raise ValueError('The type of the map is not recognized.')
+            raise ValueError("The type of the map is not recognized.")
 
-        rad = m.meta['RSUN_OBS']
+        rad = m.meta["RSUN_OBS"]
         scale_factor = target_solar_radius / rad
 
         shape_center = mdata.shape[0] / 2.0
@@ -99,16 +97,30 @@ class DataProcess():
 
         transform = SimilarityTransform(scale=scale_factor, translation=translation)
 
-        scaled_mdata = warp(mdata, transform.inverse, preserve_range=True,
-                        mode='edge', output_shape=mdata.shape, order=0)
-        scaled_validmask = warp(valid_mask, transform.inverse, preserve_range=True,
-                            mode='edge', output_shape=mdata.shape, order=0)
+        scaled_mdata = warp(
+            mdata,
+            transform.inverse,
+            preserve_range=True,
+            mode="edge",
+            output_shape=mdata.shape,
+            order=0,
+        )
+        scaled_validmask = warp(
+            valid_mask,
+            transform.inverse,
+            preserve_range=True,
+            mode="edge",
+            output_shape=mdata.shape,
+            order=0,
+        )
 
-        scaled_mdata /= (scaled_validmask + 1e-8)
+        scaled_mdata /= scaled_validmask + 1e-8
 
         new_meta = m.meta.copy()
-        new_meta['RSUN_FIX'] = target_solar_radius
-        new_meta['RFIX_COM'] = '[arcsec] Target solar radius achieved by scaling the solar disk.'
+        new_meta["RSUN_FIX"] = target_solar_radius
+        new_meta["RFIX_COM"] = (
+            "[arcsec] Target solar radius achieved by scaling the solar disk."
+        )
 
         map_scaled = m._new_instance(scaled_mdata, new_meta)
         return map_scaled
@@ -127,10 +139,10 @@ class DataProcess():
         # 3: Pad if necessary
         if (map_lev15.data).shape != IMAGE_SHAPE:
             temp_map = map_lev15
-            xdata = np.pad(temp_map.data, ((1,1),(1,1)), mode='constant')
-            temp_map.meta['naxis1'], temp_map.meta['naxis2'] = IMAGE_SHAPE
-            temp_map.meta['crpix1'] += 1
-            temp_map.meta['crpix2'] += 1
+            xdata = np.pad(temp_map.data, ((1, 1), (1, 1)), mode="constant")
+            temp_map.meta["naxis1"], temp_map.meta["naxis2"] = IMAGE_SHAPE
+            temp_map.meta["crpix1"] += 1
+            temp_map.meta["crpix2"] += 1
             padded_map = temp_map._new_instance(xdata, temp_map.meta)
             map_lev15 = padded_map
 
@@ -139,14 +151,17 @@ class DataProcess():
 
         # 5: Correct degradation
         if CORRECTION_TABLE is not None:
-            aia_corrected = correct_degradation(aia_map, correction_table=CORRECTION_TABLE)
+            aia_corrected = correct_degradation(
+                aia_map, correction_table=CORRECTION_TABLE
+            )
         else:
             print("Skipping degradation correction (table unavailable)")
             aia_corrected = aia_map
 
         # 6: Scale solar disk
-        aia_map_scaled = self.scale_solardisk(aia_corrected, map_type='aia',
-                                        target_solar_radius=TARGET_SOLAR_RADIUS)
+        aia_map_scaled = self.scale_solardisk(
+            aia_corrected, map_type="aia", target_solar_radius=TARGET_SOLAR_RADIUS
+        )
 
         # 7: Clip to valid range
         aia_map_scaled.data[aia_map_scaled.data > SATURATION] = SATURATION
@@ -157,13 +172,14 @@ class DataProcess():
     def process_hmi_map(self, map_lev1, aia_wcs):
         """EXACT from Surya's helio.py"""
         with warnings.catch_warnings():
-            warnings.simplefilter('ignore', SunpyUserWarning)
+            warnings.simplefilter("ignore", SunpyUserWarning)
             mp = map_lev1.reproject_to(aia_wcs)
 
-        mp.meta['RSUN_OBS'] = map_lev1.meta['RSUN_OBS']
-        hmi_map_scaled = self.scale_solardisk(mp, map_type='hmi', target_solar_radius=TARGET_SOLAR_RADIUS)
+        mp.meta["RSUN_OBS"] = map_lev1.meta["RSUN_OBS"]
+        hmi_map_scaled = self.scale_solardisk(
+            mp, map_type="hmi", target_solar_radius=TARGET_SOLAR_RADIUS
+        )
         return hmi_map_scaled
-
 
     def hmi_disambig(self, azimuth_map, disambig_map, method=2):
         """EXACT from Surya's helio.py"""
@@ -173,22 +189,21 @@ class DataProcess():
         nx, ny = azimuth.shape
         nx1, ny1 = disambig.shape
         if nx != nx1 or ny != ny1:
-            print('Dimensions of two images do not agree')
+            print("Dimensions of two images do not agree")
             return azimuth_map
 
         disambig = disambig.astype(int)
 
         if method < 0 or method > 2:
             method = 2
-            print('Invalid disambiguation method, set to default method = 2')
+            print("Invalid disambiguation method, set to default method = 2")
 
-        disambig = disambig // (2 ** method)
-        odd_value_index_mask = (disambig % 2 != 0)
+        disambig = disambig // (2**method)
+        odd_value_index_mask = disambig % 2 != 0
         azimuth[odd_value_index_mask] += 180
 
         disambiguated_azimuth_map = azimuth_map._new_instance(azimuth, azimuth_map.meta)
         return disambiguated_azimuth_map
-
 
     def vector2components(self, field_map, inclination_map, azimuth_disambiguated_map):
         """EXACT from Surya's helio.py"""
@@ -197,7 +212,7 @@ class DataProcess():
         azimuth_data = azimuth_disambiguated_map.data.copy()
 
         dtor = np.pi / 180.0
-        bad_index_mask = field_data < -1.e7
+        bad_index_mask = field_data < -1.0e7
         field_data[bad_index_mask] = np.nan
 
         Bx = field_data * np.sin(inclination_data * dtor) * np.sin(azimuth_data * dtor)
@@ -214,8 +229,9 @@ class DataProcess():
 
         return Bx_map, By_map, Bz_map
 
-
-    def make_hmi_vector(self, azimuth_file, disambig_file, field_file, inclination_file):
+    def make_hmi_vector(
+        self, azimuth_file, disambig_file, field_file, inclination_file
+    ):
         """EXACT from Surya's helio.py"""
         field_map = Map(field_file)
         inclination_map = Map(inclination_file)
@@ -223,29 +239,29 @@ class DataProcess():
         disambig_map = Map(disambig_file)
 
         azimuth_disambiguated_map = self.hmi_disambig(azimuth_map, disambig_map, 2)
-        Bx_map, By_map, Bz_map = self.vector2components(field_map, inclination_map,
-                                                azimuth_disambiguated_map)
+        Bx_map, By_map, Bz_map = self.vector2components(
+            field_map, inclination_map, azimuth_disambiguated_map
+        )
 
         return Bx_map, By_map, Bz_map
-
 
     def compute_timestamp(self, fname):
         """EXACT from Surya's helio.py"""
         # AIA pattern
-        pattern = re.compile(r'(s\.)(.*)Z\.(\d+)(\.image)')
+        pattern = re.compile(r"(s\.)(.*)Z\.(\d+)(\.image)")
         match = pattern.search(fname)
         if match:
             t = match.group(2)
             format_string = "%Y-%m-%dT%H%M%S"
             t_obs = datetime.strptime(t, format_string)
-            nearest_12min = round(t_obs.minute/12)*12
-            deltaT = nearest_12min*60 - (60*t_obs.minute + t_obs.second)
+            nearest_12min = round(t_obs.minute / 12) * 12
+            deltaT = nearest_12min * 60 - (60 * t_obs.minute + t_obs.second)
             t = t_obs + timedelta(seconds=deltaT)
             t_key = f"{t.year}{t.month:02d}{t.day:02d}_{t.hour:02d}{t.minute:02d}"
             return t_key
 
         # HMI pattern
-        pattern = re.compile(r'\.(\d{8})_(\d{6})_TAI')
+        pattern = re.compile(r"\.(\d{8})_(\d{6})_TAI")
         match = pattern.search(fname)
         if match:
             ymd = match.group(1)
@@ -263,7 +279,7 @@ class DataProcess():
             try:
                 _map = Map(fname)
                 wavelnth = _map.meta["wavelnth"]
-                print(f"Processing AIA {wavelnth}...", end='')
+                print(f"Processing AIA {wavelnth}...", end="")
                 # Quality check (STRICT - skip entire timestamp if any channel is bad)
                 if _map.meta.get("quality", 0) != 0:
                     return False
@@ -294,7 +310,7 @@ class DataProcess():
                         "description": f"Level-1.5 AIA image for wavelength {wavelnth} Angstrom",
                         "meta_0": json.dumps(original_meta),
                         "meta_1": json.dumps(updated_meta),
-                    }
+                    },
                 )
 
                 # Compression settings
@@ -328,28 +344,28 @@ class DataProcess():
             return map
 
         # LOS Magnetogram
-        if hmi_files['magnetogram']:
-            hmi_map = Map(hmi_files['magnetogram'])
-            hmi_maps['M'] = filter_map(hmi_map)
+        if hmi_files["magnetogram"]:
+            hmi_map = Map(hmi_files["magnetogram"])
+            hmi_maps["M"] = filter_map(hmi_map)
 
         # Doppler
-        if hmi_files['doppler']:
-            hmi_map = Map(hmi_files['doppler'])
-            hmi_maps['V'] = filter_map(hmi_map)
+        if hmi_files["doppler"]:
+            hmi_map = Map(hmi_files["doppler"])
+            hmi_maps["V"] = filter_map(hmi_map)
 
         # Vector components
-        if all(hmi_files[k] for k in ['azimuth', 'disambig', 'field', 'inclination']):
+        if all(hmi_files[k] for k in ["azimuth", "disambig", "field", "inclination"]):
             try:
                 Bx_map, By_map, Bz_map = self.make_hmi_vector(
-                    hmi_files['azimuth'],
-                    hmi_files['disambig'],
-                    hmi_files['field'],
-                    hmi_files['inclination']
+                    hmi_files["azimuth"],
+                    hmi_files["disambig"],
+                    hmi_files["field"],
+                    hmi_files["inclination"],
                 )
-                hmi_maps['Bx'] = Bx_map
-                hmi_maps['By'] = By_map
-                hmi_maps['Bz'] = Bz_map
-                print(f"  HMI_Bx/By/Bz: ✓")
+                hmi_maps["Bx"] = Bx_map
+                hmi_maps["By"] = By_map
+                hmi_maps["Bz"] = Bz_map
+                print("  HMI_Bx/By/Bz: ✓")
             except Exception as e:
                 print(f"  HMI vector: ✗ Error: {str(e)[:60]}")
 
@@ -405,9 +421,9 @@ class DataProcess():
                 if var_info is None:
                     continue
 
-                var_name = var_info['var_name']
-                unit = var_info['unit']
-                desc = var_info['description']
+                var_name = var_info["var_name"]
+                unit = var_info["unit"]
+                desc = var_info["description"]
                 # Store in xarray
                 data_arrays[var_name] = xr.DataArray(
                     xdata,
@@ -420,7 +436,7 @@ class DataProcess():
                         "description": desc,
                         "meta_0": json.dumps(original_meta),
                         "meta_1": json.dumps(updated_meta),
-                    }
+                    },
                 )
 
                 encoding[var_name] = {
@@ -444,7 +460,9 @@ class DataProcess():
             "institution": "UAH/ODSI",
             "data_time": timestamp,
             "production_date": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-            "degradation_correction": "applied" if CORRECTION_TABLE is not None else "not_applied",
+            "degradation_correction": "applied"
+            if CORRECTION_TABLE is not None
+            else "not_applied",
             "pointing_source": "JSOC_realtime",
         }
 
@@ -457,7 +475,7 @@ class DataProcess():
             format="NETCDF4",
             engine="h5netcdf",
             encoding=encoding,
-            mode="w"
+            mode="w",
         )
 
         ds.close()

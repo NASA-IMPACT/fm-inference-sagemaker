@@ -31,3 +31,26 @@ spec:
             name: prediction-service
             port:
               number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: go-services-ingress
+  namespace: default
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: {{ .Values.hostServices }}
+    http:
+      paths:
+      - path: {{ .Values.ingressV2Services.path }}
+        pathType: Prefix
+        backend:
+          service:
+            name: go-services-service
+            port:
+              number: 80
+---

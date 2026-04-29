@@ -1,27 +1,29 @@
 import boto3
 import gc
-import GPUtil
-import httpx
 import os
-import re
 import torch
 
 from botocore import UNSIGNED
 from botocore.config import Config
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Request, APIRouter, status, Body, Depends, HTTPException
+from fastapi import FastAPI, Request, APIRouter, status, Body, HTTPException
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
-from glob import glob
 from pydantic import BaseModel
 from typing import Optional, Tuple, List
 
 from lib.consts import (
-    CHANNELS, DOWNLOAD_FOLDER, OUTPUT_DIR, EMAIL, FITS_DIR,
-    SURYA_CONFIG_PATH, SURYA_SCALERS_PATH, SURYA_WEIGHTS_PATH,
-    SURYA_S3_BUCKET
+    CHANNELS,
+    DOWNLOAD_FOLDER,
+    OUTPUT_DIR,
+    EMAIL,
+    FITS_DIR,
+    SURYA_CONFIG_PATH,
+    SURYA_SCALERS_PATH,
+    SURYA_WEIGHTS_PATH,
+    SURYA_S3_BUCKET,
 )
 from lib.rollout_infer import Infer
 from lib.downloader import Downloader
@@ -40,11 +42,13 @@ app = FastAPI(
 v1_api = FastAPI(
     title="Surya Predictor API",
     description="Solar Dynamics Observatory (SDO) Rollout Forecasting API",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # --- Security Configuration ---
-API_KEY_VALIDATION_URL = os.getenv("API_KEY_VALIDATION_URL", "https://dev.fm.dsig.net/api/validate")
+API_KEY_VALIDATION_URL = os.getenv(
+    "API_KEY_VALIDATION_URL", "https://dev.fm.dsig.net/api/validate"
+)
 api_key_header = APIKeyHeader(name="x-api-key")
 
 # --- Model Configuration ---
@@ -63,7 +67,9 @@ def download_single_timestamp(args):
     ts_key = ts.strftime("%Y%m%d_%H%M%S")
     print(f"Downloading data for timestamp: {ts_key}")
 
-    downloader = Downloader(email=email, output_dir=fits_dir, wind_data_dir=wind_data_dir)
+    downloader = Downloader(
+        email=email, output_dir=fits_dir, wind_data_dir=wind_data_dir
+    )
     download_results = downloader.download(ts, ts, cadence=f"{cadence_minutes}m")
 
     raw_fits_dir = os.path.join(fits_dir, "raw_fits")
@@ -71,50 +77,50 @@ def download_single_timestamp(args):
     # Organize files for this timestamp
     aia_files = []
     hmi_files = {
-        'magnetogram': None,
-        'doppler': None,
-        'field': None,
-        'inclination': None,
-        'azimuth': None,
-        'disambig': None,
+        "magnetogram": None,
+        "doppler": None,
+        "field": None,
+        "inclination": None,
+        "azimuth": None,
+        "disambig": None,
     }
 
     for task_name, result in download_results.items():
-        all_files = result.get('downloaded', []) + result.get('skipped', [])
+        all_files = result.get("downloaded", []) + result.get("skipped", [])
         for fname in all_files:
             fpath = os.path.join(raw_fits_dir, fname)
-            if 'aia' in fname.lower():
+            if "aia" in fname.lower():
                 aia_files.append(fpath)
-            elif 'hmi.m_720s' in fname:
-                hmi_files['magnetogram'] = fpath
-            elif 'hmi.v_720s' in fname:
-                hmi_files['doppler'] = fpath
-            elif 'hmi.b_720s' in fname:
-                if '.field.' in fname:
-                    hmi_files['field'] = fpath
-                elif '.inclination.' in fname:
-                    hmi_files['inclination'] = fpath
-                elif '.azimuth.' in fname:
-                    hmi_files['azimuth'] = fpath
-                elif '.disambig.' in fname:
-                    hmi_files['disambig'] = fpath
+            elif "hmi.m_720s" in fname:
+                hmi_files["magnetogram"] = fpath
+            elif "hmi.v_720s" in fname:
+                hmi_files["doppler"] = fpath
+            elif "hmi.b_720s" in fname:
+                if ".field." in fname:
+                    hmi_files["field"] = fpath
+                elif ".inclination." in fname:
+                    hmi_files["inclination"] = fpath
+                elif ".azimuth." in fname:
+                    hmi_files["azimuth"] = fpath
+                elif ".disambig." in fname:
+                    hmi_files["disambig"] = fpath
 
-    return ts_key, {'aia_files': aia_files, 'hmi_files': hmi_files}
+    return ts_key, {"aia_files": aia_files, "hmi_files": hmi_files}
 
 
 def assign_available_gpus():
-    """Assign available GPUs to the current process using GPUtil (least memory usage)."""
+    """Round Robin GPU assignment"""
     try:
-        free_gpus = GPUtil.getAvailable(order='memory', limit=1)
-        if os.environ.get("GPU_ID"):
-            free_gpus = GPUtil.getAvailable(order='memory', limit=8)
-            available_gpus = [int(gpu_id) for gpu_id in os.environ["GPU_ID"].split(",")]
-            free_gpus = [gpu_id for gpu_id in free_gpus if gpu_id in available_gpus]
-        if free_gpus:
-            os.environ["CUDA_VISIBLE_DEVICES"] = str(free_gpus[0])
-            print(f"Assigned GPU: {free_gpus[0]}")
+        gpu_ids = (
+            os.environ.get("GPU_ID").split(",") if os.environ.get("GPU_ID") else None
+        )
+        if gpu_ids:
+            pod_id = int(os.environ.get("POD_INDEX", 0))
+            selected_gpu_id = gpu_ids[pod_id % len(gpu_ids)]
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(selected_gpu_id)
+            print(f"Assigned GPU: {selected_gpu_id}")
         else:
-            print("No free GPUs found.")
+            print("No GPU IDs assigned; Assigning all GPUs available.")
     except Exception as e:
         print(f"Could not assign GPU automatically: {e}")
 
@@ -126,10 +132,11 @@ def load_model():
         scalers_path=SURYA_SCALERS_PATH,
         weights_path=SURYA_WEIGHTS_PATH,
         data_dir=NETCDF_DIR,
-        results_dir=OUTPUT_DIR
+        results_dir=OUTPUT_DIR,
     )
     infer.load_model()
     return infer
+
 
 def download_from_s3(ts: datetime) -> Optional[Tuple[str, str]]:
     """
@@ -140,7 +147,7 @@ def download_from_s3(ts: datetime) -> Optional[Tuple[str, str]]:
     Returns:
         Tuple of (ts_key, nc_file_path) if successful, else None
     """
-    s3 = boto3.client('s3', config=Config(signature_version=UNSIGNED))
+    s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
     ts_key = ts.strftime("%Y%m%d_%H%M")
     year, month = ts.strftime("%Y"), ts.strftime("%m")
     s3_prefix = f"{year}/{month}"
@@ -155,7 +162,9 @@ def download_from_s3(ts: datetime) -> Optional[Tuple[str, str]]:
         return ts, None
 
 
-def parallel_download_from_s3(download_args: List[Tuple[datetime, int, str, str, str]]) -> List[datetime]:
+def parallel_download_from_s3(
+    download_args: List[Tuple[datetime, int, str, str, str]],
+) -> List[datetime]:
     """
     Download NetCDF files from S3 in parallel.
 
@@ -165,9 +174,14 @@ def parallel_download_from_s3(download_args: List[Tuple[datetime, int, str, str,
     nc_files = []
     downloaded_timestamps = []
 
-    max_workers = min(len(download_args), 12)  # Increased from 4 to 12 for faster downloads
+    max_workers = min(
+        len(download_args), 12
+    )  # Increased from 4 to 12 for faster downloads
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(download_from_s3, args[0]): args[0] for args in download_args}
+        futures = {
+            executor.submit(download_from_s3, args[0]): args[0]
+            for args in download_args
+        }
 
         for future in as_completed(futures):
             ts = futures[future]
@@ -177,11 +191,15 @@ def parallel_download_from_s3(download_args: List[Tuple[datetime, int, str, str,
                 print(f"Completed download for timestamp: {nc_file}")
                 downloaded_timestamps.append(ts)
             else:
-                print(f"S3 download failed for timestamp {ts.strftime('%Y%m%d_%H%M%S')}, will attempt direct download.")
+                print(
+                    f"S3 download failed for timestamp {ts.strftime('%Y%m%d_%H%M%S')}, will attempt direct download."
+                )
     return downloaded_timestamps, nc_files
 
 
-def parallel_download_and_preprocess(download_args: List[Tuple[datetime, int, str, str, str]]) -> List[str]:
+def parallel_download_and_preprocess(
+    download_args: List[Tuple[datetime, int, str, str, str]],
+) -> List[str]:
     """
     Download and preprocess NetCDF files in parallel.
 
@@ -192,9 +210,14 @@ def parallel_download_and_preprocess(download_args: List[Tuple[datetime, int, st
     # Download all timestamps in parallel using ProcessPoolExecutor
     files_by_timestamp = {}
 
-    max_workers = min(len(download_args), 12)  # Increased from 4 to 12 for faster downloads
+    max_workers = min(
+        len(download_args), 12
+    )  # Increased from 4 to 12 for faster downloads
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(download_single_timestamp, args): args[0] for args in download_args}
+        futures = {
+            executor.submit(download_single_timestamp, args): args[0]
+            for args in download_args
+        }
 
         for future in as_completed(futures):
             ts = futures[future]
@@ -203,17 +226,21 @@ def parallel_download_and_preprocess(download_args: List[Tuple[datetime, int, st
                 files_by_timestamp[ts_key] = ts_data
                 print(f"Completed download for timestamp: {ts_key}")
             except Exception as e:
-                print(f"Error downloading timestamp {ts.strftime('%Y%m%d_%H%M%S')}: {e}")
+                print(
+                    f"Error downloading timestamp {ts.strftime('%Y%m%d_%H%M%S')}: {e}"
+                )
 
     # Get sorted list of available timestamps
     sorted_available_timestamps = sorted(files_by_timestamp.keys())
-    print(f"Downloaded files for {len(sorted_available_timestamps)} timestamps: {sorted_available_timestamps}")
+    print(
+        f"Downloaded files for {len(sorted_available_timestamps)} timestamps: {sorted_available_timestamps}"
+    )
 
     # Process each timestamp to NetCDF
     for ts_key in sorted_available_timestamps:
         ts_data = files_by_timestamp[ts_key]
-        aia_files = sorted(ts_data['aia_files'])
-        hmi_files = ts_data['hmi_files']
+        aia_files = sorted(ts_data["aia_files"])
+        hmi_files = ts_data["hmi_files"]
         processor = DataProcess(aia_files, hmi_files)
         filename = processor.process_timestamp(FITS_DIR, ts_key)
         nc_files.append(filename)
@@ -221,7 +248,9 @@ def parallel_download_and_preprocess(download_args: List[Tuple[datetime, int, st
     return nc_files
 
 
-def ensure_data_available(start_time: datetime, cadence_minutes: int = 12, num_frames: int = 1) -> Tuple[List[str], List[str]]:
+def ensure_data_available(
+    start_time: datetime, cadence_minutes: int = 12, num_frames: int = 1
+) -> Tuple[List[str], List[str]]:
     """
     Ensure NetCDF data files are available for the requested timestamp.
     Downloads and preprocesses if needed.
@@ -242,7 +271,7 @@ def ensure_data_available(start_time: datetime, cadence_minutes: int = 12, num_f
     if not EMAIL:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="SDO_EMAIL not configured. Cannot download data."
+            detail="SDO_EMAIL not configured. Cannot download data.",
         )
 
     print(f"No NetCDF files found. Downloading data for {start_time}...")
@@ -262,7 +291,9 @@ def ensure_data_available(start_time: datetime, cadence_minutes: int = 12, num_f
             timestamps_to_download.append(ts)
         else:
             nc_files.append(nc_file)
-            print(f"NetCDF file already exists for timestamp {ts_key}, skipping download.")
+            print(
+                f"NetCDF file already exists for timestamp {ts_key}, skipping download."
+            )
 
     if not timestamps_to_download:
         print("All requested NetCDF files are already available.")
@@ -301,6 +332,7 @@ MODEL = load_model()
 
 public_router = APIRouter()
 
+
 # --- Request/Response Models ---
 class RolloutRequest(BaseModel):
     selected_datetime: str  # ISO format: "2024-06-10T12:00:00"
@@ -336,7 +368,9 @@ class RolloutResponse(BaseModel):
 
 
 # --- Inference Logic ---
-def run_rollout_inference(selected_datetime: str, cadence_minutes: int, num_frames: int):
+def run_rollout_inference(
+    selected_datetime: str, cadence_minutes: int, num_frames: int
+):
     """
     Run rollout inference for the given datetime and parameters.
 
@@ -354,7 +388,7 @@ def run_rollout_inference(selected_datetime: str, cadence_minutes: int, num_fram
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid datetime format: {e}"
+            detail=f"Invalid datetime format: {e}",
         )
 
     # Ensure data is available (downloads if needed)
@@ -363,27 +397,27 @@ def run_rollout_inference(selected_datetime: str, cadence_minutes: int, num_fram
     # Find the two closest files to the selected datetime
     first_file, second_file = nc_files[0], nc_files[1]
     print(f"Using files for inference: {first_file}, {second_file}")
-    print(nc_files, 'NC FILES AND AVAILABLE TIMESTAMPS')
+    print(nc_files, "NC FILES AND AVAILABLE TIMESTAMPS")
     # Run inference
     try:
         results = MODEL.run_inference(
             first_step_file=first_file,
             second_step_file=second_file,
             steps=num_frames,
-            cadence_minutes=cadence_minutes
+            cadence_minutes=cadence_minutes,
         )
     except Exception as e:
         print(f"Inference error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Inference failed: {str(e)}"
+            detail=f"Inference failed: {str(e)}",
         )
 
     # Build forecast config for process_results
     forecast_config = {
-        'start_time': start_time,
-        'cadence_minutes': cadence_minutes,
-        'max_steps': num_frames
+        "start_time": start_time,
+        "cadence_minutes": cadence_minutes,
+        "max_steps": num_frames,
     }
 
     # Process results into API format
@@ -398,35 +432,36 @@ def run_rollout_inference(selected_datetime: str, cadence_minutes: int, num_fram
 
 
 # --- API Endpoints ---
-@public_router.post('/invocations')
+@public_router.post("/invocations")
 async def rollout_forecast(request: RolloutRequest = Body(...)):
     """
     Run rollout forecasting for solar imagery.
 
     Returns forecast tiles endpoints and correlation scores for each timestep.
     """
-    print(f"Received rollout request: datetime={request.selected_datetime}, "
-          f"cadence={request.cadence_in_minutes}min, frames={request.num_frames}")
+    print(
+        f"Received rollout request: datetime={request.selected_datetime}, "
+        f"cadence={request.cadence_in_minutes}min, frames={request.num_frames}"
+    )
 
     response = run_rollout_inference(
         selected_datetime=request.selected_datetime,
         cadence_minutes=request.cadence_in_minutes,
-        num_frames=request.num_frames
+        num_frames=request.num_frames,
     )
 
     return JSONResponse(content=jsonable_encoder(response))
 
 
-@public_router.get('/channels')
+@public_router.get("/channels")
 async def get_channels():
     """Return the list of available SDO channels."""
-    return JSONResponse(content=jsonable_encoder({
-        "channels": CHANNELS,
-        "count": len(CHANNELS)
-    }))
+    return JSONResponse(
+        content=jsonable_encoder({"channels": CHANNELS, "count": len(CHANNELS)})
+    )
 
 
-@public_router.get('/ping')
+@public_router.get("/ping")
 async def ping(request: Request):
     """Health check endpoint."""
     return {"successCode": 200, "message": "pong"}
@@ -439,7 +474,7 @@ async def health():
         "successCode": 200,
         "status": "healthy",
         "model_loaded": MODEL is not None,
-        "gpu_available": torch.cuda.is_available()
+        "gpu_available": torch.cuda.is_available(),
     }
 
 

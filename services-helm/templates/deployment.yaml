@@ -6,7 +6,7 @@ metadata:
   labels:
     app: prediction-app
 spec:
-  replicas: {{ .Values.predictionContainer.replicaCount  }}
+  replicas: {{ .Values.predictionContainer.replicaCount }}
   revisionHistoryLimit: 2
   selector:
     matchLabels:
@@ -35,6 +35,14 @@ spec:
                 name: prediction-app-envs
             - configMapRef:
                 name: oidc-envs
+          resources:
+            requests:
+              cpu: {{ .Values.predictionContainer.resources_request_cpu }}
+              memory: {{ .Values.predictionContainer.resources_request_memory  }}
+            limits:
+              #cpu: {{ .Values.predictionContainer.resources_limit_cpu }}
+              memory: {{ .Values.predictionContainer.resources_limit_memory }}
+
       volumes:
         - name: cache-volume
           persistentVolumeClaim:
@@ -79,159 +87,44 @@ spec:
           persistentVolumeClaim:
             claimName: service-cache-pvc
 ---
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: floods-app
+  name: go-services-app
   labels:
-    app: floods-app
+    app: go-services-app
 spec:
-  replicas: {{ .Values.floodsContainer.replicaCount  }}
-  revisionHistoryLimit: 2
+  replicas: {{ .Values.goServicesContainer.replicaCount }}
+  revisionHistoryLimit: 8
   selector:
     matchLabels:
-      app: floods-app
+      app: go-services-app
   template:
     metadata:
       labels:
-        app: floods-app
+        app: go-services-app
     spec:
       imagePullSecrets:
         - name: {{ .Values.imagePullSecrets }}
-      runtimeClassName: nvidia
       containers:
-        - name: pipeline-floods-container
-          image: {{ .Values.floodsContainer.imageUrl }}
+        - name: go-services-container
+          image: {{ .Values.goServicesContainer.imageUrl }}
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
-          volumeMounts:
-            - name: cache-volume
-              mountPath: /root/.cache
+          env:
+          - name: GOMEMLIMIT
+            value: "900MiB"   # ~90% of 1Gi
           envFrom:
             - configMapRef:
-                name: floods-app-envs
+                name: prediction-app-envs
             - configMapRef:
                 name: oidc-envs
-      volumes:
-        - name: cache-volume
-          persistentVolumeClaim:
-            claimName: service-cache-pvc
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: burn-scars-app
-  labels:
-    app: burn-scars-app
-spec:
-  replicas: {{ .Values.burnScarContainer.replicaCount  }}
-  revisionHistoryLimit: 2
-  selector:
-    matchLabels:
-      app: burn-scars-app
-  template:
-    metadata:
-      labels:
-        app: burn-scars-app
-    spec:
-      imagePullSecrets:
-        - name: {{ .Values.imagePullSecrets }}
-      runtimeClassName: nvidia
-      containers:
-        - name: pipeline-burn-scars-container
-          image: {{ .Values.burnScarContainer.imageUrl }}
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 8080
-          volumeMounts:
-            - name: cache-volume
-              mountPath: /root/.cache
-          envFrom:
-            - configMapRef:
-                name: burn-scars-app-envs
-            - configMapRef:
-                name: oidc-envs
-      volumes:
-        - name: cache-volume
-          persistentVolumeClaim:
-            claimName: service-cache-pvc
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: crop-classification-app
-  labels:
-    app: crop-classification-app
-spec:
-  replicas: {{ .Values.cropContainer.replicaCount  }}
-  revisionHistoryLimit: 2
-  selector:
-    matchLabels:
-      app: crop-classification-app
-  template:
-    metadata:
-      labels:
-        app: crop-classification-app
-    spec:
-      imagePullSecrets:
-        - name: {{ .Values.imagePullSecrets }}
-      runtimeClassName: nvidia
-      containers:
-        - name: pipeline-crop-classification-container
-          image: {{ .Values.cropContainer.imageUrl }}
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 8080
-          volumeMounts:
-            - name: cache-volume
-              mountPath: /root/.cache
-          envFrom:
-            - configMapRef:
-                name: crop-classification-app-envs
-            - configMapRef:
-                name: oidc-envs
-      volumes:
-        - name: cache-volume
-          persistentVolumeClaim:
-            claimName: service-cache-pvc
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: surya-rollout-app
-  labels:
-    app: surya-rollout-app
-spec:
-  replicas: {{ .Values.suryaRolloutContainer.replicaCount  }}
-  revisionHistoryLimit: 2
-  selector:
-    matchLabels:
-      app: surya-rollout-app
-  template:
-    metadata:
-      labels:
-        app: surya-rollout-app
-    spec:
-      imagePullSecrets:
-        - name: {{ .Values.imagePullSecrets }}
-      runtimeClassName: nvidia
-      containers:
-        - name: pipeline-surya-rollout-container
-          image: {{ .Values.suryaRolloutContainer.imageUrl }}
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 8001
-          volumeMounts:
-            - name: cache-volume
-              mountPath: /root/.cache
-          envFrom:
-            - configMapRef:
-                name: surya-rollout-app-envs
-            - configMapRef:
-                name: oidc-envs
-      volumes:
-        - name: cache-volume
-          persistentVolumeClaim:
-            claimName: service-cache-pvc
----
+          resources:
+            requests:
+              cpu: {{ .Values.goServicesContainer.resources_request_cpu }}
+              memory: {{ .Values.goServicesContainer.resources_request_memory  }}
+            limits:
+              cpu: {{ .Values.goServicesContainer.resources_limit_cpu }}
+              memory: {{ .Values.goServicesContainer.resources_limit_memory }}

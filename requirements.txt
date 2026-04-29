@@ -32,3 +32,4 @@ transitions>=0.9.0
 uvicorn
 python-multipart
 python-jose[cryptography]
+temporalio

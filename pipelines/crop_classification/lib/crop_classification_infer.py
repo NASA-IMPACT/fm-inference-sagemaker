@@ -1,132 +1,135 @@
 import numpy as np
-import rasterio
 import torch
-
 
 
 from datetime import datetime
 from einops import rearrange
 
 from lib.infer import Infer
-from lib.consts import NO_DATA, NO_DATA_FLOAT, MEANS, STDS
+from lib.consts import NO_DATA, NO_DATA_FLOAT
 from terratorch.tasks import SemanticSegmentationTask
 
 
 class CropClassificationInfer(Infer):
-    def __init__(self, config, checkpoint, max_queue_size=4, num_streams=2):
-        super().__init__(config, checkpoint, max_queue_size, num_streams)
+    def __init__(self, config, checkpoint):
+        super().__init__(config, checkpoint)
+
     def load_model(self):
         if self.model:
             return
         model_args = {
-                # Backbone
-                "backbone": "prithvi_eo_v2_600_tl",
-                "backbone_pretrained": False,
-                "backbone_num_frames": 3,
-                "backbone_bands": ["BLUE", "GREEN", "RED", "NIR_NARROW", "SWIR_1", "SWIR_2"],
-                "backbone_coords_encoding": [],
-                # Necks
-                "necks": [
-                    {
-                        "name": "SelectIndices",
-                        "indices": [7, 15, 23, 31]
-                    },
-                    {
-                        "name": "ReshapeTokensToImage",
-                        "effective_time_dim": 3
-                    },
-                    {"name": "LearnedInterpolateToPyramidal"},
-                ],
-                # Decoder
-                "decoder": "UNetDecoder",
-                "decoder_channels": [512, 256, 128, 64],
-                # Head
-                "head_dropout": 0.1,
-                "num_classes": 13,
-            }
+            # Backbone
+            "backbone": "prithvi_eo_v2_600_tl",
+            "backbone_pretrained": False,
+            "backbone_num_frames": 3,
+            "backbone_bands": [
+                "BLUE",
+                "GREEN",
+                "RED",
+                "NIR_NARROW",
+                "SWIR_1",
+                "SWIR_2",
+            ],
+            "backbone_coords_encoding": [],
+            # Necks
+            "necks": [
+                {"name": "SelectIndices", "indices": [7, 15, 23, 31]},
+                {"name": "ReshapeTokensToImage", "effective_time_dim": 3},
+                {"name": "LearnedInterpolateToPyramidal"},
+            ],
+            # Decoder
+            "decoder": "UNetDecoder",
+            "decoder_channels": [512, 256, 128, 64],
+            # Head
+            "head_dropout": 0.1,
+            "num_classes": 13,
+        }
         self.model = SemanticSegmentationTask.load_from_checkpoint(
-                self.checkpoint_filename,
-                model_factory="EncoderDecoderFactory",
-                model_args=model_args
-            )
+            self.checkpoint_filename,
+            model_factory="EncoderDecoderFactory",
+            model_args=model_args,
+        )
         self.model.to(self.device)
         self.model = self.model.eval()
+        if self.use_cuda:
+            # Use "default" mode to avoid CUDA graph conflicts with DataLoader workers
+            self.model = torch.compile(self.model, mode="reduce-overhead")
 
-    def preprocess(self, images, date):
+    def preprocess(self, tiles, profiles, date):
         """
-        Optimized preprocessing with pinned memory for faster transfers
+        Preprocess tiles (numpy arrays) into tensors for inference.
+
+        Args:
+            tiles: list of numpy arrays (C, H, W) from DataPreparer (25 bands for timeseries)
+            profiles: list of rasterio profile dicts with transforms
+            date: date string in 'YYYY-MM-DD' format
         """
         images_array = []
-        profiles = []
         coords = []
         temporal = []
-        date = datetime.strptime(date, '%Y-%m-%d')
-        julian_year, julian_day = int(datetime.strftime(date, "%Y")), int(datetime.strftime(date, "%j"))
+        parsed_date = datetime.strptime(date, "%Y-%m-%d")
+        julian_year, julian_day = (
+            int(datetime.strftime(parsed_date, "%Y")),
+            int(datetime.strftime(parsed_date, "%j")),
+        )
 
-        for image in images:
-            with rasterio.open(image) as raster_file:
-                stacked = []
-                src = raster_file.read()
-                stacked.append(src[:6])  # Read pre bands
-                stacked.append(src[9:15])  # Read current bands
-                stacked.append(src[18:24])  # Read post bands
-                image = np.concatenate(stacked, axis=0)
-                image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
+        for tile, profile in zip(tiles, profiles):
+            # Extract 3 time frames (6 bands each) from timeseries data
+            stacked = []
+            stacked.append(tile[:6])  # Read pre bands
+            stacked.append(tile[9:15])  # Read current bands
+            stacked.append(tile[18:24])  # Read post bands
+            image = np.concatenate(stacked, axis=0)
+            image = np.where(image == NO_DATA, NO_DATA_FLOAT, image)
 
-                # Use pinned memory for faster CPU->GPU transfers
-                if self.use_cuda:
-                    image_tensor = torch.from_numpy(image).pin_memory()
-                else:
-                    image_tensor = torch.from_numpy(image)
+            # Convert to float tensor for normalization
+            image_tensor = torch.from_numpy(image).float()
 
-                # Normalization (match device of image tensor and statistics)
-                if len(self.means) > 0 and len(self.stds) > 0 and self.use_cuda:
-                    # Move to GPU for normalization
-                    image_tensor = image_tensor.to(self.device, non_blocking=True)
-                    for band in range(image_tensor.shape[0]):
-                        band_mask = image_tensor[band] == NO_DATA_FLOAT
-                        band_index = band % len(self.means)
-                        image_tensor[band][~band_mask] = (
-                            (image_tensor[band][~band_mask].float() - self.means[band_index])
-                            / self.stds[band_index]
-                        ).to(image_tensor.dtype)
-                    # Move back to CPU for batching
-                    image_tensor = image_tensor.cpu()
-                elif len(self.means) > 0 and len(self.stds) > 0:
-                    # CPU-only normalization
-                    for band in range(image_tensor.shape[0]):
-                        band_mask = image_tensor[band] == NO_DATA_FLOAT
-                        band_index = band % len(self.means)
-                        image_tensor[band][~band_mask] = (
-                            (image_tensor[band][~band_mask].float() - self.means[band_index])
-                            / self.stds[band_index]
-                        ).to(image_tensor.dtype)
+            # Vectorized normalization on CPU (avoids GPU bounce)
+            # Tile means/stds to match 18 bands (3 time frames × 6 bands)
+            if len(self.means) > 0 and len(self.stds) > 0:
+                num_repeats = image_tensor.shape[0] // len(self.means_cpu)
+                means_tiled = self.means_cpu.repeat(num_repeats, 1, 1)
+                stds_tiled = self.stds_cpu.repeat(num_repeats, 1, 1)
+                mask = image_tensor != NO_DATA_FLOAT
+                image_tensor = torch.where(
+                    mask, (image_tensor - means_tiled) / stds_tiled, image_tensor
+                )
 
-                images_array.append(image_tensor)
-                coords.append(raster_file.lnglat())
-                temporal.append([julian_year, julian_day])
-                profiles.append(raster_file.profile)
+            images_array.append(image_tensor)
 
-        # Stack into a tensor
-        imgs_tensor = torch.stack(images_array).float()
+            # Compute center coords from transform
+            transform = profile["transform"]
+            width, height = profile["width"], profile["height"]
+            center_lng = transform.c + width * transform.a / 2
+            center_lat = transform.f + height * transform.e / 2
+            coords.append((center_lng, center_lat))
+            temporal.append([julian_year, julian_day])
 
-        # Use pinned memory for the final tensor
-        if self.use_cuda and not imgs_tensor.is_pinned():
-            imgs_tensor = imgs_tensor.pin_memory()
+        # Stack into a single tensor, then convert to BF16 and pin once
+        imgs_tensor = torch.stack(images_array)
+
+        if self.use_cuda:
+            # Convert to BF16 and pin memory once for the whole batch
+            imgs_tensor = imgs_tensor.bfloat16().pin_memory()
+        else:
+            imgs_tensor = imgs_tensor.float()
 
         # Increase dimensions to match input size
-        processed_images = rearrange(imgs_tensor, 'b (c t) h w -> b c t h w', c=6, t=3)
+        processed_images = rearrange(imgs_tensor, "b (c t) h w -> b c t h w", c=6, t=3)
         return processed_images, profiles, coords, temporal
 
-    def infer(self, images, date):
+    def infer(self, tiles, profiles, date):
         """
         Optimized inference with pinned memory and CUDA streams
         Args:
-            images (list): List of images
+            tiles (list): List of numpy arrays (C, H, W) from DataPreparer
+            profiles (list): List of rasterio profile dicts with transforms
+            date (str): Date string in 'YYYY-MM-DD' format
         """
         # forward the model
         with torch.no_grad():
-            images, profiles, coords, temporal = self.preprocess(images, date)
+            images, profiles, coords, temporal = self.preprocess(tiles, profiles, date)
 
             # Use non-blocking transfer with pinned memory
             images_device = images.to(self.device, non_blocking=True)
@@ -135,32 +138,28 @@ class CropClassificationInfer(Infer):
             if self.use_cuda:
                 torch.cuda.synchronize()
 
-            result = self.model(images_device)
+            # Forward pass with BF16 autocast
+            with torch.amp.autocast(
+                device_type="cuda", dtype=torch.bfloat16, enabled=self.use_cuda
+            ):
+                result = self.model(images_device)
 
-            predicted_masks = list()
             # Use non-blocking transfer back to CPU
             results = result.output.detach()
 
-            # Process results
-            num_classes = self.config['model']['init_args']['model_args']['num_classes']
-            threshold = self.config.get('threshold', 0.5)
+            # Batched post-processing on GPU (fewer kernel launches)
+            # results shape: (batch, num_classes, H, W)
+            num_classes = self.config["model"]["init_args"]["model_args"]["num_classes"]
+            threshold = self.config.get("threshold", 0.5)
 
-            for index, mask in enumerate(results):
-                # Already on GPU, process there then move to CPU
-                if num_classes == 1:
-                    updated_mask = torch.sigmoid(mask.clone()).squeeze(0)
-                    predicted_mask = (updated_mask > threshold).int().cpu()
-                else:
-                    # Process on GPU for speed
-                    probabilities = torch.softmax(mask, dim=0)
-                    predicted_mask = torch.argmax(probabilities, dim=0).cpu().numpy()
-                    print("Shape of predicted mask:", predicted_mask.shape)
-                    print("max and min of predicted mask:", predicted_mask.max(), predicted_mask.min())
+            if num_classes == 1:
+                probs = torch.sigmoid(results).squeeze(1)
+                predicted_masks = (probs > threshold).int().cpu().numpy()
+            else:
+                probabilities = torch.softmax(results, dim=1)
+                predicted_masks = torch.argmax(probabilities, dim=1).cpu().numpy()
 
-                predicted_masks.append(predicted_mask)
-
-            # Clear GPU cache to free memory
-            if self.use_cuda:
-                torch.cuda.empty_cache()
+            # Convert to list of 2D arrays to match original return format
+            predicted_masks = list(predicted_masks)
 
             return predicted_masks, profiles

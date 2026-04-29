@@ -1,0 +1,190 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: floods-app
+  labels:
+    app: floods-app
+spec:
+  replicas: {{ .Values.floodsContainer.replicaCount  }}
+  serviceName: floods-service
+  selector:
+    matchLabels:
+      app: floods-app
+  template:
+    metadata:
+      labels:
+        app: floods-app
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets }}
+      runtimeClassName: nvidia
+      containers:
+        - name: pipeline-floods-container
+          image: {{ .Values.floodsContainer.imageUrl }}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+            - name: dshm
+              mountPath: /dev/shm
+          env:
+          - name: POD_INDEX
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+          envFrom:
+            - configMapRef:
+                name: floods-app-envs
+            - configMapRef:
+                name: oidc-envs
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: service-cache-pvc
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: burn-scars-app
+  labels:
+    app: burn-scars-app
+spec:
+  replicas: {{ .Values.burnScarContainer.replicaCount  }}
+  serviceName: burn-scars-app
+  selector:
+    matchLabels:
+      app: burn-scars-app
+  template:
+    metadata:
+      labels:
+        app: burn-scars-app
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets }}
+      runtimeClassName: nvidia
+      containers:
+        - name: pipeline-burn-scars-container
+          image: {{ .Values.burnScarContainer.imageUrl }}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+            - name: dshm
+              mountPath: /dev/shm
+          env:
+          - name: POD_INDEX
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+          envFrom:
+            - configMapRef:
+                name: burn-scars-app-envs
+            - configMapRef:
+                name: oidc-envs
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: service-cache-pvc
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+---
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: crop-classification-app
+  labels:
+    app: crop-classification-app
+spec:
+  replicas: {{ .Values.cropsContainer.replicaCount  }}
+  selector:
+    matchLabels:
+      app: crop-classification-app
+  template:
+    metadata:
+      labels:
+        app: crop-classification-app
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets }}
+      runtimeClassName: nvidia
+      containers:
+        - name: pipeline-crop-classification-container
+          image: {{ .Values.cropContainer.imageUrl }}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+            - name: dshm
+              mountPath: /dev/shm
+          envFrom:
+            - configMapRef:
+                name: crop-classification-app-envs
+            - configMapRef:
+                name: oidc-envs
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: service-cache-pvc
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: surya-rollout-app
+  labels:
+    app: surya-rollout-app
+spec:
+  replicas: {{ .Values.suryaRolloutContainer.replicaCount  }}
+  selector:
+    matchLabels:
+      app: surya-rollout-app
+  template:
+    metadata:
+      labels:
+        app: surya-rollout-app
+    spec:
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecrets }}
+      runtimeClassName: nvidia
+      containers:
+        - name: pipeline-surya-rollout-container
+          image: {{ .Values.suryaRolloutContainer.imageUrl }}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          volumeMounts:
+            - name: cache-volume
+              mountPath: /root/.cache
+            - name: dshm
+              mountPath: /dev/shm
+          envFrom:
+            - configMapRef:
+                name: surya-rollout-app-envs
+            - configMapRef:
+                name: oidc-envs
+      volumes:
+        - name: cache-volume
+          persistentVolumeClaim:
+            claimName: service-cache-pvc
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+---

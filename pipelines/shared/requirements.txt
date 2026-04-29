@@ -23,3 +23,7 @@ terratorch==1.0.2
 tqdm
 transitions>=0.9.0
 uvicorn
+temporalio
+psycopg2-binary
+sqlalchemy
+

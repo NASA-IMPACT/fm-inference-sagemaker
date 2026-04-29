@@ -24,3 +24,4 @@ RUN python3.11 -c "from osgeo import gdal; print('GDAL:', gdal.__version__)" && 
 RUN mkdir -p /app/lib
 COPY shared/lib /app/lib
 COPY shared/predictor.py /app/
+COPY shared/inference_worker.py /app/inference_worker.py

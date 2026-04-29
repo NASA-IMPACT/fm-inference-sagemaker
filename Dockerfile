@@ -46,6 +46,9 @@ ENV PYTHONUNBUFFERED=1
 
 # Expose port
 EXPOSE 8000
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
-# Command
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default command for development (can be overridden by docker-compose)
+# Making K8s control the process with a service account
+ENTRYPOINT [ "/app/entrypoint.sh" ]

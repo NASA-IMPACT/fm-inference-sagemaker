@@ -1,24 +1,48 @@
 import math
-import numpy as np
 import os
+
+import numpy as np
 import rasterio
 import torch
+from torch.utils.data import IterableDataset
 
-from lib.consts import DOWNLOAD_FOLDER
-from rasterio.io import MemoryFile
-from rasterio.windows import from_bounds, Window
+from rasterio.windows import Window
 import rasterio.windows
 
 SHAPE = (512, 512)
 
+
+class TileIterableDataset(IterableDataset):
+    """
+    PyTorch IterableDataset wrapping DataPreparer for DataLoader prefetching.
+    Profiles are yielded separately since they can't be collated.
+    """
+
+    def __init__(self, data_preparer):
+        """
+        Args:
+            data_preparer: DataPreparer instance
+        """
+        self.data_preparer = data_preparer
+
+    def __iter__(self):
+        for (
+            tiles_batch,
+            profiles_batch,
+            actual_count,
+        ) in self.data_preparer.generate_tiles():
+            yield tiles_batch, profiles_batch, actual_count
+
+
 QA_INDICES = {
-    'cloud': 1,
-    'adjacent_cloud': 2,
-    'shadow': 3,
-    'snow': 4,
-    'water': 5,
-    'aerosol': 6
+    "cloud": 1,
+    "adjacent_cloud": 2,
+    "shadow": 3,
+    "snow": 4,
+    "water": 5,
+    "aerosol": 6,
 }
+
 
 class ArrayPool:
     """Memory pool for reusing arrays to reduce allocation overhead."""
@@ -51,8 +75,17 @@ class ArrayPool:
         """Clear all arrays from pool."""
         self.pool.clear()
 
+
 class DataPreparer:
-    def __init__(self, filename, batch_size=60, overlap=0, scale=False, qa_flags=['cloud', 'shadow', 'snow', 'water'], timeseries=False):
+    def __init__(
+        self,
+        filename,
+        batch_size=60,
+        overlap=0,
+        scale=False,
+        qa_flags=["cloud", "shadow", "snow", "water"],
+        timeseries=False,
+    ):
         """
         Initialize Downloader
         Args:
@@ -60,21 +93,33 @@ class DataPreparer:
             layer (str): any of HLSL30, HLSS30
         """
         self.filename = filename
-        # Set batch_size based on available GPU memory if possible
-        if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-            try:
-                gpu_mem = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)  # in MB
-                # Example heuristic: use larger batch if GPU has more memory
-                if gpu_mem >= 81152:
-                    self.batch_size = max(batch_size, 120)
-                elif gpu_mem <= 81152:
-                    self.batch_size = max(batch_size, 60)
-                else:
+        # Set batch_size based on available GPU memory
+        # Conservative sizing to support multiple replicas sharing GPU
+        batch_size = os.getenv("BATCH_SIZE", batch_size)
+        batch_size = int(batch_size) if batch_size.isdigit() else 0
+        self.batch_size = batch_size
+        if not self.batch_size:
+            if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+                try:
+                    gpu_mem = torch.cuda.get_device_properties(0).total_memory // (
+                        1024**2
+                    )  # in MB
+
+                    if gpu_mem >= 100000:  # H200 141GB
+                        self.batch_size = max(batch_size, 160)
+                    elif gpu_mem >= 70000:  # H100 80GB or A100 80GB
+                        self.batch_size = max(batch_size, 192)
+                    elif gpu_mem >= 35000:  # A100 40GB
+                        self.batch_size = max(batch_size, 60)
+                    else:
+                        self.batch_size = max(batch_size, 30)
+                    print(
+                        f"GPU memory detected: {gpu_mem} MB, setting batch_size to {self.batch_size}"
+                    )
+                except Exception:
                     self.batch_size = batch_size
-            except Exception:
+            else:
                 self.batch_size = batch_size
-        else:
-            self.batch_size = batch_size
         self.overlap = overlap
         self.qa_flags = qa_flags
         self.scale = scale
@@ -83,35 +128,45 @@ class DataPreparer:
         self._array_pool = ArrayPool(max_pool_size=batch_size * 2)
 
     @staticmethod
-    def get_qa_mask_vectorized(qa_band, qa_flags=['cloud', 'adjacent_cloud', 'shadow', 'snow', 'water', 'aerosol']):
-            # Vectorized QA mask calculation using broadcasting
-            if qa_flags:
-                return np.zeros_like(qa_band, dtype=bool)
+    def get_qa_mask_vectorized(
+        qa_band,
+        qa_flags=["cloud", "adjacent_cloud", "shadow", "snow", "water", "aerosol"],
+    ):
+        # Vectorized QA mask calculation using broadcasting
+        if not qa_flags:
+            return np.zeros_like(qa_band, dtype=bool)
 
-            qa_indices = np.array([QA_INDICES.get(flag, 0) for flag in qa_flags], dtype=np.uint32)
-            qa_band_uint = qa_band.astype(np.uint32)
+        qa_indices = np.array(
+            [QA_INDICES.get(flag, 0) for flag in qa_flags], dtype=np.uint32
+        )
+        qa_band_uint = qa_band.astype(np.uint32)
 
-            # Create shift values with proper shape for broadcasting
-            shift_values = (1 << qa_indices).astype(np.uint32)  # Shape: (n_flags,)
+        # Create shift values with proper shape for broadcasting
+        shift_values = (1 << qa_indices).astype(np.uint32)  # Shape: (n_flags,)
 
-            # Reshape for broadcasting: qa_band_uint[..., newaxis] has shape (..., 1)
-            # shift_values has shape (n_flags,) - this should broadcast correctly
-            flags = (qa_band_uint[..., np.newaxis] & shift_values[np.newaxis, ...]) != 0
-            return np.any(flags, axis=-1)
-
+        # Reshape for broadcasting: qa_band_uint[..., newaxis] has shape (..., 1)
+        # shift_values has shape (n_flags,) - this should broadcast correctly
+        flags = (qa_band_uint[..., np.newaxis] & shift_values[np.newaxis, ...]) != 0
+        return np.any(flags, axis=-1)
 
     def handle_qa(self, tile):
         if self.timeseries:
             # Vectorized operations for timeseries
-            pre_combined = DataPreparer.get_qa_mask_vectorized(tile[6], self.qa_flags)  # QA band for pre period
+            pre_combined = DataPreparer.get_qa_mask_vectorized(
+                tile[6], self.qa_flags
+            )  # QA band for pre period
             for band_idx in range(6):
                 tile[band_idx][pre_combined] = 0.0001
 
-            combined = DataPreparer.get_qa_mask_vectorized(tile[15], self.qa_flags)  # QA band for middle period
+            combined = DataPreparer.get_qa_mask_vectorized(
+                tile[15], self.qa_flags
+            )  # QA band for middle period
             for band_idx in range(9, 15):
                 tile[band_idx][combined] = 0.0001
 
-            post_combined = DataPreparer.get_qa_mask_vectorized(tile[24], self.qa_flags)  # QA band for post period
+            post_combined = DataPreparer.get_qa_mask_vectorized(
+                tile[24], self.qa_flags
+            )  # QA band for post period
             for band_idx in range(18, 24):
                 tile[band_idx][post_combined] = 0.0001
         else:
@@ -134,7 +189,9 @@ class DataPreparer:
         tile = self.handle_qa(tile)
         return tile
 
-    def _pad_tile_optimized(self, tile, actual_height, actual_width, target_height, target_width):
+    def _pad_tile_optimized(
+        self, tile, actual_height, actual_width, target_height, target_width
+    ):
         """Optimized tile padding with memory pool support."""
         if actual_height == target_height and actual_width == target_width:
             return tile
@@ -149,8 +206,12 @@ class DataPreparer:
             return padded
         else:
             # For larger padding, use numpy.pad which is more memory efficient
-            pad_width = [(0, 0), (0, target_height - actual_height), (0, target_width - actual_width)]
-            return np.pad(tile, pad_width, mode='constant', constant_values=0)
+            pad_width = [
+                (0, 0),
+                (0, target_height - actual_height),
+                (0, target_width - actual_width),
+            ]
+            return np.pad(tile, pad_width, mode="constant", constant_values=0)
 
     def _get_block_aligned_tiles(self, src, padding_info, block_height, block_width):
         """Group tiles by rasterio blocks for efficient I/O."""
@@ -159,7 +220,15 @@ class DataPreparer:
         # Group tiles by which block(s) they intersect with
         block_to_tiles = defaultdict(list)
 
-        for idx, (i, j, row_off, col_off, win_height, win_width, needs_padding) in enumerate(padding_info):
+        for idx, (
+            i,
+            j,
+            row_off,
+            col_off,
+            win_height,
+            win_width,
+            needs_padding,
+        ) in enumerate(padding_info):
             # Calculate which blocks this tile intersects
             start_block_row = row_off // block_height
             end_block_row = (row_off + win_height - 1) // block_height
@@ -174,7 +243,9 @@ class DataPreparer:
 
         return block_to_tiles
 
-    def _read_tiles_block_optimized(self, src, padding_info, block_to_tiles, height, width):
+    def _read_tiles_block_optimized(
+        self, src, padding_info, block_to_tiles, height, width
+    ):
         """Read tiles using block-optimized strategy."""
         # Pre-allocate array to store processed tiles
         processed_tiles = [None] * len(padding_info)
@@ -190,8 +261,12 @@ class DataPreparer:
                 if processed_tiles[tile_idx] is not None:
                     continue  # Already processed
 
-                i, j, row_off, col_off, win_height, win_width, needs_padding = padding_info[tile_idx]
-                window = rasterio.windows.Window(col_off, row_off, win_width, win_height)
+                i, j, row_off, col_off, win_height, win_width, needs_padding = (
+                    padding_info[tile_idx]
+                )
+                window = rasterio.windows.Window(
+                    col_off, row_off, win_width, win_height
+                )
 
                 # Read the tile
                 tile = src.read(window=window)
@@ -201,10 +276,14 @@ class DataPreparer:
 
                 # Apply padding if needed
                 if needs_padding:
-                    tile = self._pad_tile_optimized(tile, win_height, win_width, height, width)
+                    tile = self._pad_tile_optimized(
+                        tile, win_height, win_width, height, width
+                    )
                 else:
                     if tile.shape[1:] != (height, width):
-                        tile = self._pad_tile_optimized(tile, win_height, win_width, height, width)
+                        tile = self._pad_tile_optimized(
+                            tile, win_height, win_width, height, width
+                        )
 
                 processed_tiles[tile_idx] = tile
 
@@ -237,17 +316,16 @@ class DataPreparer:
 
             # Get block information for optimized I/O
             try:
-                block_height, block_width = src.block_shapes[0]  # Assuming all bands have same block structure
+                block_height, block_width = src.block_shapes[
+                    0
+                ]  # Assuming all bands have same block structure
             except (IndexError, AttributeError):
                 # Fallback if block information is not available
                 block_height, block_width = 512, 512
 
             # Pre-calculate metadata template to avoid copying for each tile
             meta_template = src.meta.copy()
-            meta_template.update({
-                "height": height,
-                "width": width
-            })
+            meta_template.update({"height": height, "width": width})
 
             # Pre-calculate padding requirements for all tiles
             padding_info = []
@@ -260,78 +338,91 @@ class DataPreparer:
 
                     # Store padding info: (i, j, row_off, col_off, win_height, win_width, needs_padding)
                     needs_padding = win_height < height or win_width < width
-                    padding_info.append((i, j, row_off, col_off, win_height, win_width, needs_padding))
+                    padding_info.append(
+                        (i, j, row_off, col_off, win_height, win_width, needs_padding)
+                    )
 
             # Use block-optimized reading strategy for better I/O performance
             if len(padding_info) > 10 and block_height > 0 and block_width > 0:
                 # For larger datasets, use block-aligned reading
-                block_to_tiles = self._get_block_aligned_tiles(src, padding_info, block_height, block_width)
-                processed_tiles = self._read_tiles_block_optimized(src, padding_info, block_to_tiles, height, width)
+                block_to_tiles = self._get_block_aligned_tiles(
+                    src, padding_info, block_height, block_width
+                )
+                processed_tiles = self._read_tiles_block_optimized(
+                    src, padding_info, block_to_tiles, height, width
+                )
             else:
                 # For smaller datasets, use direct reading (avoid overhead)
                 processed_tiles = []
-                for i, j, row_off, col_off, win_height, win_width, needs_padding in padding_info:
+                for (
+                    i,
+                    j,
+                    row_off,
+                    col_off,
+                    win_height,
+                    win_width,
+                    needs_padding,
+                ) in padding_info:
                     window = Window(col_off, row_off, win_width, win_height)
                     tile = src.read(window=window)
                     tile = self._process_tile_vectorized(tile)
 
                     if needs_padding:
-                        tile = self._pad_tile_optimized(tile, win_height, win_width, height, width)
+                        tile = self._pad_tile_optimized(
+                            tile, win_height, win_width, height, width
+                        )
                     elif tile.shape[1:] != (height, width):
-                        tile = self._pad_tile_optimized(tile, win_height, win_width, height, width)
+                        tile = self._pad_tile_optimized(
+                            tile, win_height, win_width, height, width
+                        )
 
                     processed_tiles.append(tile)
 
-            # Collect tiles and transforms separately to reduce metadata overhead
+            # Collect tiles and profiles in batches
+            # Yields (tiles_numpy_list, profiles_list, actual_count) tuples directly — no MemoryFile encoding
+            # Batches are padded to batch_size for consistent CUDA graph shapes
             tiles_batch = []
-            transforms_batch = []
+            profiles_batch = []
 
-            # Process tiles and transforms in batches
-            for idx, (i, j, row_off, col_off, win_height, win_width, needs_padding) in enumerate(padding_info):
+            for idx, (
+                i,
+                j,
+                row_off,
+                col_off,
+                win_height,
+                win_width,
+                needs_padding,
+            ) in enumerate(padding_info):
                 tile = processed_tiles[idx]
-
-                # Store tile and transform separately
                 tiles_batch.append(tile)
 
-                # Calculate and store only the transform (defer metadata creation)
+                # Build profile dict with transform for this tile
                 window = Window(col_off, row_off, win_width, win_height)
-                base_transform = src.window_transform(window)
-                transforms_batch.append(base_transform)
+                profile = meta_template.copy()
+                profile["transform"] = src.window_transform(window)
+                profiles_batch.append(profile)
 
-                # Create MemoryFiles only when batch is full
+                # Yield batch when full
                 if len(tiles_batch) == self.batch_size:
-                    memfiles_batch = []
-                    for tile_data, transform in zip(tiles_batch, transforms_batch):
-                        # Create metadata only when needed for MemoryFile
-                        meta = meta_template.copy()
-                        meta["transform"] = transform
-                        memfile = MemoryFile()
-                        with memfile.open(**meta) as dst:
-                            dst.write(tile_data)
-                        memfiles_batch.append(memfile)
-
-                    yield np.asarray(memfiles_batch)
+                    yield (tiles_batch, profiles_batch, self.batch_size)
 
                     # Return tiles to memory pool after yielding
                     self._return_tiles_to_pool(tiles_batch)
                     tiles_batch = []
-                    transforms_batch = []
+                    profiles_batch = []
 
-            # Handle remaining tiles
+            # Handle remaining tiles - pad to batch_size for consistent CUDA graph shapes
             if tiles_batch:
-                memfiles_batch = []
-                for tile_data, transform in zip(tiles_batch, transforms_batch):
-                    # Create metadata only when needed for MemoryFile
-                    meta = meta_template.copy()
-                    meta["transform"] = transform
-                    memfile = MemoryFile()
-                    with memfile.open(**meta) as dst:
-                        dst.write(tile_data)
-                    memfiles_batch.append(memfile)
+                actual_count = len(tiles_batch)
+                # Pad with zeros to reach batch_size
+                while len(tiles_batch) < self.batch_size:
+                    # Create a dummy tile with same shape as first tile
+                    dummy_tile = np.zeros_like(tiles_batch[0])
+                    tiles_batch.append(dummy_tile)
+                    # Create a dummy profile (won't be used, but needed for zip)
+                    profiles_batch.append(profiles_batch[0].copy())
 
-                yield np.asarray(memfiles_batch)
-
-                # Return final batch tiles to memory pool
+                yield (tiles_batch, profiles_batch, actual_count)
                 self._return_tiles_to_pool(tiles_batch)
 
             # Clear memory pool after processing complete file
@@ -339,7 +430,7 @@ class DataPreparer:
 
     def cleanup(self):
         """Clean up resources and memory pools."""
-        if hasattr(self, '_array_pool'):
+        if hasattr(self, "_array_pool"):
             self._array_pool.clear()
 
     def __del__(self):
