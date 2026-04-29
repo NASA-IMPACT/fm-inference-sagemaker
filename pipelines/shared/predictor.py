@@ -1,4 +1,4 @@
-import gc  # memory management
+import gc
 import geopandas as gpd
 import GPUtil
 import httpx

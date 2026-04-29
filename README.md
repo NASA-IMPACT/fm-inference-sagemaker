@@ -1,4 +1,4 @@
-# FM Inference Service
+# Unified Docker Deployment Script
 
 A single script that handles building, pushing to ECR, and cleaning up old images.
 

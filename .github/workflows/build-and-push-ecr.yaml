@@ -1,9 +1,9 @@
 name: Build and Push to ECR
 
 on:
-  # push:
-  #   branches:
-  #     - dev
+  push:
+    branches:
+      - dev
 
   workflow_dispatch:
     inputs:
@@ -75,7 +75,7 @@ env:
 jobs:
   # ── Detect which files changed to skip unnecessary builds ───────────
   detect-changes:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # TODO: replace with your custom runner label
     outputs:
       base: ${{ steps.changes.outputs.base }}
       inference: ${{ steps.changes.outputs.inference }}
@@ -152,7 +152,7 @@ jobs:
   # ── Rebuild static base (CUDA + PROJ + GDAL) — only on demand ──────
   build-static-base:
     if: inputs.build_static_base == true
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # TODO: replace with your custom runner label
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -204,21 +204,10 @@ jobs:
   build-base:
     needs: [build-static-base, detect-changes]
     if: ${{ !cancelled() && (needs.build-static-base.result == 'success' || needs.build-static-base.result == 'skipped') && needs.detect-changes.outputs.base == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # TODO: replace with your custom runner label
     outputs:
       base_image_ref: ${{ steps.refs.outputs.base_image_ref }}
     steps:
-      - name: Free disk space (needed for dry_run artifact export)
-        if: inputs.dry_run == true
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          swap-storage: true
-
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -319,7 +308,7 @@ jobs:
   build-inference:
     needs: detect-changes
     if: needs.detect-changes.outputs.inference == 'true'
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # TODO: replace with your custom runner label
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -373,7 +362,7 @@ jobs:
   build-services:
     needs: [build-base, detect-changes]
     if: ${{ !cancelled() && (needs.build-base.result == 'success' || needs.build-base.result == 'skipped') }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # TODO: replace with your custom runner label
     strategy:
       fail-fast: false
       matrix:
@@ -502,7 +491,7 @@ jobs:
   build-surya-base:
     if: ${{ inputs.build_surya_base == true && !cancelled() && (needs.build-base.result == 'success' || needs.build-base.result == 'skipped') }}
     needs: [build-base, detect-changes]
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # TODO: replace with your custom runner label
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -575,18 +564,8 @@ jobs:
   build-surya:
     needs: [build-base, build-surya-base, detect-changes]
     if: ${{ !cancelled() && (needs.build-base.result == 'success' || needs.build-base.result == 'skipped') && (needs.build-surya-base.result == 'success' || needs.build-surya-base.result == 'skipped') && needs.detect-changes.outputs.surya == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: self-hosted  # TODO: replace with your custom runner label
     steps:
-      - name: Free disk space (surya-base image is very large)
-        uses: jlumbroso/free-disk-space@v1.3.1
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          swap-storage: true
-
       - name: Checkout
         uses: actions/checkout@v6
 
