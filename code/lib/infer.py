@@ -2,7 +2,8 @@ import torch
 import yaml
 import numpy as np
 import rasterio
-from terratorch.cli_tools import LightningInferenceModel
+
+from terratorch.tasks import SemanticSegmentationTask
 from lib.consts import NO_DATA, NO_DATA_FLOAT
 
 class Infer:
@@ -14,11 +15,55 @@ class Infer:
         self.load_model()
 
     def load_model(self):
-        inference_model = LightningInferenceModel.from_config(self.config_filename, self.checkpoint_filename)
-        self.model = inference_model.model
+        if self.model:
+            return
 
-        # load model using terratorch
+        # Indices for prithvi_eo_v2_600
+        indices = [7, 15, 23, 31]
+
+        model_args = {
+            # Backbone
+            "backbone": "prithvi_eo_v2_600",
+            "backbone_pretrained": False,
+            "backbone_num_frames": 1,
+            "backbone_img_size": 512,
+            "backbone_bands": [
+                "BLUE",
+                "GREEN",
+                "RED",
+                "NIR_NARROW",
+                "SWIR_1",
+                "SWIR_2",
+            ],
+            # Necks
+            "necks": [
+                {
+                    "name": "SelectIndices",
+                    "indices": indices,
+                },
+                {
+                    "name": "ReshapeTokensToImage",
+                },
+                {
+                    "name": "LearnedInterpolateToPyramidal",
+                },
+            ],
+            # Decoder
+            "decoder": "UNetDecoder",
+            "decoder_channels": [512, 256, 128, 64],
+            # Head
+            "head_dropout": 0.1,
+            "num_classes": 2,
+        }
+
+        self.model = SemanticSegmentationTask.load_from_checkpoint(
+            self.checkpoint_filename,
+            model_factory="EncoderDecoderFactory",
+            model_args=model_args,
+        )
+
         self.model = self.model.eval()
+        self.model.to(self.device)
 
     def preprocess(self, images, terramind=False):
         images_array = []
