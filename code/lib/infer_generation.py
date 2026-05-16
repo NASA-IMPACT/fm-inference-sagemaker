@@ -8,7 +8,7 @@ from lib.consts import BUCKET_NAME
 from terratorch.registry import FULL_MODEL_REGISTRY
 from terratorch.tasks.tiled_inference import tiled_inference
 
-DOWNLOAD_PATH = '/opt/ml/data/downloads'
+DOWNLOAD_PATH = './data/downloads'
 
 if not(os.path.exists(DOWNLOAD_PATH)):
     os.makedirs(DOWNLOAD_PATH)

@@ -36,9 +36,22 @@ ENV PYTHONUNBUFFERED=TRUE
 ENV PYTHONDONTWRITEBYTECODE=TRUE
 ENV PATH="/opt/program:${PATH}"
 
+# Runtime configuration — override at `docker run` / SageMaker container env.
+# Required:
+ENV BUCKET_NAME="enw-04241552-kx1nks-shared"
+ENV S3_CONFIG_FILENAME=""
+ENV CHECKPOINT_FILENAME=""
+ENV USECASE="flood"
+# Optional:
+ENV MODEL_SERVER_TIMEOUT=150
+
 RUN mkdir -p /var/log/nginx && \
     touch /var/log/nginx/access.log /var/log/nginx/error.log && \
     chmod -R 777 /var/log/nginx
 
+RUN chmod +x /opt/program/entrypoint.sh
+
 # Copies code under /opt/ml/code where sagemaker-containers expects to find the script to run
 WORKDIR /opt/program
+
+ENTRYPOINT ["/opt/program/entrypoint.sh"]
