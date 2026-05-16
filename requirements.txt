@@ -19,3 +19,4 @@ Pillow==9.4.0
 starlette
 #sagemaker-training
 opencv-python
+geopandas
