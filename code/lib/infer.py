@@ -12,6 +12,8 @@ class Infer:
         with open(self.config_filename) as config:
             self.config = yaml.safe_load(config)
         self.checkpoint_filename = checkpoint
+        self.model = None
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.load_model()
 
     def load_model(self):
