@@ -4,7 +4,7 @@ import numpy as np
 import rasterio
 
 from terratorch.tasks import SemanticSegmentationTask
-from lib.consts import NO_DATA, NO_DATA_FLOAT
+from lib.consts import NO_DATA, NO_DATA_FLOAT, MEANS, STDS
 
 class Infer:
     def __init__(self, config, checkpoint):
@@ -81,8 +81,8 @@ class Infer:
             mean = torch.tensor(self.config['data']['init_args']['means'][modality]).view(-1, 1, 1)
             std = torch.tensor(self.config['data']['init_args']['stds'][modality]).view(-1, 1, 1)
         else:
-            mean = torch.tensor(self.config['data']['init_args']['means']).view(-1, 1, 1)
-            std = torch.tensor(self.config['data']['init_args']['stds']).view(-1, 1, 1)
+            mean = np.asarray(self.config["data"]["init_args"].get("means", MEANS))
+            std = np.asarray(self.config["data"]["init_args"].get("stds", STDS))
 
         for image in images:
             with rasterio.open(image) as raster_file:
