@@ -1,4 +1,3 @@
-import json
 import morecantile
 import numpy as np
 import os
@@ -7,17 +6,25 @@ import requests
 
 from multiprocessing import Pool, cpu_count
 from lib.consts import NO_DATA_FLOAT
-from rasterio.warp import calculate_default_transform, reproject, Resampling
+from rasterio.warp import calculate_default_transform, Resampling
 
-BASE_URL = "https://d1nzvsko7rbono.cloudfront.net"
-BASE_TILE_URL = "{BASE_URL}/mosaic/tiles/{searchid}/WebMercatorQuad/{z}/{x}/{y}.tif"
+BASE_URL = "https://openveda.cloud/api/titiler-cmr"
+TILE_ENDPOINT = f"{BASE_URL}/rasterio/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.tif"
 
-REGISTER_ENDPOINT = f"{BASE_URL}/mosaic/register"
-
-TILE_URL = {
-    "HLSL30": f"{BASE_TILE_URL}?assets=B02&assets=B03&assets=B04&assets=B05&assets=B06&assets=B07",
-    "HLSS30": f"{BASE_TILE_URL}?assets=B02&assets=B03&assets=B04&assets=B8A&assets=B11&assets=B12",
+# CMR collection concept ids for HLS v2.0 (LP DAAC cloud archive)
+COLLECTION_CONCEPT_ID = {
+    "HLSL30": "C2021957657-LPCLOUD",
+    "HLSS30": "C2021957295-LPCLOUD",
 }
+
+# Band composition (kept identical to the previous titiler implementation)
+ASSETS = {
+    "HLSL30": ["B02", "B03", "B04", "B05", "B06", "B07"],
+    "HLSS30": ["B02", "B03", "B04", "B8A", "B11", "B12"],
+}
+
+# Matches HLS asset tokens (B02..B12, B8A) in CMR asset filenames
+ASSETS_REGEX = r"B[0-9][0-9A-Z]"
 
 PROJECTION = "WebMercatorQuad"
 TMS = morecantile.tms.get(PROJECTION)
@@ -37,21 +44,26 @@ class Downloader:
         """
         self.layer = layer
         self.date = date
-        self.search_id = self.register_new_search()
-        pass
+        self.collection_concept_id = COLLECTION_CONCEPT_ID[layer]
+        self.assets = ASSETS[layer]
+        self.temporal = f"{self.date}T00:00:00Z/{self.date}T23:59:59Z"
+
+    def tile_params(self):
+        params = [
+            ("collection_concept_id", self.collection_concept_id),
+            ("temporal", self.temporal),
+            ("assets_regex", ASSETS_REGEX),
+        ]
+        params.extend(("assets", asset) for asset in self.assets)
+        return params
 
     def download_tile(self, x_index, y_index, filename):
         if os.path.exists(filename):
             return filename
         return_filename = filename
         response = requests.get(
-            TILE_URL[self.layer].format(
-                BASE_URL=BASE_URL,
-                searchid=self.search_id,
-                z=ZOOM_LEVEL,
-                x=x_index,
-                y=y_index,
-            )
+            TILE_ENDPOINT.format(z=ZOOM_LEVEL, x=x_index, y=y_index),
+            params=self.tile_params(),
         )
 
         if response.status_code == 200:
@@ -117,24 +129,6 @@ class Downloader:
         pool.close()
         pool.join()
         return downloaded_files
-
-    def register_new_search(self):
-        """
-            Register new search with HLS titiler
-        Args:
-            date (str): Date in the format of 'yyyy-mm-dd'
-        """
-        response = requests.post(
-            REGISTER_ENDPOINT,
-            headers={"Content-Type": "application/json", "accept": "application/json"},
-            data=json.dumps(
-                {
-                    "datetime": f"{self.date}T00:00:00Z/{self.date}T23:59:59Z",
-                    "collections": [self.layer],
-                }
-            ),
-        ).json()
-        return response["searchid"]
 
     def tile_indices(self, bounding_box):
         """
