@@ -83,6 +83,9 @@ class Infer:
         else:
             mean = np.asarray(self.config["data"]["init_args"].get("means", MEANS))
             std = np.asarray(self.config["data"]["init_args"].get("stds", STDS))
+            mean = torch.from_numpy(mean).view(-1, 1, 1).float()
+            std = torch.from_numpy(std).view(-1, 1, 1).float()
+
 
         for image in images:
             with rasterio.open(image) as raster_file:
