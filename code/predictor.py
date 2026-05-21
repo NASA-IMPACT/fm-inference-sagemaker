@@ -3,7 +3,6 @@ import json
 import os
 import gc
 import geopandas as gpd
-import numpy as np
 import rasterio
 import time
 import torch
@@ -192,11 +191,13 @@ def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
             geojson = post_process(mosaic[0], transform)
             geojson_filename = f"predictions/{start_time}-predictions.geojson"
 
-            with MemoryFile().open() as memoryfile:
-                json.dump(geojson, memoryfile)
-                connection = boto3.client("s3")
-                connection.upload_fileobj(memoryfile, BUCKET_NAME, geojson_filename)
-
+            s3 = boto3.client("s3")
+            s3.put_object(
+                Bucket=BUCKET_NAME,
+                Key=geojson_filename,
+                Body=json.dumps(geojson).encode("utf-8"),
+                ContentType="application/json",
+            )
             geojson_s3_link = f"s3://{BUCKET_NAME}/{geojson_filename}"
 
             for geometry in geojson:
@@ -235,16 +236,8 @@ async def infer_from_model(request: Request):
     final_geojson = infer(
         model_id, infer_date, bounding_box, terramind=terramind, file_links=file_links
     )
-    def _numpy_default(obj):
-        if isinstance(obj, (np.floating,)):
-            return float(obj)
-        if isinstance(obj, (np.integer,)):
-            return int(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
-    return JSONResponse(content=json.loads(json.dumps(final_geojson, default=_numpy_default)))
+    return JSONResponse(content=json.loads(json.dumps(final_geojson)))
 
 
 @app.get("/ping")
