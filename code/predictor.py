@@ -158,7 +158,7 @@ def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
 
     start_time = time.time()
     mosaic = []
-    s3_link = ""
+    cog_s3_link = geojson_s3_link = ""
     if all_tiles:
         try:
             torch.cuda.synchronize()
