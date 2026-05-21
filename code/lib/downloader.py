@@ -1,15 +1,13 @@
 import morecantile
-import numpy as np
 import os
 import rasterio
 import requests
 
 from multiprocessing import Pool, cpu_count
-from lib.consts import NO_DATA_FLOAT
-from rasterio.warp import calculate_default_transform, Resampling
 
 BASE_URL = "https://openveda.cloud/api/titiler-cmr"
-TILE_ENDPOINT = f"{BASE_URL}/rasterio/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}.tif"
+PROJECTION = "WorldCRS84Quad"  # EPSG:4326 tile matrix set
+TILE_ENDPOINT = f"{BASE_URL}/rasterio/tiles/{PROJECTION}/{{z}}/{{x}}/{{y}}.tif"
 
 # CMR collection concept ids for HLS v2.0 (LP DAAC cloud archive)
 COLLECTION_CONCEPT_ID = {
@@ -26,9 +24,9 @@ ASSETS = {
 # Matches HLS asset tokens (B02..B12, B8A) in CMR asset filenames
 ASSETS_REGEX = r"B[0-9][0-9A-Z]"
 
-PROJECTION = "WebMercatorQuad"
 TMS = morecantile.tms.get(PROJECTION)
-ZOOM_LEVEL = 12
+# z=11 in WorldCRS84Quad ≈ 38 m/px at the equator, closest match to HLS native 30 m.
+ZOOM_LEVEL = 11
 DOWNLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "../data")
 
 
@@ -60,52 +58,26 @@ class Downloader:
     def download_tile(self, x_index, y_index, filename):
         if os.path.exists(filename):
             return filename
-        return_filename = filename
         response = requests.get(
             TILE_ENDPOINT.format(z=ZOOM_LEVEL, x=x_index, y=y_index),
             params=self.tile_params(),
         )
+        if response.status_code != 200:
+            return ""
 
-        if response.status_code == 200:
-            with open(filename, "wb") as download_file:
-                download_file.write(response.content)
-            raster_file = rasterio.open(filename)
-            profile = raster_file.profile
-            profile['dtype'] = 'float32'
-            profile['count'] = profile['count'] - 1
-            profile['transform'], profile['width'], profile['height'] = calculate_default_transform(
-                raster_file.crs,
-                raster_file.crs,
-                raster_file.width,
-                raster_file.height,
-                *[raster_file.bounds.left, raster_file.bounds.bottom, raster_file.bounds.right, raster_file.bounds.top],
-                dst_width=WIDTH,
-                dst_height=HEIGHT
-            )
-
-            unscaled_raster_file = rasterio.open(filename, 'w', **profile)
-            scaled_raster_file = rasterio.open(filename.replace('.tif', '_scaled.tif'), 'w', **profile)
-
-            for band in range(profile['count']):
-                index = band + 1
-                resampled_data = raster_file.read(
-                    index,
-                    out_shape=(profile['height'], profile['width']),
-                    resampling=Resampling.bilinear # Choose a resampling method
-                ).astype('float32')
-                resampled_data = np.clip(resampled_data, NO_DATA_FLOAT, resampled_data.max())
-                unscaled_raster_file.write(resampled_data, index)
-
-                scaled_data = resampled_data * 0.0001
-                scaled_data = np.clip(scaled_data, NO_DATA_FLOAT, 1)
-                scaled_raster_file.write(scaled_data, index)
-
-            raster_file.close()
-            scaled_raster_file.close()
-            unscaled_raster_file.close()
-        else:
-            return_filename = ""
-        return return_filename
+        # Titiler returns the 6 spectral bands followed by an alpha/mask band.
+        # Strip the alpha band by re-reading and writing only the first 6.
+        tmp_path = filename + ".tmp"
+        with open(tmp_path, "wb") as tmp_file:
+            tmp_file.write(response.content)
+        with rasterio.open(tmp_path) as src:
+            profile = src.profile.copy()
+            data = src.read(indexes=[1, 2, 3, 4, 5, 6])
+        profile["count"] = 6
+        with rasterio.open(filename, "w", **profile) as dst:
+            dst.write(data)
+        os.remove(tmp_path)
+        return filename
 
     def mkdir(self, foldername):
         if not (os.path.exists(foldername)):
