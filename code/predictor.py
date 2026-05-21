@@ -189,6 +189,12 @@ def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
             cog_s3_link = save_cog(mosaic[0], profile, transform, prediction_filename)
 
             geojson = post_process(mosaic[0], transform)
+
+            for geometry in geojson:
+                updated_geometry = PostProcess.convert_geojson(geometry)
+                geojson_list.append(updated_geometry)
+            geojson = subset_geojson(geojson_list, bounding_box)
+
             geojson_filename = f"predictions/{start_time}-predictions.geojson"
 
             s3 = boto3.client("s3")
@@ -200,10 +206,6 @@ def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
             )
             geojson_s3_link = f"s3://{BUCKET_NAME}/{geojson_filename}"
 
-            for geometry in geojson:
-                updated_geometry = PostProcess.convert_geojson(geometry)
-                geojson_list.append(updated_geometry)
-            geojson = subset_geojson(geojson_list, bounding_box)
         except Exception as e:
             print("!!! infer error", infer_date, model_id, bounding_box, e)
             torch.cuda.empty_cache()
