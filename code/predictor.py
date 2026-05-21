@@ -152,7 +152,7 @@ def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
         for layer in LAYERS:
             tiles = download_files(infer_date, layer, bounding_box)
             for tile in tiles:
-                all_tiles.append(tile_name)
+                all_tiles.append(tile)
 
     start_time = time.time()
     mosaic = []
