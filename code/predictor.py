@@ -152,7 +152,6 @@ def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
         for layer in LAYERS:
             tiles = download_files(infer_date, layer, bounding_box)
             for tile in tiles:
-                tile_name = tile.replace('.tif', '_scaled.tif')
                 all_tiles.append(tile_name)
 
     start_time = time.time()
