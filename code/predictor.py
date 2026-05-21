@@ -1,6 +1,3 @@
-from fileinput import filename
-from multiprocessing.dummy import connection
-
 import boto3
 import json
 import os
