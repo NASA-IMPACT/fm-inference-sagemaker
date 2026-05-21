@@ -6,6 +6,7 @@ import rasterio
 from terratorch.tasks import SemanticSegmentationTask
 from lib.consts import NO_DATA, NO_DATA_FLOAT, MEANS, STDS
 
+
 class Infer:
     def __init__(self, config, checkpoint):
         self.config_filename = config
@@ -13,7 +14,7 @@ class Infer:
             self.config = yaml.safe_load(config)
         self.checkpoint_filename = checkpoint
         self.model = None
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.load_model()
 
     def load_model(self):
@@ -74,18 +75,23 @@ class Infer:
         mean = []
         std = []
         if terramind:
-            modality = 'S2L1C'
+            modality = "S2L1C"
             with rasterio.open(images[0]) as raster_file:
                 if raster_file.count == 12:
-                    modality = 'S2L1A'
-            mean = torch.tensor(self.config['data']['init_args']['means'][modality]).view(-1, 1, 1)
-            std = torch.tensor(self.config['data']['init_args']['stds'][modality]).view(-1, 1, 1)
+                    modality = "S2L1A"
+            mean = torch.tensor(
+                self.config["data"]["init_args"]["means"][modality]
+            ).view(-1, 1, 1)
+            std = torch.tensor(self.config["data"]["init_args"]["stds"][modality]).view(
+                -1, 1, 1
+            )
         else:
-            mean = np.asarray(self.config["data"]["init_args"].get("means", MEANS))
-            std = np.asarray(self.config["data"]["init_args"].get("stds", STDS))
-            mean = torch.from_numpy(mean).view(-1, 1, 1).float()
-            std = torch.from_numpy(std).view(-1, 1, 1).float()
-
+            mean = np.asarray(
+                self.config["data"]["init_args"].get("means", MEANS)
+            ).reshape(-1, 1, 1)
+            std = np.asarray(
+                self.config["data"]["init_args"].get("stds", STDS)
+            ).reshape(-1, 1, 1)
 
         for image in images:
             with rasterio.open(image) as raster_file:
@@ -97,12 +103,14 @@ class Infer:
                 profiles.append(raster_file.profile)
                 raster_file.close()
         # Example processing function to simulate the pipeline
-        imgs_tensor = torch.from_numpy(np.asarray(images_array))  # Assuming input_array is of type np.float32
+        imgs_tensor = torch.from_numpy(
+            np.asarray(images_array)
+        )  # Assuming input_array is of type np.float32
         imgs_tensor = imgs_tensor.float()
 
         # increase dimensions to match input size
         processed_images = imgs_tensor
-        if not(terramind):
+        if not (terramind):
             processed_images = imgs_tensor.unsqueeze(2)
         print(processed_images.shape)
         return processed_images, profiles
@@ -116,22 +124,28 @@ class Infer:
         # forward the model
         with torch.no_grad():
             images, profiles = self.preprocess(images, terramind=terramind)
-            result = self.model(images.to('cpu'))
+            # result = self.model(images.to('cpu'))
+            device = next(self.model.parameters()).device
+            result = self.model(images.to(device))
             predicted_masks = list()
             results = result.output.detach().cpu()
             for index, mask in enumerate(results):
                 output = mask.cpu()  # [n_segmentation_class, 224, 224]
-                num_classes = self.config["model"]["init_args"]["model_args"]["num_classes"]
+                num_classes = self.config["model"]["init_args"]["model_args"][
+                    "num_classes"
+                ]
                 if num_classes == 1:
                     updated_mask = torch.sigmoid(output.clone()).squeeze(0)
-                    predicted_mask = (updated_mask > self.config.get('threshold', 0.5)).int()
+                    predicted_mask = (
+                        updated_mask > self.config.get("threshold", 0.5)
+                    ).int()
                 else:
                     predicted_mask = mask.argmax(dim=0)
-                    img_size = profiles[index]['width']
+                    img_size = profiles[index]["width"]
                     predicted_mask = torch.nn.functional.interpolate(
-                            predicted_mask.unsqueeze(0).float(),
-                            size=img_size,
-                            mode="nearest"
-                        )
+                        predicted_mask.unsqueeze(0).float(),
+                        size=img_size,
+                        mode="nearest",
+                    )
                 predicted_masks.append(predicted_mask)
         return predicted_masks, profiles
