@@ -3,6 +3,7 @@ import json
 import os
 import gc
 import geopandas as gpd
+import numpy as np
 import rasterio
 import time
 import torch
@@ -234,7 +235,16 @@ async def infer_from_model(request: Request):
     final_geojson = infer(
         model_id, infer_date, bounding_box, terramind=terramind, file_links=file_links
     )
-    return JSONResponse(content=jsonable_encoder(final_geojson))
+    def _numpy_default(obj):
+        if isinstance(obj, (np.floating,)):
+            return float(obj)
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+    return JSONResponse(content=json.loads(json.dumps(final_geojson, default=_numpy_default)))
 
 
 @app.get("/ping")
