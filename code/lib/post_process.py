@@ -1,11 +1,9 @@
 import cv2
 import numpy as np
 import rasterio
-import rasterio.warp
 
 from geojson import Feature, Polygon
 from PIL import Image, ImageDraw
-from rasterio.crs import CRS
 from scipy.interpolate import splprep, splev
 from skimage.morphology import disk, binary_closing
 from shapely import geometry
@@ -96,11 +94,7 @@ class PostProcess:
 
     @classmethod
     def convert_geojson(cls, results):
-        feature = results["geometry"]
-        feature_proj = rasterio.warp.transform_geom(
-            CRS.from_epsg(3857), CRS.from_epsg(4326), feature
-        )
-        results["geometry"] = feature_proj
+        # Geometry is already in EPSG:4326 from the WorldCRS84Quad tile pipeline.
         return results
 
     @classmethod
