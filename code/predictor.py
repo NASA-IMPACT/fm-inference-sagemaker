@@ -76,6 +76,7 @@ def save_cog(mosaic, profile, transform, filename):
             "transform": transform,
             "dtype": "float32",
             "count": 1,
+            "nodata": 0
         }
     )
     with rasterio.open(filename, "w", **profile) as raster:
@@ -216,8 +217,7 @@ def infer(model_id, infer_date, bounding_box, terramind=False, file_links=[]):
     return {
         model_id: {
             "cog_s3_link": cog_s3_link,
-            "geojson_s3_link": geojson_s3_link,
-            "predictions": geojson,
+            "geojson_s3_link": geojson_s3_link
         }
     }
 
